@@ -1,16 +1,20 @@
 """Betting manager coordinating pools and odds during a game."""
 
 from decimal import Decimal
+from typing import TYPE_CHECKING
 from uuid import uuid4
 
-from src.agents.claude_client import ClaudeClient
+from src.agents.llm_client import LLMClient
 from src.betting.odds import apply_early_bonus, calculate_implied_odds
 from src.betting.oddsmaker import calculate_ai_odds
 from src.betting.pool import calculate_payout
-from src.config.constants import BetType, DEFAULT_STARTING_CHIPS
+from src.config.constants import BetType, DEFAULT_STARTING_CHIPS, HOUSE_EDGE, PlayerType
 from src.models.betting import Bet, BettingPool, OddsBoard
 from src.models.game import GameState
 from src.utils.logger import get_logger
+
+if TYPE_CHECKING:
+    from src.players.protocol import PlayerProtocol
 
 log = get_logger(__name__)
 
@@ -18,14 +22,14 @@ log = get_logger(__name__)
 class BettingManager:
     """Manages betting pools and odds during a game."""
 
-    def __init__(self, claude_client: ClaudeClient, game_id: str):
+    def __init__(self, llm_client: LLMClient, game_id: str):
         """Initialize betting manager.
 
         Args:
-            claude_client: Claude client for AI odds calculation.
+            llm_client: LLM client for AI odds calculation.
             game_id: Game ID for this betting session.
         """
-        self.claude = claude_client
+        self.claude = llm_client
         self.game_id = game_id
         self.pools: dict[BetType, BettingPool] = {
             BetType.SIDE_WIN: BettingPool(game_id=game_id, bet_type=BetType.SIDE_WIN),
@@ -33,6 +37,7 @@ class BettingManager:
                 game_id=game_id, bet_type=BetType.NEXT_ELIMINATION
             ),
             BetType.IS_MAFIA: BettingPool(game_id=game_id, bet_type=BetType.IS_MAFIA),
+            BetType.IS_AI_OR_HUMAN: BettingPool(game_id=game_id, bet_type=BetType.IS_AI_OR_HUMAN),
         }
         self.spectators: dict[str, Decimal] = {}  # session_id → chips
         self.odds_board: OddsBoard | None = None
@@ -231,3 +236,81 @@ class BettingManager:
         if session_id not in self.spectators:
             self.register_spectator(session_id)
         return self.spectators[session_id]
+
+    def settle_identity_bets(self, players: dict[str, "PlayerProtocol"]) -> dict[str, Decimal]:
+        """Settle identity bets (IS_AI_OR_HUMAN).
+
+        Bet target format: "PlayerName:ai" or "PlayerName:human"
+
+        Args:
+            players: Dict of player name to PlayerProtocol implementation.
+
+        Returns:
+            Dict of session_id → total payout amount.
+        """
+        pool = self.pools[BetType.IS_AI_OR_HUMAN]
+
+        if not pool.bets:
+            return {}
+
+        # Map each player to their actual identity
+        actual_identities: dict[str, str] = {}
+        for player_name, player in players.items():
+            if player.player_type in (PlayerType.HOUSE_AI, PlayerType.MOLTBOOK_AGENT):
+                actual_identities[player_name] = "ai"
+            else:  # AGENT_HUMAN, HUMAN
+                actual_identities[player_name] = "human"
+
+        # Separate winning and losing bets
+        winning_bets: list[Bet] = []
+        total_winning_weight = Decimal("0")
+
+        for bet in pool.bets:
+            # Parse bet target: "PlayerName:ai" or "PlayerName:human"
+            if ":" not in bet.target:
+                log.warning("invalid_identity_bet_target", target=bet.target)
+                continue
+
+            player_name, prediction = bet.target.rsplit(":", 1)
+
+            if player_name not in actual_identities:
+                log.warning("identity_bet_unknown_player", player=player_name)
+                continue
+
+            # Check if prediction matches actual identity
+            if prediction == actual_identities[player_name]:
+                winning_bets.append(bet)
+                total_winning_weight += bet.weight * bet.amount
+
+        # Calculate payouts
+        payouts: dict[str, Decimal] = {}
+
+        if winning_bets and total_winning_weight > 0:
+            # Net pool after house edge
+            net_pool = pool.total_amount * (Decimal("1") - Decimal(str(HOUSE_EDGE)))
+
+            for bet in winning_bets:
+                weighted_amount = bet.weight * bet.amount
+                payout = (weighted_amount / total_winning_weight) * net_pool
+
+                if bet.bettor_id in payouts:
+                    payouts[bet.bettor_id] += payout
+                else:
+                    payouts[bet.bettor_id] = payout
+
+        # Apply payouts to spectator balances
+        for session_id, payout in payouts.items():
+            if session_id in self.spectators:
+                self.spectators[session_id] += payout
+            else:
+                self.spectators[session_id] = payout
+
+        log.info(
+            "identity_bets_settled",
+            total_payouts=len(payouts),
+            total_amount=float(sum(payouts.values())),
+            num_winning_bets=len(winning_bets),
+            num_total_bets=len(pool.bets),
+        )
+
+        return payouts

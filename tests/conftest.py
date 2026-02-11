@@ -148,8 +148,8 @@ def event_collector() -> tuple[Callable[[WSEvent], Awaitable[None]], list[WSEven
 
 
 @pytest.fixture
-def mock_claude_client():
-    """Create mock ClaudeClient for testing."""
+def mock_llm_client():
+    """Create mock LLMClient for testing."""
     mock = MagicMock()
 
     # Default mock responses
@@ -165,6 +165,30 @@ def mock_claude_client():
 
 
 @pytest.fixture
+def mock_claude_client(mock_llm_client):
+    """Backward compatibility alias for mock_llm_client."""
+    return mock_llm_client
+
+
+@pytest.fixture
 def seeded_random():
     """Create seeded random generator for deterministic tests."""
     return random.Random(42)
+
+
+@pytest.fixture
+def mock_players(sample_personalities: tuple) -> dict:
+    """Create mock players implementing PlayerProtocol."""
+    from src.config.constants import PlayerType
+
+    players = {}
+    for personality in sample_personalities:
+        player = MagicMock()
+        player.name = personality.name
+        player.player_type = PlayerType.HOUSE_AI
+        player.personality = personality
+        player.generate_statement = AsyncMock(return_value="I think someone is suspicious.")
+        player.vote = AsyncMock(return_value="TestAgent4")
+        player.night_action = AsyncMock(return_value="TestAgent4")
+        players[personality.name] = player
+    return players

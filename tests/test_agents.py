@@ -2,7 +2,7 @@
 
 import pytest
 
-from src.agents.claude_client import ClaudeClient
+from src.agents.llm_client import LLMClient
 from src.agents.memory import AgentMemory
 from src.agents.personalities import ALL_PERSONALITIES
 from src.agents.prompts import (
@@ -83,20 +83,20 @@ class TestAgentMemory:
         assert entries == ["Event 1", "Event 2", "Event 3"]
 
 
-class TestClaudeClientParsing:
-    """Tests for ClaudeClient parsing methods."""
+class TestLLMClientParsing:
+    """Tests for LLMClient parsing methods."""
 
     def test_parse_choice_exact_match(self):
         """Test exact match for choice parsing."""
-        # Create a minimal ClaudeClient-like object for testing
+        # Create a minimal LLMClient-like object for testing
         class MockSettings:
             def __init__(self):
-                self.anthropic_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
+                self.openai_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
                 self.dialogue_model = "test"
                 self.decision_model = "test"
                 self.oddsmaker_model = "test"
 
-        client = ClaudeClient(MockSettings())
+        client = LLMClient(MockSettings())
         choices = ["TestAgent1", "TestAgent2", "TestAgent3"]
 
         result = client._parse_choice("TestAgent2", choices)
@@ -106,12 +106,12 @@ class TestClaudeClientParsing:
         """Test case-insensitive choice parsing."""
         class MockSettings:
             def __init__(self):
-                self.anthropic_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
+                self.openai_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
                 self.dialogue_model = "test"
                 self.decision_model = "test"
                 self.oddsmaker_model = "test"
 
-        client = ClaudeClient(MockSettings())
+        client = LLMClient(MockSettings())
         choices = ["TestAgent1", "TestAgent2", "TestAgent3"]
 
         result = client._parse_choice("testagent2", choices)
@@ -121,12 +121,12 @@ class TestClaudeClientParsing:
         """Test substring match for choice parsing."""
         class MockSettings:
             def __init__(self):
-                self.anthropic_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
+                self.openai_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
                 self.dialogue_model = "test"
                 self.decision_model = "test"
                 self.oddsmaker_model = "test"
 
-        client = ClaudeClient(MockSettings())
+        client = LLMClient(MockSettings())
         choices = ["TestAgent1", "TestAgent2", "TestAgent3"]
 
         result = client._parse_choice("I think we should vote for TestAgent2", choices)
@@ -136,12 +136,12 @@ class TestClaudeClientParsing:
         """Test that None is returned when no match found."""
         class MockSettings:
             def __init__(self):
-                self.anthropic_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
+                self.openai_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
                 self.dialogue_model = "test"
                 self.decision_model = "test"
                 self.oddsmaker_model = "test"
 
-        client = ClaudeClient(MockSettings())
+        client = LLMClient(MockSettings())
         choices = ["TestAgent1", "TestAgent2", "TestAgent3"]
 
         result = client._parse_choice("InvalidAgent", choices)
@@ -151,12 +151,12 @@ class TestClaudeClientParsing:
         """Test parsing valid decimal odds."""
         class MockSettings:
             def __init__(self):
-                self.anthropic_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
+                self.openai_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
                 self.dialogue_model = "test"
                 self.decision_model = "test"
                 self.oddsmaker_model = "test"
 
-        client = ClaudeClient(MockSettings())
+        client = LLMClient(MockSettings())
         text = """mafia_win: 0.45
 citizen_win: 0.55
 TestAgent1: 0.7"""
@@ -171,12 +171,12 @@ TestAgent1: 0.7"""
         """Test parsing percentage odds."""
         class MockSettings:
             def __init__(self):
-                self.anthropic_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
+                self.openai_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
                 self.dialogue_model = "test"
                 self.decision_model = "test"
                 self.oddsmaker_model = "test"
 
-        client = ClaudeClient(MockSettings())
+        client = LLMClient(MockSettings())
         text = """
         mafia_win: 45%
         citizen_win: 55%
@@ -191,12 +191,12 @@ TestAgent1: 0.7"""
         """Test that odds are clamped to [0.0, 1.0]."""
         class MockSettings:
             def __init__(self):
-                self.anthropic_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
+                self.openai_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
                 self.dialogue_model = "test"
                 self.decision_model = "test"
                 self.oddsmaker_model = "test"
 
-        client = ClaudeClient(MockSettings())
+        client = LLMClient(MockSettings())
         text = """too_high: 1.5
 too_low: -0.3"""
 
@@ -209,12 +209,12 @@ too_low: -0.3"""
         """Test fallback to default odds when parsing fails."""
         class MockSettings:
             def __init__(self):
-                self.anthropic_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
+                self.openai_api_key = type("obj", (), {"get_secret_value": lambda self: "test"})()
                 self.dialogue_model = "test"
                 self.decision_model = "test"
                 self.oddsmaker_model = "test"
 
-        client = ClaudeClient(MockSettings())
+        client = LLMClient(MockSettings())
         text = "Invalid format with no odds"
 
         odds = client._parse_odds(text)

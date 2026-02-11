@@ -15,6 +15,38 @@
         </div>
     </header>
 
+    <!-- Wallet Section (hidden by default) -->
+    <section id="wallet-section" style="display:none">
+        <div class="wallet-bar">
+            <button id="connect-wallet-btn" onclick="connectWallet()">🔗 Connect Wallet</button>
+            <span id="wallet-status" class="wallet-status disconnected">Not connected</span>
+            <span id="wallet-balance"></span>
+            <span id="tx-status" class="tx-status" style="display:none"></span>
+        </div>
+    </section>
+
+    <!-- Lobby Section -->
+    <section id="lobby-section">
+        <h2>🏠 Game Lobby</h2>
+        <div id="lobby-players"></div>
+        <div id="lobby-controls">
+            <input type="text" id="player-name-input" placeholder="Your name..." maxlength="20">
+            <button id="join-btn" onclick="joinLobby()">Join as Human</button>
+        </div>
+        <div id="lobby-status">Waiting for players... (0/7)</div>
+    </section>
+
+    <!-- Human Action Input (hidden until needed) -->
+    <div id="action-input-section" style="display:none">
+        <div id="action-prompt"></div>
+        <div id="action-controls">
+            <textarea id="statement-input" placeholder="Type your statement..." rows="3" style="display:none"></textarea>
+            <div id="vote-select" style="display:none"></div>
+            <button id="submit-action-btn" onclick="submitAction()">Submit</button>
+            <div id="action-timer">60s</div>
+        </div>
+    </div>
+
     <main>
         <section id="agents-panel">
             <h2>Players</h2>
@@ -69,6 +101,23 @@
         </section>
     </footer>
 
+    <!-- Reveal Section -->
+    <section id="reveal-section" style="display:none">
+        <h2>🎭 Player Reveals</h2>
+        <div id="reveal-cards"></div>
+    </section>
+
     <script src="/static/app.js"></script>
+
+    <!-- Claim winnings section (hidden until game settles) -->
+    <div id="blockchain-claim" style="display:none; text-align:center; padding:1rem;">
+        <button id="claim-btn" onclick="claimWinnings()" class="bet-btn citizen-btn" style="min-width:250px; font-size:1.2rem; padding:1rem 2rem;">
+            🎉 Claim Winnings
+        </button>
+    </div>
+
+    <!-- ethers.js v6 CDN -->
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/ethers/6.13.4/ethers.umd.min.js"></script>
+    <script src="/static/blockchain.js"></script>
 </body>
 </html>

@@ -10,6 +10,7 @@ from fastapi.staticfiles import StaticFiles
 from src.api.routes import router
 from src.api.ws_manager import WSManager
 from src.config.settings import Settings
+from src.models.events import WSEvent
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
@@ -34,6 +35,7 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
 
     # Store betting manager for WebSocket handler access
     app.state.betting_manager = betting_manager
+    app.state.settings = settings
 
     # CORS middleware
     app.add_middleware(
@@ -46,6 +48,83 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
 
     # Include REST API routes
     app.include_router(router)
+
+    # Blockchain configuration endpoint
+    @app.get("/api/blockchain-config")
+    async def blockchain_config():
+        """Return blockchain configuration for frontend."""
+        s = app.state.settings
+        return {
+            "enabled": s.blockchain_enabled,
+            "contract_address": s.blockchain_contract_address if s.blockchain_enabled else "",
+            "chain_id": s.blockchain_chain_id if s.blockchain_enabled else 0,
+            "rpc_url": s.blockchain_rpc_url if s.blockchain_enabled else "",
+        }
+
+    # Moltbook agent join endpoint
+    @app.post("/api/lobby/join-agent")
+    async def join_agent(request_data: dict):
+        """Moltbook agent joins the lobby.
+
+        Args:
+            request_data: Request body with api_key.
+
+        Returns:
+            Success/failure response.
+        """
+        api_key = request_data.get("api_key", "")
+
+        if not api_key:
+            return {"success": False, "error": "API key required"}
+
+        # Check if lobby exists
+        if not hasattr(app.state, "lobby_manager") or not app.state.lobby_manager:
+            return {"success": False, "error": "Lobby not available"}
+
+        try:
+            # TODO: Validate with Moltbook API
+            # For now, accept any non-empty key
+            from src.moltbook.client import MoltbookClient
+            from src.players.moltbook_agent import MoltbookAgentPlayer
+
+            agent_name = f"Moltbook-{api_key[:6]}"
+            moltbook_client = MoltbookClient(
+                base_url=app.state.settings.moltbook_api_url
+            )
+            player = MoltbookAgentPlayer(
+                name=agent_name,
+                moltbook_client=moltbook_client,
+                agent_id=api_key[:12],
+                api_key=api_key,
+            )
+            success = await app.state.lobby_manager.join(player)
+
+            if success:
+                # Broadcast lobby status
+                from datetime import datetime
+
+                await ws_manager.broadcast(
+                    WSEvent(
+                        event_type="lobby_status",
+                        data={
+                            "players": list(app.state.lobby_manager.players.keys()),
+                            "count": len(app.state.lobby_manager.players),
+                            "ready": app.state.lobby_manager.is_ready(),
+                        },
+                        game_id="",
+                        timestamp=datetime.now().isoformat(),
+                    )
+                )
+
+            return {
+                "success": success,
+                "agent_name": agent_name if success else None,
+                "players": list(app.state.lobby_manager.players.keys()),
+            }
+
+        except Exception as exc:
+            log.error("moltbook_join_failed", error=str(exc))
+            return {"success": False, "error": str(exc)}
 
     # Static files (will be created by p-impl-ui)
     static_dir = Path(__file__).parent.parent.parent / "static"
@@ -84,6 +163,7 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
 
         # Generate session ID for this connection
         import uuid
+        from datetime import datetime
 
         session_id = str(uuid.uuid4())
 
@@ -91,8 +171,68 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
             while True:
                 data = await ws.receive_json()
 
+                # Join lobby as human player
+                if data.get("type") == "join_lobby":
+                    player_name = data.get("name", f"Human-{session_id[:6]}")
+
+                    # Register this WS as a player
+                    await ws_manager.register_player(player_name, ws)
+
+                    # Create HumanPlayer and add to lobby
+                    if hasattr(app.state, "lobby_manager") and app.state.lobby_manager:
+                        from src.players.human import HumanPlayer
+
+                        player = HumanPlayer(name=player_name, ws_manager=ws_manager)
+                        success = await app.state.lobby_manager.join(player)
+
+                        await ws.send_json(
+                            {
+                                "type": "lobby_joined",
+                                "data": {
+                                    "name": player_name,
+                                    "success": success,
+                                    "players": list(
+                                        app.state.lobby_manager.players.keys()
+                                    ),
+                                },
+                            }
+                        )
+
+                        # Broadcast lobby status to all
+                        await ws_manager.broadcast(
+                            WSEvent(
+                                event_type="lobby_status",
+                                data={
+                                    "players": list(
+                                        app.state.lobby_manager.players.keys()
+                                    ),
+                                    "count": len(app.state.lobby_manager.players),
+                                    "ready": app.state.lobby_manager.is_ready(),
+                                },
+                                game_id="",
+                                timestamp=datetime.now().isoformat(),
+                            )
+                        )
+                    else:
+                        await ws.send_json(
+                            {
+                                "type": "lobby_joined",
+                                "data": {
+                                    "name": player_name,
+                                    "success": False,
+                                    "players": [],
+                                },
+                            }
+                        )
+
+                # Human action response
+                elif data.get("type") == "action_response":
+                    player_name = data.get("player_name")
+                    response = data.get("response", "")
+                    ws_manager.resolve_response(player_name, response)
+
                 # Handle bet placement from client
-                if data.get("type") == "place_bet":
+                elif data.get("type") == "place_bet":
                     log.info("bet_received", data=data)
 
                     if app.state.betting_manager:

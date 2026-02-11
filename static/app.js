@@ -19,6 +19,8 @@ let gameState = {
 };
 let selectedBetAmount = 50;
 let chipBalance = 1000;
+let isPlayer = false;
+let myPlayerName = null;
 
 /**
  * Initialize WebSocket connection with auto-reconnect
@@ -115,6 +117,11 @@ function handleEvent(event) {
         bet_placed: handleBetPlaced,
         bet_confirmed: handleBetConfirmed,
         bet_rejected: handleBetRejected,
+        lobby_joined: handleLobbyJoined,
+        lobby_status: handleLobbyStatus,
+        game_starting: handleGameStarting,
+        action_request: handleActionRequest,
+        identity_reveal: handleIdentityReveal,
         pong: () => console.log('pong received')  // Handle pong silently
     };
 
@@ -311,6 +318,11 @@ function handleGameOver(data) {
     if (alive_agents && alive_agents.length > 0) {
         addSystemMessage(`Survivors: ${alive_agents.join(', ')}`, 'game-over');
     }
+
+    // Show claim button if blockchain mode
+    if (typeof isBlockchainMode !== 'undefined' && isBlockchainMode) {
+        document.getElementById('blockchain-claim').style.display = 'block';
+    }
 }
 
 /**
@@ -373,6 +385,15 @@ function handleBetRejected(data) {
  * Place a bet via WebSocket
  */
 function placeBet(betType, target) {
+    // On-chain betting if blockchain mode active and wallet connected
+    if (typeof isBlockchainMode !== 'undefined' && isBlockchainMode && typeof contract !== 'undefined' && contract && typeof signer !== 'undefined' && signer) {
+        const amount = selectedBetAmount === 'all' ? 0.1 : selectedBetAmount / 1000;
+        const betMafia = target === 'mafia';
+        placeBetOnChain(betMafia, amount);
+        return;
+    }
+
+    // Fallback to WebSocket chip betting
     if (!ws || ws.readyState !== WebSocket.OPEN) {
         addSystemMessage('❌ Not connected to server', 'elimination');
         return;
@@ -502,6 +523,182 @@ function escapeHtml(text) {
     return div.innerHTML;
 }
 
+/**
+ * Join lobby as human player
+ */
+function joinLobby() {
+    const nameInput = document.getElementById('player-name-input');
+    const name = nameInput.value.trim();
+    if (!name) {
+        alert('Please enter your name');
+        return;
+    }
+    ws.send(JSON.stringify({ type: 'join_lobby', name }));
+}
+
+/**
+ * Submit action response
+ */
+function submitAction() {
+    const statementInput = document.getElementById('statement-input');
+    const voteSelect = document.getElementById('vote-select');
+    let response = '';
+
+    if (statementInput.style.display !== 'none') {
+        response = statementInput.value.trim();
+    } else if (voteSelect.style.display !== 'none') {
+        const selectEl = voteSelect.querySelector('select');
+        response = selectEl ? selectEl.value : '';
+    }
+
+    if (!response) {
+        alert('Please provide a response');
+        return;
+    }
+
+    ws.send(JSON.stringify({
+        type: 'action_response',
+        player_name: myPlayerName,
+        response
+    }));
+
+    // Hide action input
+    document.getElementById('action-input-section').style.display = 'none';
+    statementInput.value = '';
+}
+
+/**
+ * Handle lobby joined response
+ */
+function handleLobbyJoined(data) {
+    if (!data || !data.name) return;
+
+    if (data.success) {
+        isPlayer = true;
+        myPlayerName = data.name;
+
+        // Hide lobby controls
+        document.getElementById('lobby-controls').style.display = 'none';
+
+        // Show joined message
+        const lobbyStatus = document.getElementById('lobby-status');
+        lobbyStatus.textContent = `Joined as ${data.name}`;
+        lobbyStatus.style.color = '#00ff88';
+
+        addSystemMessage(`You joined the lobby as ${data.name}`);
+    } else {
+        alert('Failed to join lobby');
+    }
+}
+
+/**
+ * Handle lobby status update
+ */
+function handleLobbyStatus(data) {
+    if (!data) return;
+
+    const players = data.players || [];
+    const count = data.count || 0;
+    const ready = data.ready || false;
+
+    // Update lobby players display
+    const lobbyPlayers = document.getElementById('lobby-players');
+    lobbyPlayers.innerHTML = players.map(name =>
+        `<div class="lobby-player-card">${name}</div>`
+    ).join('');
+
+    // Update status
+    if (!isPlayer) {
+        const lobbyStatus = document.getElementById('lobby-status');
+        lobbyStatus.textContent = `Waiting for players... (${count}/7)`;
+        if (ready) {
+            lobbyStatus.textContent = 'Lobby full! Game starting soon...';
+            lobbyStatus.style.color = '#00ff88';
+        }
+    }
+}
+
+/**
+ * Handle game starting event
+ */
+function handleGameStarting(data) {
+    // Hide lobby section
+    document.getElementById('lobby-section').style.display = 'none';
+
+    // Show game UI
+    document.querySelector('main').style.display = 'grid';
+
+    addSystemMessage('Game is starting!', 'game-over');
+}
+
+/**
+ * Handle action request for human player
+ */
+function handleActionRequest(data) {
+    if (!data || !isPlayer) return;
+
+    const actionSection = document.getElementById('action-input-section');
+    const promptEl = document.getElementById('action-prompt');
+    const statementInput = document.getElementById('statement-input');
+    const voteSelect = document.getElementById('vote-select');
+    const timerEl = document.getElementById('action-timer');
+
+    promptEl.textContent = data.prompt || 'Your action required';
+
+    if (data.action_type === 'statement') {
+        statementInput.style.display = 'block';
+        voteSelect.style.display = 'none';
+    } else if (data.action_type === 'vote') {
+        statementInput.style.display = 'none';
+        voteSelect.style.display = 'block';
+
+        // Build vote dropdown
+        const options = data.options || [];
+        voteSelect.innerHTML = `
+            <select>
+                ${options.map(opt => `<option value="${opt}">${opt}</option>`).join('')}
+            </select>
+        `;
+    }
+
+    // Show timer
+    const timeout = data.timeout || 60;
+    timerEl.textContent = `${timeout}s`;
+    let remaining = timeout;
+    const timerId = setInterval(() => {
+        remaining--;
+        timerEl.textContent = `${remaining}s`;
+        if (remaining <= 0) {
+            clearInterval(timerId);
+            // Auto-submit empty response
+            submitAction();
+        }
+    }, 1000);
+
+    actionSection.style.display = 'block';
+}
+
+/**
+ * Handle identity reveal event
+ */
+function handleIdentityReveal(data) {
+    if (!data || !data.player_name) return;
+
+    const revealSection = document.getElementById('reveal-section');
+    const revealCards = document.getElementById('reveal-cards');
+
+    revealSection.style.display = 'block';
+
+    const card = document.createElement('div');
+    card.className = `reveal-card ${data.player_type || 'ai'}`;
+    card.innerHTML = `
+        <div class="reveal-name">${data.player_name}</div>
+        <div class="reveal-type">${data.player_type === 'human' ? '👤 Human' : '🤖 AI'}</div>
+        <div class="reveal-role">${data.role || 'Unknown'}</div>
+    `;
+    revealCards.appendChild(card);
+}
+
 // Initialize on page load
 document.addEventListener('DOMContentLoaded', () => {
     console.log('MafiaAI Dashboard initializing...');
@@ -517,4 +714,14 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Select default amount (50)
     selectBetAmount(50);
+
+    // Initialize blockchain if server provides config
+    fetch('/api/blockchain-config')
+        .then(r => r.json())
+        .then(config => {
+            if (config.enabled && config.contract_address) {
+                initBlockchain(config.contract_address, config.game_id);
+            }
+        })
+        .catch(() => console.log('Blockchain config not available — using chip betting'));
 });

@@ -18,7 +18,17 @@ class Phase(str, Enum):
     NIGHT = "night"
     DAY_DISCUSSION = "day_discussion"
     DAY_VOTE = "day_vote"
+    REVEAL = "reveal"
     GAME_OVER = "game_over"
+
+
+class PlayerType(str, Enum):
+    """Type of player in the game."""
+
+    HOUSE_AI = "house_ai"  # Server's AI agent
+    MOLTBOOK_AGENT = "moltbook_agent"  # External autonomous AI via API
+    AGENT_HUMAN = "agent_human"  # Human using agent account (WebSocket)
+    HUMAN = "human"  # Regular human player (WebSocket)
 
 
 class BetType(str, Enum):
@@ -27,6 +37,7 @@ class BetType(str, Enum):
     SIDE_WIN = "side_win"  # mafia or citizens win
     NEXT_ELIMINATION = "next_elimination"  # who gets eliminated next
     IS_MAFIA = "is_mafia"  # specific agent is mafia
+    IS_AI_OR_HUMAN = "is_ai_or_human"  # bet on whether player is AI or human
 
 
 # Game constants

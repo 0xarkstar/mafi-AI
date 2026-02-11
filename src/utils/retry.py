@@ -6,7 +6,7 @@ import random
 from collections.abc import Callable, Coroutine
 from typing import Any, TypeVar
 
-import anthropic
+import openai
 
 from src.utils.logger import get_logger
 
@@ -21,10 +21,10 @@ def async_retry(
     max_delay: float = 30.0,
     multiplier: float = 2.0,
     retryable_exceptions: tuple[type[Exception], ...] = (
-        anthropic.APIError,
-        anthropic.RateLimitError,
-        anthropic.APIConnectionError,
-        anthropic.InternalServerError,
+        openai.APIError,
+        openai.RateLimitError,
+        openai.APIConnectionError,
+        openai.InternalServerError,
     ),
 ) -> Callable[
     [Callable[..., Coroutine[Any, Any, T]]],

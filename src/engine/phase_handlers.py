@@ -4,34 +4,32 @@ import random
 from collections import Counter
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from src.agents.prompts import (
-    build_discussion_prompt,
-    build_night_action_prompt,
-    build_system_prompt,
-    build_vote_prompt,
-)
 from src.config.constants import MAX_DISCUSSION_STATEMENTS, Phase, Role
 from src.models.agent import AgentState
 from src.models.events import WSEvent
 from src.models.game import GameState, RoundResult
 from src.utils.logger import get_logger
 
+if TYPE_CHECKING:
+    from src.players.protocol import PlayerProtocol, TurnContext
+
 log = get_logger(__name__)
 
 
 async def handle_night(
     state: GameState,
-    agents: dict[str, AgentState],
-    claude: "ClaudeClient",  # type: ignore
+    players: dict[str, "PlayerProtocol"],
+    agent_states: dict[str, AgentState],
     event_cb: Callable[[WSEvent], Awaitable[None]],
 ) -> GameState:
     """Execute night phase: mafia chooses kill, detective investigates.
 
     Args:
         state: Current game state.
-        agents: Dict of agent name to agent state.
-        claude: Claude API client for decisions.
+        players: Dict of player name to PlayerProtocol implementation.
+        agent_states: Dict of agent name to agent state (for memory/known_roles).
         event_cb: Async callback for broadcasting events.
 
     Returns:
@@ -50,30 +48,36 @@ async def handle_night(
     )
 
     # Get alive agents
-    alive = {name: agents[name] for name in state.alive_agents}
+    alive_names = state.alive_agents
 
     # Mafia choose kill target
-    mafia_agents = [name for name in alive if state.role_map[name] == Role.MAFIA]
+    mafia_agents = [name for name in alive_names if state.role_map[name] == Role.MAFIA]
     night_kill = None
 
     if mafia_agents:
         # Mafia knows each other
-        mafia_agent = agents[mafia_agents[0]]
+        mafia_name = mafia_agents[0]
+        mafia_state = agent_states[mafia_name]
         non_mafia_targets = [
-            name for name in alive if state.role_map[name] != Role.MAFIA
+            name for name in alive_names if state.role_map[name] != Role.MAFIA
         ]
 
         if non_mafia_targets:
-            system_prompt = build_system_prompt(
-                mafia_agent.personality, Role.MAFIA, "Standard Mafia rules"
-            )
-            action_prompt = build_night_action_prompt(
-                Role.MAFIA, state.alive_agents, mafia_agent.known_roles, mafia_agent.memory
+            # Import here to avoid circular dependency
+            from src.players.protocol import TurnContext
+
+            # Build context for mafia player
+            ctx = TurnContext(
+                alive_agents=state.alive_agents,
+                role=Role.MAFIA,
+                known_roles=mafia_state.known_roles,
+                memory=mafia_state.memory,
+                round_number=state.round_number,
+                round_history=state.rounds[-3:] if len(state.rounds) >= 3 else state.rounds,
+                personality=mafia_state.personality,
             )
 
-            night_kill = await claude.make_decision(
-                system_prompt, action_prompt, non_mafia_targets
-            )
+            night_kill = await players[mafia_name].night_action(ctx, non_mafia_targets)
             log.info("mafia_kill_chosen", target=night_kill)
 
     # Detective investigates
@@ -81,31 +85,34 @@ async def handle_night(
     detective_result = None
 
     detective_agents = [
-        name for name in alive if state.role_map[name] == Role.DETECTIVE
+        name for name in alive_names if state.role_map[name] == Role.DETECTIVE
     ]
 
     if detective_agents:
-        detective = agents[detective_agents[0]]
+        detective_name = detective_agents[0]
+        detective_state = agent_states[detective_name]
         investigation_targets = [
             name
-            for name in alive
-            if name != detective_agents[0] and name not in detective.known_roles
+            for name in alive_names
+            if name != detective_name and name not in detective_state.known_roles
         ]
 
         if investigation_targets:
-            system_prompt = build_system_prompt(
-                detective.personality, Role.DETECTIVE, "Standard Mafia rules"
-            )
-            action_prompt = build_night_action_prompt(
-                Role.DETECTIVE,
-                state.alive_agents,
-                detective.known_roles,
-                detective.memory,
+            # Import here to avoid circular dependency
+            from src.players.protocol import TurnContext
+
+            # Build context for detective player
+            ctx = TurnContext(
+                alive_agents=state.alive_agents,
+                role=Role.DETECTIVE,
+                known_roles=detective_state.known_roles,
+                memory=detective_state.memory,
+                round_number=state.round_number,
+                round_history=state.rounds[-3:] if len(state.rounds) >= 3 else state.rounds,
+                personality=detective_state.personality,
             )
 
-            detective_target = await claude.make_decision(
-                system_prompt, action_prompt, investigation_targets
-            )
+            detective_target = await players[detective_name].night_action(ctx, investigation_targets)
             detective_result = state.role_map[detective_target] == Role.MAFIA
             log.info(
                 "detective_investigation",
@@ -156,16 +163,16 @@ async def handle_night(
 
 async def handle_day_discussion(
     state: GameState,
-    agents: dict[str, AgentState],
-    claude: "ClaudeClient",  # type: ignore
+    players: dict[str, "PlayerProtocol"],
+    agent_states: dict[str, AgentState],
     event_cb: Callable[[WSEvent], Awaitable[None]],
 ) -> GameState:
     """Execute day discussion: each alive agent speaks.
 
     Args:
         state: Current game state.
-        agents: Dict of agent name to agent state.
-        claude: Claude API client for dialogue.
+        players: Dict of player name to PlayerProtocol implementation.
+        agent_states: Dict of agent name to agent state (for memory/known_roles).
         event_cb: Async callback for broadcasting events.
 
     Returns:
@@ -186,25 +193,28 @@ async def handle_day_discussion(
     # Get recent round events for context
     recent_rounds = state.rounds[-3:] if len(state.rounds) >= 3 else state.rounds
 
+    # Import here to avoid circular dependency
+    from src.players.protocol import TurnContext
+
     # Each alive agent speaks
     for agent_name in state.alive_agents:
-        agent = agents[agent_name]
+        agent_state = agent_states[agent_name]
         role = state.role_map[agent_name]
+
+        # Build context for player
+        ctx = TurnContext(
+            alive_agents=state.alive_agents,
+            role=role,
+            known_roles=agent_state.known_roles,
+            memory=agent_state.memory,
+            round_number=state.round_number,
+            round_history=recent_rounds,
+            personality=agent_state.personality,
+        )
 
         # Generate statements (up to MAX_DISCUSSION_STATEMENTS)
         for statement_num in range(MAX_DISCUSSION_STATEMENTS):
-            system_prompt = build_system_prompt(
-                agent.personality, role, "Standard Mafia rules"
-            )
-            discussion_prompt = build_discussion_prompt(
-                agent.personality,
-                role,
-                recent_rounds,
-                agent.memory,
-                state.alive_agents,
-            )
-
-            statement = await claude.generate_dialogue(system_prompt, discussion_prompt)
+            statement = await players[agent_name].generate_statement(ctx)
 
             # Broadcast statement
             await event_cb(
@@ -234,16 +244,16 @@ async def handle_day_discussion(
 
 async def handle_day_vote(
     state: GameState,
-    agents: dict[str, AgentState],
-    claude: "ClaudeClient",  # type: ignore
+    players: dict[str, "PlayerProtocol"],
+    agent_states: dict[str, AgentState],
     event_cb: Callable[[WSEvent], Awaitable[None]],
 ) -> GameState:
     """Execute day vote: each alive agent votes to eliminate someone.
 
     Args:
         state: Current game state.
-        agents: Dict of agent name to agent state.
-        claude: Claude API client for decisions.
+        players: Dict of player name to PlayerProtocol implementation.
+        agent_states: Dict of agent name to agent state (for memory/known_roles).
         event_cb: Async callback for broadcasting events.
 
     Returns:
@@ -261,32 +271,35 @@ async def handle_day_vote(
         )
     )
 
+    # Import here to avoid circular dependency
+    from src.players.protocol import TurnContext
+
     # Collect votes
     votes: dict[str, str] = {}
 
     for agent_name in state.alive_agents:
-        agent = agents[agent_name]
+        agent_state = agent_states[agent_name]
         role = state.role_map[agent_name]
 
         # Vote candidates are all alive agents except self
         candidates = [name for name in state.alive_agents if name != agent_name]
 
         if candidates:
-            system_prompt = build_system_prompt(
-                agent.personality, role, "Standard Mafia rules"
-            )
             # Get recent discussion context
-            discussion_log = state.rounds[-1:] if state.rounds else tuple()
+            recent_rounds = state.rounds[-1:] if state.rounds else tuple()
 
-            vote_prompt = build_vote_prompt(
-                agent.personality,
-                role,
-                discussion_log,
-                state.alive_agents,
-                agent.memory,
+            # Build context for player
+            ctx = TurnContext(
+                alive_agents=state.alive_agents,
+                role=role,
+                known_roles=agent_state.known_roles,
+                memory=agent_state.memory,
+                round_number=state.round_number,
+                round_history=recent_rounds,
+                personality=agent_state.personality,
             )
 
-            vote = await claude.make_decision(system_prompt, vote_prompt, candidates)
+            vote = await players[agent_name].vote(ctx, candidates)
             votes[agent_name] = vote
 
             # Broadcast vote

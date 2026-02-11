@@ -2,19 +2,20 @@
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from typing import TYPE_CHECKING
 
-from src.agents.claude_client import ClaudeClient
 from src.agents.memory import AgentMemory
-from src.agents.personalities import ALL_PERSONALITIES
-from src.config.constants import Phase, Role
-from src.config.settings import Settings
+from src.config.constants import Phase, PlayerType, Role
 from src.engine.phase_handlers import handle_day_discussion, handle_day_vote, handle_night
 from src.engine.role_assigner import assign_roles
 from src.engine.win_checker import check_winner
-from src.models.agent import AgentState
+from src.models.agent import AgentState, Personality
 from src.models.events import WSEvent
 from src.models.game import GameState, RoundResult
 from src.utils.logger import get_logger
+
+if TYPE_CHECKING:
+    from src.players.protocol import PlayerProtocol
 
 log = get_logger(__name__)
 
@@ -24,26 +25,28 @@ class GameEngine:
 
     def __init__(
         self,
-        settings: Settings,
+        players: dict[str, "PlayerProtocol"],
         event_callback: Callable[[WSEvent], Awaitable[None]],
         betting_manager=None,
         game_id: str | None = None,
+        blockchain_contract=None,
     ):
         """Initialize game engine.
 
         Args:
-            settings: Application settings.
+            players: Dict of player name to PlayerProtocol implementation.
             event_callback: Async callback for broadcasting events.
             betting_manager: Optional betting manager for spectator betting.
             game_id: Optional pre-generated game ID (for server mode with betting).
+            blockchain_contract: Optional blockchain contract wrapper for on-chain operations.
         """
-        self.settings = settings
+        self.players = players
         self.event_callback = event_callback
-        self.claude = ClaudeClient(settings)
         self.state: GameState | None = None
         self.agents: dict[str, AgentState] = {}
         self.betting_manager = betting_manager
         self.game_id = game_id
+        self.blockchain_contract = blockchain_contract
 
     async def run_game(self) -> GameState:
         """Run a complete game from start to finish.
@@ -73,6 +76,20 @@ class GameEngine:
                     payouts = self.betting_manager.settle(winner)
                     log.info("bets_settled", num_payouts=len(payouts))
 
+                # Settle on-chain if blockchain is enabled
+                if self.blockchain_contract:
+                    try:
+                        numeric_game_id = self._uuid_to_uint256(self.state.game_id)
+                        mafia_won = winner == "mafia"
+                        await self.blockchain_contract.settle(numeric_game_id, mafia_won)
+                        log.info("blockchain_game_settled", winner=winner)
+                    except Exception as exc:
+                        log.warning(
+                            "blockchain_settle_failed",
+                            error=str(exc),
+                            msg="Continuing with local settlement",
+                        )
+
                 await self.event_callback(
                     WSEvent(
                         event_type="game_over",
@@ -91,6 +108,31 @@ class GameEngine:
                 )
 
                 log.info("game_over", winner=winner, rounds=self.state.round_number)
+
+                # Transition to REVEAL phase to show player identities
+                self.state = self.state.model_copy(update={"phase": Phase.REVEAL})
+
+                # Broadcast identity reveals
+                for name, player in self.players.items():
+                    await self.event_callback(
+                        WSEvent(
+                            event_type="identity_reveal",
+                            data={
+                                "agent": name,
+                                "player_type": player.player_type.value,
+                                "role": self.state.role_map[name].value,
+                            },
+                            game_id=self.state.game_id,
+                            timestamp=datetime.now().isoformat(),
+                        )
+                    )
+
+                # Settle identity bets
+                if self.betting_manager:
+                    identity_payouts = self.betting_manager.settle_identity_bets(self.players)
+                    log.info("identity_bets_settled", num_payouts=len(identity_payouts))
+
+                log.info("reveal_phase_complete", player_count=len(self.players))
                 break
 
             # Execute phase
@@ -98,17 +140,17 @@ class GameEngine:
 
             if self.state.phase == Phase.NIGHT:
                 self.state = await handle_night(
-                    self.state, self.agents, self.claude, self.event_callback
+                    self.state, self.players, self.agents, self.event_callback
                 )
 
             elif self.state.phase == Phase.DAY_DISCUSSION:
                 self.state = await handle_day_discussion(
-                    self.state, self.agents, self.claude, self.event_callback
+                    self.state, self.players, self.agents, self.event_callback
                 )
 
             elif self.state.phase == Phase.DAY_VOTE:
                 self.state = await handle_day_vote(
-                    self.state, self.agents, self.claude, self.event_callback
+                    self.state, self.players, self.agents, self.event_callback
                 )
 
             # Update agent states after phase (memory + detective knowledge)
@@ -139,26 +181,40 @@ class GameEngine:
 
     async def _initialize_game(self) -> None:
         """Initialize game state and agents."""
-        # Assign roles to personalities
-        agent_names = [p.name for p in ALL_PERSONALITIES]
+        # Get player names from the players dict
+        agent_names = list(self.players.keys())
         role_map = assign_roles(agent_names)
 
         log.info("roles_assigned", role_map=role_map)
 
-        # Create agent states
+        # Create agent states for each player
         self.agents = {}
-        for personality in ALL_PERSONALITIES:
-            role = role_map[personality.name]
+        for name, player in self.players.items():
+            role = role_map[name]
 
             # Mafia agents know each other
             known_roles = {}
             if role == Role.MAFIA:
                 known_roles = {
-                    name: r for name, r in role_map.items() if r == Role.MAFIA
+                    n: r for n, r in role_map.items() if r == Role.MAFIA
                 }
 
-            self.agents[personality.name] = AgentState(
-                name=personality.name,
+            # Get personality if the player is a House AI, otherwise use a generic personality
+            personality = None
+            if player.player_type == PlayerType.HOUSE_AI and hasattr(player, 'personality'):
+                personality = player.personality
+            else:
+                # Create a generic personality for non-AI players
+                personality = Personality(
+                    name=name,
+                    trait="player",
+                    description=f"{name} is playing the game.",
+                    speaking_style="casual",
+                    suspicion_bias=0.5,
+                )
+
+            self.agents[name] = AgentState(
+                name=name,
                 personality=personality,
                 role=role,
                 is_alive=True,
@@ -182,6 +238,19 @@ class GameEngine:
             state_kwargs["game_id"] = self.game_id
 
         self.state = GameState(**state_kwargs)
+
+        # Create game on-chain if blockchain is enabled
+        if self.blockchain_contract:
+            try:
+                numeric_game_id = self._uuid_to_uint256(self.state.game_id)
+                await self.blockchain_contract.create_game(numeric_game_id)
+                log.info("blockchain_game_created", game_id=numeric_game_id)
+            except Exception as exc:
+                log.warning(
+                    "blockchain_create_failed",
+                    error=str(exc),
+                    msg="Game will continue without blockchain",
+                )
 
         # Broadcast game start
         await self.event_callback(
@@ -242,3 +311,15 @@ class GameEngine:
                 updates["known_roles"] = new_known
 
             self.agents[name] = agent.model_copy(update=updates)
+
+    def _uuid_to_uint256(self, uuid_str: str) -> int:
+        """Convert UUID game_id to uint256 for smart contract.
+
+        Args:
+            uuid_str: UUID string (e.g., "550e8400-e29b-41d4-a716-446655440000").
+
+        Returns:
+            Integer representation suitable for uint256.
+        """
+        # Remove hyphens and convert to int, then mod to keep manageable
+        return int(uuid_str.replace("-", ""), 16) % (2**64)

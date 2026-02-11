@@ -1,8 +1,8 @@
-"""AI-powered odds analysis using Claude."""
+"""AI-powered odds analysis using LLM."""
 
 from decimal import Decimal
 
-from src.agents.claude_client import ClaudeClient
+from src.agents.llm_client import LLMClient
 from src.config.constants import Role
 from src.models.betting import OddsBoard
 from src.models.game import GameState
@@ -11,15 +11,15 @@ from src.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-async def calculate_ai_odds(game_state: GameState, claude: ClaudeClient) -> OddsBoard:
+async def calculate_ai_odds(game_state: GameState, llm_client: LLMClient) -> OddsBoard:
     """Use AI to analyze game state and generate odds.
 
-    Summarizes game state, sends to Claude Haiku, parses response into OddsBoard.
+    Summarizes game state, sends to LLM, parses response into OddsBoard.
     Fallback: uniform distribution if parsing fails.
 
     Args:
         game_state: Current game state to analyze.
-        claude: Claude client for AI analysis.
+        llm_client: LLM client for AI analysis.
 
     Returns:
         OddsBoard with AI-generated odds.
@@ -29,7 +29,7 @@ async def calculate_ai_odds(game_state: GameState, claude: ClaudeClient) -> Odds
 
     try:
         # Get AI odds analysis
-        odds_dict = await claude.analyze_odds(summary)
+        odds_dict = await llm_client.analyze_odds(summary)
 
         # Parse into OddsBoard fields
         mafia_win_prob = Decimal(str(odds_dict.get("mafia_win", 0.5)))

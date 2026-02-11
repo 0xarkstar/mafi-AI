@@ -54,3 +54,11 @@ Thumbs.db
 
 # Logs
 *.log
+
+# Hardhat / Node.js
+node_modules/
+cache/
+artifacts/
+typechain-types/
+coverage/
+deployment.json

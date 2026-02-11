@@ -1,9 +1,9 @@
-"""Claude API client wrapper with retry logic."""
+"""LLM API client wrapper with retry logic."""
 
 import random
 import re
 
-import anthropic
+import openai
 
 from src.config.settings import Settings
 from src.utils.logger import get_logger
@@ -12,17 +12,17 @@ from src.utils.retry import async_retry
 log = get_logger(__name__)
 
 
-class ClaudeClient:
-    """Wrapper for Claude API with dialogue and decision generation."""
+class LLMClient:
+    """Wrapper for LLM API with dialogue and decision generation."""
 
     def __init__(self, settings: Settings):
-        """Initialize Claude client.
+        """Initialize LLM client.
 
         Args:
             settings: Application settings with API key and model config.
         """
-        self.client = anthropic.AsyncAnthropic(
-            api_key=settings.anthropic_api_key.get_secret_value()
+        self.client = openai.AsyncOpenAI(
+            api_key=settings.openai_api_key.get_secret_value(),
         )
         self.dialogue_model = settings.dialogue_model
         self.decision_model = settings.decision_model
@@ -30,7 +30,7 @@ class ClaudeClient:
 
     @async_retry(max_attempts=3)
     async def generate_dialogue(self, system: str, prompt: str) -> str:
-        """Generate dialogue using Haiku model.
+        """Generate dialogue using LLM model.
 
         Args:
             system: System prompt with personality and role.
@@ -41,14 +41,16 @@ class ClaudeClient:
         """
         log.debug("generating_dialogue", model=self.dialogue_model)
 
-        response = await self.client.messages.create(
+        response = await self.client.chat.completions.create(
             model=self.dialogue_model,
             max_tokens=300,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
         )
 
-        text = response.content[0].text
+        text = response.choices[0].message.content
         log.debug("dialogue_generated", length=len(text))
 
         return text
@@ -57,7 +59,7 @@ class ClaudeClient:
     async def make_decision(
         self, system: str, prompt: str, choices: list[str]
     ) -> str:
-        """Make a strategic decision using Sonnet model.
+        """Make a strategic decision using LLM model.
 
         Args:
             system: System prompt with personality and role.
@@ -73,14 +75,16 @@ class ClaudeClient:
             num_choices=len(choices),
         )
 
-        response = await self.client.messages.create(
+        response = await self.client.chat.completions.create(
             model=self.decision_model,
             max_tokens=150,
-            system=system,
-            messages=[{"role": "user", "content": prompt}],
+            messages=[
+                {"role": "system", "content": system},
+                {"role": "user", "content": prompt},
+            ],
         )
 
-        text = response.content[0].text.strip()
+        text = response.choices[0].message.content.strip()
         log.debug("decision_response", response=text)
 
         # Parse response to extract a valid choice
@@ -126,13 +130,13 @@ citizen_win: 0.X
 agent_name: 0.X
 """
 
-        response = await self.client.messages.create(
+        response = await self.client.chat.completions.create(
             model=self.oddsmaker_model,
             max_tokens=400,
             messages=[{"role": "user", "content": prompt}],
         )
 
-        text = response.content[0].text
+        text = response.choices[0].message.content
         log.debug("odds_response", response=text)
 
         # Parse probabilities
@@ -144,7 +148,7 @@ agent_name: 0.X
         """Parse response text to extract a valid choice.
 
         Args:
-            text: Response text from Claude.
+            text: Response text from LLM.
             choices: List of valid choices.
 
         Returns:

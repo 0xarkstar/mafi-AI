@@ -148,24 +148,46 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     """
     import uuid
 
-    from src.agents.claude_client import ClaudeClient
+    from src.agents.llm_client import LLMClient
+    from src.agents.personalities import ALL_PERSONALITIES
     from src.betting.manager import BettingManager
+    from src.lobby.manager import LobbyManager
 
     # Generate game_id upfront
     game_id = str(uuid.uuid4())
 
-    # Create Claude client and betting manager
-    claude_client = ClaudeClient(settings)
-    betting_manager = BettingManager(claude_client, game_id)
+    # Create LLM client and betting manager
+    llm_client = LLMClient(settings)
+    betting_manager = BettingManager(llm_client, game_id)
+
+    # Create lobby manager
+    lobby_manager = LobbyManager(settings)
 
     # Set betting manager in routes module
     set_betting_manager(betting_manager)
 
+    # Initialize blockchain if enabled
+    blockchain_contract = None
+    if settings.blockchain_enabled:
+        from src.blockchain.contract import MafiaBettingContract
+        from src.blockchain.provider import BlockchainProvider
+
+        provider = BlockchainProvider(
+            rpc_url=settings.blockchain_rpc_url,
+            private_key=settings.blockchain_private_key.get_secret_value(),
+            contract_address=settings.blockchain_contract_address,
+        )
+        if await provider.is_connected():
+            blockchain_contract = MafiaBettingContract(provider)
+            log.info("blockchain_connected", rpc=settings.blockchain_rpc_url)
+        else:
+            log.warning("blockchain_connection_failed")
+
     # Create FastAPI app with betting manager
     app = create_app(settings, ws_manager, betting_manager)
 
-    # Create game engine with betting manager and game_id
-    engine = GameEngine(settings, ws_manager.broadcast, betting_manager, game_id)
+    # Store lobby manager on app state
+    app.state.lobby_manager = lobby_manager
 
     # Configure uvicorn server
     config = uvicorn.Config(
@@ -184,8 +206,65 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     print(f"WebSocket: ws://localhost:{settings.port}/ws")
     print("="*60 + "\n")
 
-    # Start game in background
-    game_task = asyncio.create_task(run_game_with_delay(engine))
+    # Start game with lobby logic
+    async def start_game_when_ready():
+        """Wait for lobby to fill, then start game."""
+        lobby_timeout_seconds = getattr(settings, "lobby_timeout_seconds", 30)
+        log.info("lobby_waiting", timeout=lobby_timeout_seconds)
+        print(f"⏳ Lobby waiting for players ({lobby_timeout_seconds}s timeout)...")
+
+        # Wait for lobby timeout
+        await asyncio.sleep(lobby_timeout_seconds)
+
+        # Fill remaining slots with House AI
+        log.info("filling_with_house_ai")
+        lobby_manager.fill_with_house_ai(llm_client, ALL_PERSONALITIES)
+        players = lobby_manager.get_players()
+
+        log.info("game_starting", player_count=len(players))
+        print(f"\n🎮 Starting game with {len(players)} players...")
+
+        # Create engine with players
+        engine = GameEngine(
+            settings,
+            ws_manager.broadcast,
+            betting_manager,
+            game_id,
+            blockchain_contract,
+            players=players,
+        )
+
+        # Broadcast game starting event
+        from datetime import datetime
+
+        await ws_manager.broadcast(
+            WSEvent(
+                event_type="game_starting",
+                data={"player_count": len(players)},
+                game_id=game_id,
+                timestamp=datetime.now().isoformat(),
+            )
+        )
+
+        set_game_active(True)
+
+        try:
+            final_state = await engine.run_game()
+
+            # Update routes module with final state
+            set_game_state(final_state)
+
+            log.info("game_completed", winner=final_state.winner)
+            print(f"\n✅ Game completed! Winner: {final_state.winner}")
+
+        except Exception as exc:
+            log.exception("game_error", error=str(exc))
+            set_game_active(False)
+            raise
+        finally:
+            set_game_active(False)
+
+    game_task = asyncio.create_task(start_game_when_ready())
 
     try:
         # Run server (blocks until shutdown)
@@ -223,9 +302,9 @@ async def main() -> None:
     log.info("starting_mafia_ai", mode="terminal" if args.no_api else "server")
 
     # Verify API key
-    if not settings.anthropic_api_key.get_secret_value():
-        log.error("anthropic_api_key_missing")
-        print("\n❌ Error: ANTHROPIC_API_KEY not set in environment or .env file")
+    if not settings.openai_api_key.get_secret_value():
+        log.error("openai_api_key_missing")
+        print("\n❌ Error: OPENAI_API_KEY not set in environment or .env file")
         print("Please set your API key and try again.\n")
         return
 

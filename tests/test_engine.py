@@ -144,18 +144,19 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_night_produces_events(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that handle_night produces correct events."""
         callback, events = event_collector
 
-        # Configure mock to return valid targets
-        mock_claude_client.make_decision = AsyncMock(
-            side_effect=["TestAgent4", "TestAgent5"]  # Kill, investigate
-        )
+        # Configure mock players to return valid targets
+        for name, player in mock_players.items():
+            player.night_action = AsyncMock(
+                side_effect=["TestAgent4", "TestAgent5"]  # Kill, investigate
+            )
 
         new_state = await handle_night(
-            sample_game_state, sample_agents, mock_claude_client, callback
+            sample_game_state, mock_players, sample_agents, callback
         )
 
         # Check events
@@ -169,18 +170,19 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_night_kills_target(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that handle_night applies night kill correctly."""
         callback, events = event_collector
 
         # Mafia kills TestAgent4
-        mock_claude_client.make_decision = AsyncMock(
-            side_effect=["TestAgent4", "TestAgent5"]
-        )
+        for name, player in mock_players.items():
+            player.night_action = AsyncMock(
+                side_effect=["TestAgent4", "TestAgent5"]
+            )
 
         new_state = await handle_night(
-            sample_game_state, sample_agents, mock_claude_client, callback
+            sample_game_state, mock_players, sample_agents, callback
         )
 
         # Check that TestAgent4 is dead
@@ -195,18 +197,17 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_night_detective_investigates(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that detective investigation is recorded."""
         callback, events = event_collector
 
-        # Detective investigates TestAgent1 (who is mafia)
-        mock_claude_client.make_decision = AsyncMock(
-            side_effect=["TestAgent5", "TestAgent1"]  # Kill, investigate
-        )
+        # Configure mocks: TestAgent1 (mafia) kills TestAgent5, TestAgent3 (detective) investigates TestAgent1
+        mock_players["TestAgent1"].night_action = AsyncMock(return_value="TestAgent5")
+        mock_players["TestAgent3"].night_action = AsyncMock(return_value="TestAgent1")
 
         new_state = await handle_night(
-            sample_game_state, sample_agents, mock_claude_client, callback
+            sample_game_state, mock_players, sample_agents, callback
         )
 
         # Check investigation result
@@ -216,17 +217,18 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_night_returns_new_state(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that handle_night returns new immutable state."""
         callback, _ = event_collector
 
-        mock_claude_client.make_decision = AsyncMock(
-            side_effect=["TestAgent4", "TestAgent5"]
-        )
+        for name, player in mock_players.items():
+            player.night_action = AsyncMock(
+                side_effect=["TestAgent4", "TestAgent5"]
+            )
 
         new_state = await handle_night(
-            sample_game_state, sample_agents, mock_claude_client, callback
+            sample_game_state, mock_players, sample_agents, callback
         )
 
         # Verify immutability
@@ -236,7 +238,7 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_day_discussion_produces_messages(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that handle_day_discussion produces agent messages."""
         callback, events = event_collector
@@ -244,12 +246,13 @@ class TestPhaseHandlers:
         # Set state to DAY_DISCUSSION
         state = sample_game_state.model_copy(update={"phase": Phase.DAY_DISCUSSION})
 
-        mock_claude_client.generate_dialogue = AsyncMock(
-            return_value="I think someone is suspicious."
-        )
+        for name, player in mock_players.items():
+            player.generate_statement = AsyncMock(
+                return_value="I think someone is suspicious."
+            )
 
         new_state = await handle_day_discussion(
-            state, sample_agents, mock_claude_client, callback
+            state, mock_players, sample_agents, callback
         )
 
         # Check that agent messages were generated
@@ -261,14 +264,14 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_day_discussion_returns_new_state(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that handle_day_discussion returns new state."""
         callback, _ = event_collector
         state = sample_game_state.model_copy(update={"phase": Phase.DAY_DISCUSSION})
 
         new_state = await handle_day_discussion(
-            state, sample_agents, mock_claude_client, callback
+            state, mock_players, sample_agents, callback
         )
 
         # Verify immutability
@@ -277,7 +280,7 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_day_vote_eliminates_majority(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that handle_day_vote eliminates agent with majority."""
         callback, events = event_collector
@@ -293,10 +296,11 @@ class TestPhaseHandlers:
             "TestAgent5",  # TestAgent6 votes
             "TestAgent4",  # TestAgent7 votes
         ]
-        mock_claude_client.make_decision = AsyncMock(side_effect=votes)
+        for name, player in mock_players.items():
+            player.vote = AsyncMock(side_effect=votes)
 
         new_state = await handle_day_vote(
-            state, sample_agents, mock_claude_client, callback
+            state, mock_players, sample_agents, callback
         )
 
         # Check elimination
@@ -310,32 +314,27 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_day_vote_no_elimination_on_tie(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that no elimination occurs on tied vote."""
         callback, _ = event_collector
         state = sample_game_state.model_copy(update={"phase": Phase.DAY_VOTE})
 
         # Create a tie: 3 votes for TestAgent4, 3 for TestAgent5, 1 for TestAgent6
-        votes = [
-            "TestAgent4",  # TestAgent1
-            "TestAgent4",  # TestAgent2
-            "TestAgent4",  # TestAgent3
-            "TestAgent5",  # TestAgent4
-            "TestAgent5",  # TestAgent5 (voting for someone else)
-            "TestAgent5",  # TestAgent6
-            "TestAgent6",  # TestAgent7
-        ]
-
-        # Actually, there's a 3-way tie here. Let me fix: 3-3-1 means TestAgent4 and TestAgent5 both have 3
-        # which is a tie for top spot
-        mock_claude_client.make_decision = AsyncMock(side_effect=votes)
+        # Configure each player's vote individually
+        mock_players["TestAgent1"].vote = AsyncMock(return_value="TestAgent4")
+        mock_players["TestAgent2"].vote = AsyncMock(return_value="TestAgent4")
+        mock_players["TestAgent3"].vote = AsyncMock(return_value="TestAgent4")
+        mock_players["TestAgent4"].vote = AsyncMock(return_value="TestAgent5")
+        mock_players["TestAgent5"].vote = AsyncMock(return_value="TestAgent5")
+        mock_players["TestAgent6"].vote = AsyncMock(return_value="TestAgent5")
+        mock_players["TestAgent7"].vote = AsyncMock(return_value="TestAgent6")
 
         new_state = await handle_day_vote(
-            state, sample_agents, mock_claude_client, callback
+            state, mock_players, sample_agents, callback
         )
 
-        # No one should be eliminated
+        # No one should be eliminated (TestAgent4 and TestAgent5 both have 3 votes - tie)
         assert len(new_state.alive_agents) == 7
         assert len(new_state.dead_agents) == 0
 
@@ -345,17 +344,18 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_day_vote_increments_round(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that handle_day_vote increments round number."""
         callback, _ = event_collector
         state = sample_game_state.model_copy(update={"phase": Phase.DAY_VOTE})
 
         votes = ["TestAgent4"] * 7  # Everyone votes for TestAgent4
-        mock_claude_client.make_decision = AsyncMock(side_effect=votes)
+        for name, player in mock_players.items():
+            player.vote = AsyncMock(side_effect=votes)
 
         new_state = await handle_day_vote(
-            state, sample_agents, mock_claude_client, callback
+            state, mock_players, sample_agents, callback
         )
 
         # Round should increment
@@ -367,17 +367,18 @@ class TestPhaseHandlers:
 
     @pytest.mark.asyncio
     async def test_handle_day_vote_returns_new_state(
-        self, sample_game_state, sample_agents, mock_claude_client, event_collector
+        self, sample_game_state, sample_agents, mock_players, event_collector
     ):
         """Test that handle_day_vote returns new immutable state."""
         callback, _ = event_collector
         state = sample_game_state.model_copy(update={"phase": Phase.DAY_VOTE})
 
         votes = ["TestAgent4"] * 7
-        mock_claude_client.make_decision = AsyncMock(side_effect=votes)
+        for name, player in mock_players.items():
+            player.vote = AsyncMock(side_effect=votes)
 
         new_state = await handle_day_vote(
-            state, sample_agents, mock_claude_client, callback
+            state, mock_players, sample_agents, callback
         )
 
         # Verify immutability

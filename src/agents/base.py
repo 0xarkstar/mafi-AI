@@ -2,7 +2,7 @@
 
 from abc import ABC, abstractmethod
 
-from src.agents.claude_client import ClaudeClient
+from src.agents.llm_client import LLMClient
 from src.models.agent import AgentState
 from src.models.game import GameState
 
@@ -10,15 +10,15 @@ from src.models.game import GameState
 class BaseAgent(ABC):
     """Abstract base class for AI agents."""
 
-    def __init__(self, state: AgentState, claude_client: ClaudeClient):
+    def __init__(self, state: AgentState, llm_client: LLMClient):
         """Initialize agent.
 
         Args:
             state: Immutable agent state.
-            claude_client: Claude API client for AI calls.
+            llm_client: LLM API client for AI calls.
         """
         self.state = state
-        self.claude = claude_client
+        self.claude = llm_client
 
     @abstractmethod
     async def generate_statement(self, game_state: GameState, context: str) -> str:

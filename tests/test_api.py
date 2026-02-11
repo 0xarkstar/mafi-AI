@@ -19,13 +19,13 @@ from src.models.game import GameState
 def mock_settings():
     """Create mock Settings for testing."""
     settings = MagicMock(spec=Settings)
-    settings.anthropic_api_key = MagicMock()
-    settings.anthropic_api_key.get_secret_value = lambda: "test-key"
+    settings.openai_api_key = MagicMock()
+    settings.openai_api_key.get_secret_value = lambda: "test-key"
     settings.port = 8080
     settings.host = "0.0.0.0"
-    settings.dialogue_model = "claude-haiku-4-5-20251001"
-    settings.decision_model = "claude-sonnet-4-5-20250929"
-    settings.oddsmaker_model = "claude-haiku-4-5-20251001"
+    settings.dialogue_model = "gpt-4o-mini"
+    settings.decision_model = "gpt-4o-mini"
+    settings.oddsmaker_model = "gpt-4o-mini"
     return settings
 
 
@@ -378,3 +378,54 @@ class TestRootEndpoint:
 
         response = test_client.get("/")
         assert response.status_code == 200
+
+
+class TestLobbyWebSocket:
+    """Tests for lobby WebSocket functionality."""
+
+    def test_join_lobby_no_manager(self, client):
+        """Test join_lobby when lobby_manager not available."""
+        with client.websocket_connect("/ws") as websocket:
+            websocket.send_json({"type": "join_lobby", "name": "TestHuman"})
+            response = websocket.receive_json()
+
+            assert response["type"] == "lobby_joined"
+            assert response["data"]["success"] is False
+
+    def test_action_response(self, client):
+        """Test action_response message."""
+        with client.websocket_connect("/ws") as websocket:
+            # Send action response (won't actually resolve since no future set)
+            websocket.send_json({
+                "type": "action_response",
+                "player_name": "TestHuman",
+                "response": "I am innocent!"
+            })
+
+            # Should not receive error (response is handled silently)
+            # Just verify connection stays open
+            websocket.send_json({"type": "ping"})
+            response = websocket.receive_json()
+            assert response["type"] == "pong"
+
+
+class TestMoltbookJoin:
+    """Tests for Moltbook agent join endpoint."""
+
+    def test_join_agent_no_api_key(self, client):
+        """Test POST /api/lobby/join-agent without API key."""
+        response = client.post("/api/lobby/join-agent", json={})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "API key required" in data["error"]
+
+    def test_join_agent_no_lobby(self, client):
+        """Test POST /api/lobby/join-agent when lobby not available."""
+        response = client.post("/api/lobby/join-agent", json={"api_key": "test-key"})
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "Lobby not available" in data["error"]

@@ -1,0 +1,17 @@
+{
+  "name": "mafia-betting-contracts",
+  "version": "1.0.0",
+  "description": "MafiaBetting smart contract for Monad testnet",
+  "scripts": {
+    "compile": "npx hardhat compile",
+    "test": "npx hardhat test",
+    "deploy:testnet": "npx hardhat run scripts/deploy.js --network monadTestnet",
+    "deploy:local": "npx hardhat run scripts/deploy.js --network hardhat"
+  },
+  "devDependencies": {
+    "@nomicfoundation/hardhat-toolbox": "^5.0.0",
+    "@openzeppelin/contracts": "^5.0.0",
+    "dotenv": "^16.4.0",
+    "hardhat": "^2.22.0"
+  }
+}
