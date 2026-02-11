@@ -1,0 +1,48 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>MafiaAI - Live Game</title>
+    <link rel="stylesheet" href="/static/style.css">
+</head>
+<body>
+    <header>
+        <h1>🎭 MAFIA AI</h1>
+        <div class="header-info">
+            <div id="game-status" class="status-badge">Waiting for game...</div>
+            <div id="chip-balance">💰 1000 chips</div>
+        </div>
+    </header>
+
+    <main>
+        <section id="agents-panel">
+            <h2>Players</h2>
+            <div id="agent-cards"></div>
+        </section>
+
+        <section id="chat-panel">
+            <h2>Game Log</h2>
+            <div id="chat-log"></div>
+        </section>
+    </main>
+
+    <section id="phase-banner">
+        <div id="phase-text">LOBBY</div>
+    </section>
+
+    <footer>
+        <section id="vote-display">
+            <h3>Votes</h3>
+            <div id="vote-list"></div>
+        </section>
+
+        <section id="betting-panel">
+            <h3>Betting</h3>
+            <div id="odds-display">Betting opens soon...</div>
+        </section>
+    </footer>
+
+    <script src="/static/app.js"></script>
+</body>
+</html>
