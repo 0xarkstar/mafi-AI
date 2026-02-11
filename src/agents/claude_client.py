@@ -182,8 +182,8 @@ agent_name: 0.X
         odds = {}
 
         # Extract probabilities using regex
-        # Pattern: "name: 0.XX" or "name: XX%"
-        pattern = r"([a-zA-Z_]+):\s*(0?\.\d+|1\.0|\d+%)"
+        # Pattern: "name: 0.XX" or "name: XX%" (names can have digits/underscores)
+        pattern = r"([a-zA-Z][a-zA-Z0-9_]*):\s*(-?\d*\.?\d+%?)"
 
         matches = re.findall(pattern, text)
 
