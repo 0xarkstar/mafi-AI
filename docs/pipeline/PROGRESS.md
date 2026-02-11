@@ -30,7 +30,30 @@
 - Claude API wrapper with Haiku/Sonnet model split
 - Mock-verified full game completion
 
-## Next: Day 2 - WebSocket + Dashboard
-- FastAPI + WebSocket server
-- HTML/CSS/JS dark-theme dashboard
-- Real-time game spectating in browser
+## Day 2: WebSocket + Dashboard ✅
+- Completed: 2026-02-11 19:58
+- Team: p-impl-api (sonnet), p-impl-ui (sonnet)
+- FastAPI + WebSocket server with auto-reconnect
+- HTML/CSS/JS dark-theme dashboard (agent cards, chat log, vote display)
+- Real-time game spectating verified in browser
+- Health endpoint, static file serving, WebSocket connection all working
+- 45 tests still passing
+
+## Day 3: Betting Integration ✅
+- Completed: 2026-02-11 20:12
+- Team: p-integrator (sonnet), p-doc-writer (haiku)
+- BettingManager class: pool management, spectator registration, odds blending (70% AI + 30% market)
+- WebSocket bet handling: place_bet → bet_confirmed/bet_rejected
+- GameEngine hooks: odds update after each phase, settlement on game_over
+- REST: /api/odds endpoint
+- Dashboard: betting panel with amount selector, bet buttons, chip balance display
+- README.md + CLAUDE.md created for hackathon submission
+- 45 tests passing, 8 betting stubs still skipped
+
+## Day 4: Tests + Polish — IN PROGRESS
+- Started: 2026-02-11 20:12
+- Team: p-test-writer (sonnet), p-polish (sonnet)
+- Tasks:
+  1. Replace 8 skipped betting stubs + add API tests (target 70%+ coverage)
+  2. Fix WebSocket event_type/type mismatch for bet responses
+  3. Create .env.example + .gitignore

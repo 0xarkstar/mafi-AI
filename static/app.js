@@ -93,8 +93,15 @@ function initAgentCards() {
  * Route incoming WebSocket events to handlers
  */
 function handleEvent(event) {
-    if (!event || !event.event_type) {
+    if (!event) {
         console.warn('Invalid event received:', event);
+        return;
+    }
+
+    // Support both event_type (broadcast WSEvents) and type (direct responses)
+    const eventType = event.event_type || event.type;
+    if (!eventType) {
+        console.warn('Invalid event received (no event_type or type):', event);
         return;
     }
 
@@ -107,14 +114,15 @@ function handleEvent(event) {
         game_over: handleGameOver,
         bet_placed: handleBetPlaced,
         bet_confirmed: handleBetConfirmed,
-        bet_rejected: handleBetRejected
+        bet_rejected: handleBetRejected,
+        pong: () => console.log('pong received')  // Handle pong silently
     };
 
-    const handler = handlers[event.event_type];
+    const handler = handlers[eventType];
     if (handler) {
         handler(event.data);
     } else {
-        console.warn('Unknown event type:', event.event_type);
+        console.warn('Unknown event type:', eventType);
     }
 }
 
