@@ -18,6 +18,8 @@ dependencies = [
     "websockets>=12.0",
     "python-dotenv>=1.0",
     "web3>=7.0",
+    "x402[fastapi,evm,httpx]>=2.0",
+    "eth-account>=0.10",
 ]
 
 [project.optional-dependencies]

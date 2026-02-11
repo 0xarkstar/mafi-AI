@@ -140,6 +140,77 @@ class BettingManager:
 
         return bet
 
+    def handle_x402_bet(
+        self,
+        bettor_address: str,
+        bet_type: str,
+        target: str,
+        amount_usdc: Decimal,
+        round_number: int,
+        tx_hash: str,
+    ) -> Bet | None:
+        """Place a bet paid via X402 (no balance check needed — already paid).
+
+        Args:
+            bettor_address: Wallet address of bettor.
+            bet_type: Type of bet.
+            target: Bet target.
+            amount_usdc: Amount in USDC.
+            round_number: Current round.
+            tx_hash: Transaction hash of payment.
+
+        Returns:
+            Created Bet if successful, None if invalid bet type.
+        """
+        # Validate bet type
+        try:
+            bet_type_enum = BetType(bet_type)
+        except ValueError:
+            log.warning("x402_bet_rejected", reason="invalid_bet_type", bet_type=bet_type)
+            return None
+
+        # Validate amount
+        if amount_usdc <= 0:
+            log.warning("x402_bet_rejected", reason="invalid_amount", amount=amount_usdc)
+            return None
+
+        # Create bet
+        bet = Bet(
+            bet_id=str(uuid4()),
+            game_id=self.game_id,
+            bettor_id=bettor_address,  # Use wallet address as bettor_id
+            bet_type=bet_type_enum,
+            target=target,
+            amount=amount_usdc,
+            round_placed=round_number,
+            payment_method="x402",
+            tx_hash=tx_hash,
+        )
+
+        # Apply early bonus
+        bet = apply_early_bonus(bet, round_number)
+
+        # Add to pool (immutably)
+        pool = self.pools[bet_type_enum]
+        new_bets = pool.bets + (bet,)
+        new_total = pool.total_amount + bet.amount
+
+        self.pools[bet_type_enum] = pool.model_copy(
+            update={"bets": new_bets, "total_amount": new_total}
+        )
+
+        log.info(
+            "x402_bet_placed",
+            bettor_address=bettor_address,
+            bet_type=bet_type,
+            target=target,
+            amount=float(amount_usdc),
+            weight=float(bet.weight),
+            tx_hash=tx_hash,
+        )
+
+        return bet
+
     async def update_odds(self, game_state: GameState) -> OddsBoard:
         """Update odds board based on game state.
 

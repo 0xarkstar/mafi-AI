@@ -49,6 +49,18 @@ class Settings(BaseSettings):
     blockchain_private_key: SecretStr = SecretStr("")
     blockchain_contract_address: str = ""
 
+    # X402 Open Betting Protocol (optional)
+    x402_enabled: bool = False
+    x402_facilitator_url: str = "https://x402-facilitator.molandak.org"
+    x402_network: str = "eip155:10143"  # Monad testnet
+    x402_usdc_address: str = "0x534b2f3A21130d7a60830c2Df862319e593943A3"
+    x402_pay_to: str = ""  # Server wallet receiving USDC
+
+    # AI Bettor (optional)
+    ai_bettor_enabled: bool = False
+    ai_bettor_private_key: SecretStr = SecretStr("")
+    ai_bettor_budget_usdc: float = 50.0
+
 
 def load_settings() -> Settings:
     """Load settings from environment."""

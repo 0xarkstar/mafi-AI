@@ -58,6 +58,18 @@ Blockchain variables (optional - for on-chain betting):
 - `BLOCKCHAIN_PRIVATE_KEY=0xyour-private-key`
 - `BLOCKCHAIN_CONTRACT_ADDRESS=0xyour-deployed-contract-address`
 
+X402 Open Betting variables (optional - for USDC betting):
+- `X402_ENABLED=false`
+- `X402_FACILITATOR_URL=https://x402-facilitator.molandak.org`
+- `X402_NETWORK=eip155:10143` (Monad testnet)
+- `X402_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3`
+- `X402_PAY_TO=0xyour-server-wallet`
+
+AI Bettor variables (optional - for autonomous betting):
+- `AI_BETTOR_ENABLED=false`
+- `AI_BETTOR_PRIVATE_KEY=0xyour-private-key` (optional for future on-chain settlement)
+- `AI_BETTOR_BUDGET_USDC=50.0` (starting USDC budget)
+
 ## Architecture
 
 ### Design Principles
@@ -82,6 +94,8 @@ Blockchain variables (optional - for on-chain betting):
 | `src/moltbook/` | Moltbook API client for external agent integration |
 | `src/betting/` | Pari-mutuel pool, odds calculation, AI oddsmaker, identity betting |
 | `src/blockchain/` | Web3 provider, contract oracle (create, settle, lock games on-chain) |
+| `src/x402/` | X402 payment middleware, USDC bet models, payment verification |
+| `src/ai_bettor/` | AI Bettor client, game analyzer, betting strategy, immutable state |
 | `src/api/` | FastAPI server, WebSocket manager, REST routes, blockchain config endpoint |
 | `src/storage/` | aiosqlite, migrations, repositories |
 | `src/utils/` | Logging (structlog), retry logic, error hierarchy |
@@ -237,6 +251,177 @@ During REVEAL:
 | WebSocket | Routing for human/agent_human input, player_joined, player_action events |
 | Betting | Calculates odds for IS_AI_OR_HUMAN, settles identity bets in REVEAL phase |
 
+## X402 Open Betting Protocol
+
+### Overview
+
+X402 enables optional open betting using USDC on Monad testnet via the X402 micropayment protocol. Unlike chip-based betting (always available), X402 betting allows users to place real USDC bets with cryptographic payment verification.
+
+**Dual Betting System**: Spectators can place bets using either:
+1. **Chip Betting** (default) — In-game chips, unlimited, pari-mutuel pool
+2. **USDC Betting via X402** (optional) — Real USDC payments, 1.0 USDC minimum, verified on-chain
+
+### X402 Payment Flow
+
+```
+1. Spectator initiates X402 bet via POST /api/bets/x402
+2. Middleware checks x-payment header
+3. If missing → return 402 Payment Required with payment requirements
+4. Spectator pays via X402 facilitator (cryptographic proof)
+5. Middleware verifies payment signature
+6. Extract payer address, amount, tx_hash
+7. Settle payment (mark as claimed on facilitator)
+8. Proceed with bet placement
+```
+
+### Endpoints
+
+**POST /api/bets/x402** — Place a bet with USDC payment (X402 protected)
+
+Request (with x-payment header from X402 facilitator):
+```json
+{
+  "game_id": "game-123",
+  "bet_type": "side_win",
+  "target": "citizens",
+  "amount_usdc": 1.5,
+  "round_number": 0
+}
+```
+
+Response (200 OK):
+```json
+{
+  "bet_id": "bet-456",
+  "game_id": "game-123",
+  "bet_type": "side_win",
+  "target": "citizens",
+  "amount_usdc": 1.5,
+  "payer_address": "0x742d...",
+  "tx_hash": "0xabcd..."
+}
+```
+
+### Configuration
+
+X402 environment variables (optional, default: disabled):
+- `X402_ENABLED=false` — Enable X402 USDC betting
+- `X402_FACILITATOR_URL=https://x402-facilitator.molandak.org` — X402 facilitator endpoint
+- `X402_NETWORK=eip155:10143` — Monad testnet network ID
+- `X402_USDC_ADDRESS=0x534b2f3A...` — USDC token contract on Monad
+- `X402_PAY_TO=0x...` — Server wallet receiving USDC payments
+
+### Implementation
+
+- **Middleware**: `src/x402/middleware.py` — Enforces X402 payment, verifies signatures
+- **Models**: `src/x402/models.py` — X402BetRequest, X402PaymentInfo (frozen Pydantic)
+- **Integration**: Attaches `request.state.x402_payment` with payer info to verified requests
+
+## AI Bettor (Autonomous Betting Agent)
+
+### Overview
+
+AI Bettor is an autonomous WebSocket client that watches live games and places strategic USDC bets via X402. It combines LLM-based game analysis with deterministic betting strategy to maximize expected value.
+
+**Core Features**:
+- Listens to all game events via WebSocket (game_started, phase_change, odds_update, elimination, etc.)
+- Analyzes current game state using GPT-4o-mini
+- Places bets during high-confidence opportunities
+- Enforces betting strategy (cooldown, phase restrictions, confidence threshold)
+- Tracks balance, bets placed, total wagered/won
+
+### Module Structure
+
+| Module | Purpose |
+|--------|---------|
+| `analyzer.py` | LLM-based GameAnalyzer — generates BetDecision from GameObservation |
+| `strategy.py` | Deterministic BettingStrategy — timing, cooldown, confidence → amount mapping |
+| `client.py` | AIBettorClient — main orchestrator, WebSocket listener, bet placer |
+| `models.py` | Frozen Pydantic models (GameObservation, BetDecision, AIBettorState) |
+
+### Betting Strategy
+
+**Phases**: Bets only during `day_discussion` and `day_vote` phases
+
+**Cooldown**: Minimum 30 seconds between bets (prevents rapid fire)
+
+**Confidence Threshold**: Minimum 0.6 (60% confidence) to place bet
+
+**Amount Scaling**: Linear mapping from confidence → amount
+- Confidence 0.6 → $1.00 USDC
+- Confidence 1.0 → $10.00 USDC
+- Formula: `amount = $1 + ($9 × (confidence - 0.6) / 0.4)`
+
+**Balance Protection**: Bet amount capped at available balance
+
+### Game Analysis (LLM)
+
+GameAnalyzer uses OpenAI GPT-4o-mini to evaluate:
+- Current phase and round number
+- Alive vs dead agents
+- Recent events (last 10)
+- Current odds board
+- Available balance
+
+Response format parsed by analyzer:
+```
+bet: yes/no
+bet_type: side_win | is_mafia | next_elimination | is_ai_or_human
+target: <target>
+amount: <1.00-10.00>
+confidence: <0.0-1.0>
+reasoning: <one line>
+```
+
+### Configuration
+
+AI Bettor environment variables (optional, default: disabled):
+- `AI_BETTOR_ENABLED=false` — Enable autonomous betting agent
+- `AI_BETTOR_PRIVATE_KEY=...` — Optional private key for on-chain settlement
+- `AI_BETTOR_BUDGET_USDC=50.0` — Starting budget in USDC
+
+### State Management
+
+AIBettorState (immutable, frozen):
+```python
+balance_usdc: Decimal         # Remaining balance
+bets_placed: int              # Total bets made
+last_bet_time: float | None   # Timestamp of last bet
+total_wagered: Decimal        # Cumulative amount wagered
+total_won: Decimal            # Cumulative winnings
+```
+
+State transitions are immutable:
+```python
+self.state = self.state.model_copy(
+    update={
+        "balance_usdc": new_balance,
+        "bets_placed": new_count,
+        "last_bet_time": time.time(),
+    }
+)
+```
+
+### Usage
+
+```python
+from src.ai_bettor.client import AIBettorClient
+from decimal import Decimal
+
+bettor = AIBettorClient(
+    ws_url="ws://localhost:8080/ws",
+    api_url="http://localhost:8080",
+    api_key="sk-...",
+    budget_usdc=Decimal("50.00"),
+)
+
+# Run until stop() is called
+await bettor.run()
+
+# Stop gracefully
+await bettor.stop()
+```
+
 ## Key Patterns
 
 ### 1. Immutable State Transitions
@@ -358,6 +543,16 @@ src/
 │   ├── __init__.py
 │   ├── provider.py              # AsyncWeb3 + POA middleware
 │   └── contract.py              # Oracle operations (create, settle, lock)
+├── x402/
+│   ├── __init__.py
+│   ├── middleware.py            # X402 payment middleware (402 Payment Required)
+│   └── models.py                # X402BetRequest, X402PaymentInfo (frozen)
+├── ai_bettor/
+│   ├── __init__.py
+│   ├── client.py                # AIBettorClient (main WebSocket orchestrator)
+│   ├── analyzer.py              # GameAnalyzer (LLM-based decision maker)
+│   ├── strategy.py              # BettingStrategy (deterministic rules)
+│   └── models.py                # GameObservation, BetDecision, AIBettorState (frozen)
 ├── api/
 │   ├── __init__.py
 │   ├── server.py                # FastAPI + WebSocket + static files
@@ -388,7 +583,10 @@ tests/
 ├── test_api.py                  # API tests
 ├── test_lobby.py                # Lobby manager tests
 ├── test_players.py              # Player protocol tests
-└── test_blockchain.py           # Blockchain tests
+├── test_blockchain.py           # Blockchain tests
+├── test_x402.py                 # X402 middleware and payment tests
+├── test_x402_betting.py         # X402 betting integration tests
+└── test_ai_bettor.py            # AI Bettor client, analyzer, strategy tests
 
 static/
 ├── index.html                   # Dashboard with identity betting UI
@@ -420,9 +618,9 @@ pyproject.toml                   # Dependencies, pytest config
 - **Async Support** — pytest-asyncio for all async code
 
 ### Test Counts
-- **Python**: 154 tests passing (74% coverage)
+- **Python**: 214 tests passing (78% coverage)
 - **Solidity**: 34 tests passing (Hardhat)
-- **Total**: 188 tests
+- **Total**: 248 tests
 
 ### Running Tests
 ```bash

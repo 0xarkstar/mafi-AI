@@ -159,6 +159,8 @@ class TestBlockchainConfigEndpoint:
         settings.blockchain_rpc_url = ""
         settings.port = 8080
         settings.host = "0.0.0.0"
+        settings.x402_enabled = False
+        settings.ai_bettor_enabled = False
 
         app = create_app(settings, WSManager())
         client = TestClient(app)
@@ -183,6 +185,8 @@ class TestBlockchainConfigEndpoint:
         settings.blockchain_rpc_url = "https://testnet-rpc.monad.xyz"
         settings.port = 8080
         settings.host = "0.0.0.0"
+        settings.x402_enabled = False
+        settings.ai_bettor_enabled = False
 
         app = create_app(settings, WSManager())
         client = TestClient(app)

@@ -2,7 +2,7 @@
 
 from pathlib import Path
 
-from fastapi import FastAPI, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
@@ -46,6 +46,17 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
         allow_headers=["*"],
     )
 
+    # X402 middleware (conditional)
+    if settings.x402_enabled:
+        try:
+            from src.x402.middleware import create_x402_middleware
+
+            x402_mw = create_x402_middleware(settings)
+            app.add_middleware(x402_mw)
+            log.info("x402_middleware_enabled")
+        except ImportError:
+            log.warning("x402_middleware_not_available", reason="module_not_found")
+
     # Include REST API routes
     app.include_router(router)
 
@@ -60,6 +71,92 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
             "chain_id": s.blockchain_chain_id if s.blockchain_enabled else 0,
             "rpc_url": s.blockchain_rpc_url if s.blockchain_enabled else "",
         }
+
+    # X402 betting endpoint
+    @app.post("/api/bets/x402")
+    async def place_x402_bet(request: Request):
+        """Place a bet via X402 payment protocol.
+
+        Any X402-compatible client (Moltbook agents, spectator agents,
+        House AI bettor) can call this endpoint.
+        """
+        from decimal import Decimal as D
+
+        try:
+            # Parse request body
+            body = await request.json()
+            bet_type = body.get("bet_type")
+            target = body.get("target")
+            amount_usdc = body.get("amount_usdc", 0)
+            round_number = body.get("round", 0)
+
+            # Extract payment info from request state (injected by x402 middleware)
+            # If x402_enabled=False, use a mock/test payment from headers
+            if app.state.settings.x402_enabled:
+                payment_info = getattr(request.state, "x402_payment", None)
+                if not payment_info:
+                    return {
+                        "success": False,
+                        "error": "X402 payment info missing",
+                    }
+                bettor_address = payment_info.payer_address
+                tx_hash = payment_info.tx_hash
+            else:
+                # Test mode: accept any bet with mock payment
+                bettor_address = request.headers.get("X-Test-Address", "test-address")
+                tx_hash = request.headers.get("X-Test-TxHash", "test-tx-hash")
+
+            # Validate betting manager exists
+            if not app.state.betting_manager:
+                return {
+                    "success": False,
+                    "error": "Betting not enabled",
+                }
+
+            # Place bet via X402 handler
+            bet = app.state.betting_manager.handle_x402_bet(
+                bettor_address=bettor_address,
+                bet_type=bet_type,
+                target=target,
+                amount_usdc=D(str(amount_usdc)),
+                round_number=round_number,
+                tx_hash=tx_hash,
+            )
+
+            if not bet:
+                return {
+                    "success": False,
+                    "error": "Invalid bet",
+                }
+
+            # Return confirmation with current odds
+            odds_board = app.state.betting_manager.odds_board
+            return {
+                "success": True,
+                "bet_id": bet.bet_id,
+                "bet_type": bet.bet_type.value,
+                "target": bet.target,
+                "amount": float(bet.amount),
+                "weight": float(bet.weight),
+                "tx_hash": bet.tx_hash,
+                "odds": {
+                    "mafia_win": float(odds_board.mafia_win_prob)
+                    if odds_board
+                    else 0.5,
+                    "citizen_win": float(odds_board.citizen_win_prob)
+                    if odds_board
+                    else 0.5,
+                }
+                if odds_board
+                else {},
+            }
+
+        except Exception as exc:
+            log.error("x402_bet_error", error=str(exc))
+            return {
+                "success": False,
+                "error": str(exc),
+            }
 
     # Moltbook agent join endpoint
     @app.post("/api/lobby/join-agent")

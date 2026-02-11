@@ -189,6 +189,25 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     # Store lobby manager on app state
     app.state.lobby_manager = lobby_manager
 
+    # Start AI bettor if enabled
+    bettor_task = None
+    if settings.ai_bettor_enabled:
+        try:
+            from decimal import Decimal
+
+            from src.ai_bettor.client import AIBettorClient
+
+            bettor = AIBettorClient(
+                ws_url=f"ws://localhost:{settings.port}/ws",
+                api_url=f"http://localhost:{settings.port}",
+                api_key=settings.openai_api_key.get_secret_value(),
+                budget_usdc=Decimal(str(settings.ai_bettor_budget_usdc)),
+            )
+            bettor_task = asyncio.create_task(bettor.run())
+            log.info("ai_bettor_started", budget=settings.ai_bettor_budget_usdc)
+        except ImportError:
+            log.warning("ai_bettor_not_available", reason="module_not_found")
+
     # Configure uvicorn server
     config = uvicorn.Config(
         app,
@@ -280,6 +299,14 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
             await game_task
         except asyncio.CancelledError:
             pass
+
+        # Cancel AI bettor if running
+        if bettor_task:
+            bettor_task.cancel()
+            try:
+                await bettor_task
+            except asyncio.CancelledError:
+                pass
 
 
 async def main() -> None:

@@ -26,6 +26,8 @@ def mock_settings():
     settings.dialogue_model = "gpt-4o-mini"
     settings.decision_model = "gpt-4o-mini"
     settings.oddsmaker_model = "gpt-4o-mini"
+    settings.x402_enabled = False
+    settings.ai_bettor_enabled = False
     return settings
 
 
