@@ -15,12 +15,13 @@ from src.utils.logger import get_logger
 log = get_logger(__name__)
 
 
-def create_app(settings: Settings, ws_manager: WSManager) -> FastAPI:
+def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) -> FastAPI:
     """Create and configure FastAPI application.
 
     Args:
         settings: Application settings.
         ws_manager: WebSocket manager instance.
+        betting_manager: Optional betting manager for spectator betting.
 
     Returns:
         Configured FastAPI application.
@@ -30,6 +31,9 @@ def create_app(settings: Settings, ws_manager: WSManager) -> FastAPI:
         description="AI agents play Mafia with real-time spectating",
         version="0.1.0",
     )
+
+    # Store betting manager for WebSocket handler access
+    app.state.betting_manager = betting_manager
 
     # CORS middleware
     app.add_middleware(
@@ -77,16 +81,67 @@ def create_app(settings: Settings, ws_manager: WSManager) -> FastAPI:
             ws: WebSocket connection.
         """
         await ws_manager.connect(ws)
+
+        # Generate session ID for this connection
+        import uuid
+
+        session_id = str(uuid.uuid4())
+
         try:
             while True:
                 data = await ws.receive_json()
 
-                # Handle bet placement from client (Day 3 feature)
+                # Handle bet placement from client
                 if data.get("type") == "place_bet":
                     log.info("bet_received", data=data)
-                    # TODO: Day 3 betting integration
-                    # Will forward to betting module when implemented
-                    pass
+
+                    if app.state.betting_manager:
+                        bet_type = data.get("bet_type")
+                        target = data.get("target")
+                        amount = data.get("amount", 0)
+                        round_number = data.get("round", 0)
+
+                        bet = app.state.betting_manager.place_bet(
+                            session_id, bet_type, target, amount, round_number
+                        )
+
+                        if bet:
+                            balance = app.state.betting_manager.get_spectator_balance(
+                                session_id
+                            )
+                            await ws.send_json(
+                                {
+                                    "type": "bet_confirmed",
+                                    "data": {
+                                        "bet_id": bet.bet_id,
+                                        "bet_type": bet.bet_type.value,
+                                        "target": bet.target,
+                                        "amount": float(bet.amount),
+                                        "weight": float(bet.weight),
+                                        "new_balance": float(balance),
+                                    },
+                                }
+                            )
+                        else:
+                            balance = app.state.betting_manager.get_spectator_balance(
+                                session_id
+                            )
+                            await ws.send_json(
+                                {
+                                    "type": "bet_rejected",
+                                    "data": {
+                                        "reason": "Insufficient chips or invalid bet",
+                                        "balance": float(balance),
+                                    },
+                                }
+                            )
+                    else:
+                        await ws.send_json(
+                            {
+                                "type": "bet_rejected",
+                                "data": {"reason": "Betting not enabled"},
+                            }
+                        )
 
                 # Echo for debugging
                 elif data.get("type") == "ping":

@@ -17,6 +17,8 @@ let gameState = {
     round: 0,
     votes: {}
 };
+let selectedBetAmount = 50;
+let chipBalance = 1000;
 
 /**
  * Initialize WebSocket connection with auto-reconnect
@@ -103,7 +105,9 @@ function handleEvent(event) {
         elimination: handleElimination,
         odds_update: handleOddsUpdate,
         game_over: handleGameOver,
-        bet_placed: handleBetPlaced
+        bet_placed: handleBetPlaced,
+        bet_confirmed: handleBetConfirmed,
+        bet_rejected: handleBetRejected
     };
 
     const handler = handlers[event.event_type];
@@ -258,15 +262,21 @@ function handleOddsUpdate(data) {
 
     if (data.mafia_win_prob !== undefined && data.citizen_win_prob !== undefined) {
         display.innerHTML = `
-            <div style="border-left-color: #ff4444">
+            <div class="odds-row" style="border-left-color: #ff4444">
                 <span>😈 Mafia Win:</span>
-                <strong>${(data.mafia_win_prob * 100).toFixed(1)}%</strong>
+                <strong class="odds-value">${(data.mafia_win_prob * 100).toFixed(1)}%</strong>
             </div>
-            <div style="border-left-color: #00ff88">
+            <div class="odds-row" style="border-left-color: #00ff88">
                 <span>🎉 Citizens Win:</span>
-                <strong>${(data.citizen_win_prob * 100).toFixed(1)}%</strong>
+                <strong class="odds-value">${(data.citizen_win_prob * 100).toFixed(1)}%</strong>
             </div>
         `;
+
+        // Animate odds change
+        document.querySelectorAll('.odds-value').forEach(el => {
+            el.classList.add('pulse-once');
+            setTimeout(() => el.classList.remove('pulse-once'), 600);
+        });
     }
 }
 
@@ -306,11 +316,119 @@ function handleBetPlaced(data) {
 
     // Update chip balance if provided
     if (data.new_balance !== undefined) {
-        document.getElementById('chip-balance').textContent = `💰 ${data.new_balance} chips`;
+        chipBalance = data.new_balance;
+        updateChipDisplay();
     }
 
     if (data.bet_type && data.amount) {
         addSystemMessage(`Bet placed: ${data.amount} chips on ${data.bet_type}`);
+    }
+}
+
+/**
+ * Handle bet confirmed events
+ */
+function handleBetConfirmed(data) {
+    if (!data) {
+        console.warn('Invalid bet_confirmed data:', data);
+        return;
+    }
+
+    chipBalance = data.new_balance;
+    updateChipDisplay();
+
+    const targetName = data.target === 'mafia' ? '😈 Mafia' : '🎉 Citizens';
+    addSystemMessage(`✅ Bet confirmed: ${data.amount} chips on ${targetName} (${data.weight}x weight)`, 'game-over');
+
+    // Add to bet history
+    addBetToHistory(data);
+}
+
+/**
+ * Handle bet rejected events
+ */
+function handleBetRejected(data) {
+    if (!data) {
+        console.warn('Invalid bet_rejected data:', data);
+        return;
+    }
+
+    if (data.balance !== undefined) {
+        chipBalance = data.balance;
+        updateChipDisplay();
+    }
+
+    addSystemMessage(`❌ Bet rejected: ${data.reason}`, 'elimination');
+}
+
+/**
+ * Place a bet via WebSocket
+ */
+function placeBet(betType, target) {
+    if (!ws || ws.readyState !== WebSocket.OPEN) {
+        addSystemMessage('❌ Not connected to server', 'elimination');
+        return;
+    }
+
+    const amount = selectedBetAmount === 'all' ? chipBalance : selectedBetAmount;
+
+    if (amount > chipBalance) {
+        addSystemMessage('❌ Insufficient chips', 'elimination');
+        return;
+    }
+
+    ws.send(JSON.stringify({
+        type: 'place_bet',
+        bet_type: betType,
+        target: target,
+        amount: amount,
+        round: gameState.round
+    }));
+
+    console.log('Bet sent:', { betType, target, amount, round: gameState.round });
+}
+
+/**
+ * Select bet amount
+ */
+function selectBetAmount(amount) {
+    selectedBetAmount = amount;
+
+    // Update button states
+    document.querySelectorAll('.bet-amount').forEach(btn => {
+        btn.classList.remove('selected');
+    });
+
+    const selectedBtn = document.querySelector(`.bet-amount[data-amount="${amount}"]`);
+    if (selectedBtn) {
+        selectedBtn.classList.add('selected');
+    }
+}
+
+/**
+ * Update chip balance display
+ */
+function updateChipDisplay() {
+    document.getElementById('chip-balance').textContent = `💰 ${chipBalance} chips`;
+}
+
+/**
+ * Add bet to history display
+ */
+function addBetToHistory(bet) {
+    const history = document.getElementById('bet-history');
+    const entry = document.createElement('div');
+    entry.className = 'bet-history-entry';
+    entry.innerHTML = `
+        <span>${bet.amount} chips</span>
+        <span>→</span>
+        <span>${bet.target === 'mafia' ? '😈' : '🎉'} ${bet.target}</span>
+    `;
+    history.appendChild(entry);
+
+    // Keep only last 5 bets
+    while (history.children.length > 5) {
+        history.removeChild(history.firstChild);
     }
 }
 
@@ -380,4 +498,15 @@ function escapeHtml(text) {
 document.addEventListener('DOMContentLoaded', () => {
     console.log('MafiaAI Dashboard initializing...');
     connect();
+
+    // Setup bet amount selectors
+    document.querySelectorAll('.bet-amount').forEach(btn => {
+        btn.addEventListener('click', () => {
+            const amount = btn.dataset.amount;
+            selectBetAmount(amount === 'all' ? 'all' : parseInt(amount));
+        });
+    });
+
+    // Select default amount (50)
+    selectBetAmount(50);
 });

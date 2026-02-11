@@ -26,18 +26,24 @@ class GameEngine:
         self,
         settings: Settings,
         event_callback: Callable[[WSEvent], Awaitable[None]],
+        betting_manager=None,
+        game_id: str | None = None,
     ):
         """Initialize game engine.
 
         Args:
             settings: Application settings.
             event_callback: Async callback for broadcasting events.
+            betting_manager: Optional betting manager for spectator betting.
+            game_id: Optional pre-generated game ID (for server mode with betting).
         """
         self.settings = settings
         self.event_callback = event_callback
         self.claude = ClaudeClient(settings)
         self.state: GameState | None = None
         self.agents: dict[str, AgentState] = {}
+        self.betting_manager = betting_manager
+        self.game_id = game_id
 
     async def run_game(self) -> GameState:
         """Run a complete game from start to finish.
@@ -61,6 +67,12 @@ class GameEngine:
                     update={"phase": Phase.GAME_OVER, "winner": winner}
                 )
 
+                # Settle bets if betting is enabled
+                payouts = {}
+                if self.betting_manager:
+                    payouts = self.betting_manager.settle(winner)
+                    log.info("bets_settled", num_payouts=len(payouts))
+
                 await self.event_callback(
                     WSEvent(
                         event_type="game_over",
@@ -68,6 +80,10 @@ class GameEngine:
                             "winner": winner,
                             "rounds": self.state.round_number,
                             "alive_agents": list(self.state.alive_agents),
+                            "payouts": {
+                                session_id: float(payout)
+                                for session_id, payout in payouts.items()
+                            },
                         },
                         game_id=self.state.game_id,
                         timestamp=datetime.now().isoformat(),
@@ -99,6 +115,25 @@ class GameEngine:
             if len(self.state.rounds) > prev_round_count:
                 latest_round = self.state.rounds[-1]
                 self._update_agents_after_round(latest_round)
+
+            # Update odds after phase transition
+            if self.betting_manager and self.state:
+                odds_board = await self.betting_manager.update_odds(self.state)
+                await self.event_callback(
+                    WSEvent(
+                        event_type="odds_update",
+                        data={
+                            "mafia_win_prob": float(odds_board.mafia_win_prob),
+                            "citizen_win_prob": float(odds_board.citizen_win_prob),
+                            "mafia_suspects": {
+                                name: float(prob)
+                                for name, prob in odds_board.mafia_suspects.items()
+                            },
+                        },
+                        game_id=self.state.game_id,
+                        timestamp=datetime.now().isoformat(),
+                    )
+                )
 
         return self.state
 
@@ -132,15 +167,21 @@ class GameEngine:
             )
 
         # Create initial game state
-        self.state = GameState(
-            phase=Phase.NIGHT,  # Start with night phase (round 0)
-            round_number=0,
-            alive_agents=tuple(agent_names),
-            dead_agents=tuple(),
-            role_map=role_map,
-            rounds=tuple(),
-            winner=None,
-        )
+        state_kwargs = {
+            "phase": Phase.NIGHT,  # Start with night phase (round 0)
+            "round_number": 0,
+            "alive_agents": tuple(agent_names),
+            "dead_agents": tuple(),
+            "role_map": role_map,
+            "rounds": tuple(),
+            "winner": None,
+        }
+
+        # Use pre-generated game_id if provided
+        if self.game_id:
+            state_kwargs["game_id"] = self.game_id
+
+        self.state = GameState(**state_kwargs)
 
         # Broadcast game start
         await self.event_callback(

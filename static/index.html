@@ -39,7 +39,33 @@
 
         <section id="betting-panel">
             <h3>Betting</h3>
-            <div id="odds-display">Betting opens soon...</div>
+            <div id="odds-display">
+                <div class="odds-row">
+                    <span>😈 Mafia Win:</span>
+                    <strong class="odds-value">50.0%</strong>
+                </div>
+                <div class="odds-row">
+                    <span>🎉 Citizens Win:</span>
+                    <strong class="odds-value">50.0%</strong>
+                </div>
+            </div>
+            <div id="bet-controls">
+                <div class="bet-amount-selector">
+                    <button class="bet-amount" data-amount="25">25</button>
+                    <button class="bet-amount selected" data-amount="50">50</button>
+                    <button class="bet-amount" data-amount="100">100</button>
+                    <button class="bet-amount" data-amount="all">ALL</button>
+                </div>
+                <div class="bet-buttons">
+                    <button class="bet-btn mafia-btn" onclick="placeBet('side_win', 'mafia')">
+                        😈 Bet Mafia
+                    </button>
+                    <button class="bet-btn citizen-btn" onclick="placeBet('side_win', 'citizens')">
+                        🎉 Bet Citizens
+                    </button>
+                </div>
+            </div>
+            <div id="bet-history"></div>
         </section>
     </footer>
 

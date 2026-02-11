@@ -12,6 +12,7 @@ router = APIRouter(prefix="/api")
 # Global state (will be set by server.py)
 _current_game: GameState | None = None
 _game_active: bool = False
+_betting_manager = None
 
 
 def set_game_state(state: GameState | None) -> None:
@@ -32,6 +33,16 @@ def set_game_active(active: bool) -> None:
     """
     global _game_active
     _game_active = active
+
+
+def set_betting_manager(manager) -> None:
+    """Update betting manager reference.
+
+    Args:
+        manager: BettingManager instance or None.
+    """
+    global _betting_manager
+    _betting_manager = manager
 
 
 @router.get("/health")
@@ -68,3 +79,24 @@ async def get_game(game_id: str) -> dict:
         raise HTTPException(status_code=404, detail=f"Game {game_id} not found")
 
     return _current_game.model_dump()
+
+
+@router.get("/odds")
+async def get_odds() -> dict:
+    """Get current betting odds.
+
+    Returns:
+        Current odds board as JSON.
+    """
+    if _betting_manager and _betting_manager.odds_board:
+        odds = _betting_manager.odds_board
+        return {
+            "game_id": odds.game_id,
+            "round_number": odds.round_number,
+            "mafia_win_prob": float(odds.mafia_win_prob),
+            "citizen_win_prob": float(odds.citizen_win_prob),
+            "mafia_suspects": {
+                name: float(prob) for name, prob in odds.mafia_suspects.items()
+            },
+        }
+    return {"message": "No odds available"}

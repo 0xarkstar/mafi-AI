@@ -5,7 +5,7 @@ import asyncio
 
 import uvicorn
 
-from src.api.routes import set_game_active, set_game_state
+from src.api.routes import set_betting_manager, set_game_active, set_game_state
 from src.api.server import create_app
 from src.api.ws_manager import WSManager
 from src.config.settings import load_settings
@@ -74,8 +74,8 @@ async def run_terminal_mode(settings) -> None:
     Args:
         settings: Application settings.
     """
-    # Create game engine with print callback
-    engine = GameEngine(settings, print_event)
+    # Create game engine with print callback (no betting in terminal mode)
+    engine = GameEngine(settings, print_event, betting_manager=None)
 
     # Run game
     print("\n" + "="*60)
@@ -146,11 +146,26 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
         settings: Application settings.
         ws_manager: WebSocket manager instance.
     """
-    # Create FastAPI app
-    app = create_app(settings, ws_manager)
+    import uuid
 
-    # Create game engine with WebSocket broadcast callback
-    engine = GameEngine(settings, ws_manager.broadcast)
+    from src.agents.claude_client import ClaudeClient
+    from src.betting.manager import BettingManager
+
+    # Generate game_id upfront
+    game_id = str(uuid.uuid4())
+
+    # Create Claude client and betting manager
+    claude_client = ClaudeClient(settings)
+    betting_manager = BettingManager(claude_client, game_id)
+
+    # Set betting manager in routes module
+    set_betting_manager(betting_manager)
+
+    # Create FastAPI app with betting manager
+    app = create_app(settings, ws_manager, betting_manager)
+
+    # Create game engine with betting manager and game_id
+    engine = GameEngine(settings, ws_manager.broadcast, betting_manager, game_id)
 
     # Configure uvicorn server
     config = uvicorn.Config(
