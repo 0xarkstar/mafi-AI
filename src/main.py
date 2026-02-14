@@ -161,7 +161,7 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     betting_manager = BettingManager(llm_client, game_id)
 
     # Create lobby manager
-    lobby_manager = LobbyManager(settings)
+    lobby_manager = LobbyManager()
 
     # Set betting manager in routes module
     set_betting_manager(betting_manager)

@@ -14,19 +14,21 @@ export function ActionPanel({ onSubmit }: ActionPanelProps) {
   const actionRequest = useGameStore((s) => s.actionRequest)
   const [response, setResponse] = useState('')
   const [timeRemaining, setTimeRemaining] = useState(0)
+  const [submitted, setSubmitted] = useState(false)
 
   useEffect(() => {
     if (!actionRequest) return
 
+    setSubmitted(false)
     setTimeRemaining(actionRequest.timeout)
+    const firstOption = actionRequest.options?.[0]
     const interval = setInterval(() => {
       setTimeRemaining((prev) => {
         if (prev <= 1) {
           clearInterval(interval)
-          // Auto-submit random option on timeout
-          const firstOption = actionRequest?.options?.[0]
           if (firstOption) {
             onSubmit(firstOption)
+            setSubmitted(true)
           }
           return 0
         }
@@ -41,9 +43,11 @@ export function ActionPanel({ onSubmit }: ActionPanelProps) {
 
   const handleSubmit = (e?: React.FormEvent) => {
     e?.preventDefault()
+    if (submitted) return
     if (response.trim() || actionRequest.actionType === 'vote') {
       onSubmit(response.trim())
       setResponse('')
+      setSubmitted(true)
     }
   }
 

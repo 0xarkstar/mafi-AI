@@ -161,12 +161,19 @@ export function useWebSocket() {
           break
         }
 
+        case 'usdc_settlement': {
+          const transfers = data['transfers'] as any[] | undefined
+          const count = transfers?.length ?? 0
+          addSystemMessage(`USDC settlement complete: ${count} transfer(s)`)
+          break
+        }
+
         case 'pong':
           // Keepalive response
           break
 
         default:
-          console.warn('Unknown event type:', event_type)
+          break
       }
     })
 

@@ -234,19 +234,17 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
             log.error("moltbook_join_failed", error=str(exc))
             return {"success": False, "error": str(exc)}
 
-    # Static files (will be created by p-impl-ui)
+    # Static files — mount /assets for Vite bundles, explicit route for /
     static_dir = Path(__file__).parent.parent.parent / "static"
-    if static_dir.exists():
-        app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+    assets_dir = static_dir / "assets"
+    if static_dir.exists() and assets_dir.exists():
+        app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
         log.info("static_files_mounted", path=str(static_dir))
 
         @app.get("/")
         async def index():
-            """Serve index.html."""
-            index_path = static_dir / "index.html"
-            if index_path.exists():
-                return FileResponse(index_path)
-            return {"message": "MafiaAI API - UI not yet available"}
+            """Serve the SPA index.html."""
+            return FileResponse(static_dir / "index.html")
     else:
         log.warning("static_dir_not_found", path=str(static_dir))
 
@@ -290,8 +288,11 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                     if hasattr(app.state, "lobby_manager") and app.state.lobby_manager:
                         from src.players.human import HumanPlayer
 
-                        player = HumanPlayer(name=player_name, ws_manager=ws_manager)
-                        success = await app.state.lobby_manager.join(player)
+                        async def _send(msg: dict, _name: str = player_name) -> None:
+                            await ws_manager.send_to_player(_name, msg)
+
+                        player = HumanPlayer(name=player_name, send_to_player=_send)
+                        success = app.state.lobby_manager.join(player)
 
                         await ws.send_json(
                             {
