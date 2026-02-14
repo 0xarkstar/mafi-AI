@@ -8,7 +8,7 @@ from src.agents.llm_client import LLMClient
 from src.betting.odds import apply_early_bonus, calculate_implied_odds
 from src.betting.oddsmaker import calculate_ai_odds
 from src.betting.pool import calculate_payout
-from src.config.constants import BetType, DEFAULT_STARTING_CHIPS, HOUSE_EDGE, PlayerType
+from src.config.constants import BetType, HOUSE_EDGE, MAX_BET_USDC, MIN_BET_USDC, PlayerType
 from src.models.betting import Bet, BettingPool, OddsBoard
 from src.models.game import GameState
 from src.utils.logger import get_logger
@@ -39,59 +39,48 @@ class BettingManager:
             BetType.IS_MAFIA: BettingPool(game_id=game_id, bet_type=BetType.IS_MAFIA),
             BetType.IS_AI_OR_HUMAN: BettingPool(game_id=game_id, bet_type=BetType.IS_AI_OR_HUMAN),
         }
-        self.spectators: dict[str, Decimal] = {}  # session_id → chips
         self.odds_board: OddsBoard | None = None
-
-    def register_spectator(
-        self, session_id: str, chips: int = DEFAULT_STARTING_CHIPS
-    ) -> None:
-        """Register a spectator with starting chips.
-
-        Args:
-            session_id: Unique session ID for spectator.
-            chips: Starting chip amount.
-        """
-        if session_id not in self.spectators:
-            self.spectators[session_id] = Decimal(str(chips))
-            log.info("spectator_registered", session_id=session_id, chips=chips)
 
     def place_bet(
         self,
-        session_id: str,
+        bettor_address: str,
         bet_type: str,
         target: str,
-        amount: int,
+        amount_usdc: Decimal,
         round_number: int,
+        tx_hash: str,
     ) -> Bet | None:
-        """Place a bet in the pool.
+        """Place a USDC bet (unified method for all bets).
+
+        All bets require tx_hash (already paid via x402).
 
         Args:
-            session_id: Spectator session ID.
-            bet_type: Type of bet (side_win, next_elimination, is_mafia).
+            bettor_address: Wallet address of bettor.
+            bet_type: Type of bet (side_win, next_elimination, is_mafia, is_ai_or_human).
             target: Bet target (e.g., "mafia", "citizens", agent name).
-            amount: Bet amount in chips.
+            amount_usdc: Bet amount in USDC.
             round_number: Current round number.
+            tx_hash: Transaction hash of x402 payment.
 
         Returns:
             Created Bet if successful, None if invalid.
         """
-        # Auto-register spectator if not registered
-        if session_id not in self.spectators:
-            self.register_spectator(session_id)
-
         # Validate amount
-        amount_decimal = Decimal(str(amount))
-        if amount_decimal <= 0:
-            log.warning("bet_rejected", reason="invalid_amount", amount=amount)
-            return None
-
-        # Check balance
-        if self.spectators[session_id] < amount_decimal:
+        if amount_usdc < MIN_BET_USDC:
             log.warning(
                 "bet_rejected",
-                reason="insufficient_chips",
-                balance=float(self.spectators[session_id]),
-                amount=amount,
+                reason="amount_below_minimum",
+                amount=float(amount_usdc),
+                minimum=float(MIN_BET_USDC),
+            )
+            return None
+
+        if amount_usdc > MAX_BET_USDC:
+            log.warning(
+                "bet_rejected",
+                reason="amount_above_maximum",
+                amount=float(amount_usdc),
+                maximum=float(MAX_BET_USDC),
             )
             return None
 
@@ -106,84 +95,11 @@ class BettingManager:
         bet = Bet(
             bet_id=str(uuid4()),
             game_id=self.game_id,
-            bettor_id=session_id,
-            bet_type=bet_type_enum,
-            target=target,
-            amount=amount_decimal,
-            round_placed=round_number,
-        )
-
-        # Apply early bonus
-        bet = apply_early_bonus(bet, round_number)
-
-        # Add to pool (immutably)
-        pool = self.pools[bet_type_enum]
-        new_bets = pool.bets + (bet,)
-        new_total = pool.total_amount + bet.amount
-
-        self.pools[bet_type_enum] = pool.model_copy(
-            update={"bets": new_bets, "total_amount": new_total}
-        )
-
-        # Deduct chips from spectator balance
-        self.spectators[session_id] -= bet.amount
-
-        log.info(
-            "bet_placed",
-            session_id=session_id,
-            bet_type=bet_type,
-            target=target,
-            amount=amount,
-            weight=float(bet.weight),
-            new_balance=float(self.spectators[session_id]),
-        )
-
-        return bet
-
-    def handle_x402_bet(
-        self,
-        bettor_address: str,
-        bet_type: str,
-        target: str,
-        amount_usdc: Decimal,
-        round_number: int,
-        tx_hash: str,
-    ) -> Bet | None:
-        """Place a bet paid via X402 (no balance check needed — already paid).
-
-        Args:
-            bettor_address: Wallet address of bettor.
-            bet_type: Type of bet.
-            target: Bet target.
-            amount_usdc: Amount in USDC.
-            round_number: Current round.
-            tx_hash: Transaction hash of payment.
-
-        Returns:
-            Created Bet if successful, None if invalid bet type.
-        """
-        # Validate bet type
-        try:
-            bet_type_enum = BetType(bet_type)
-        except ValueError:
-            log.warning("x402_bet_rejected", reason="invalid_bet_type", bet_type=bet_type)
-            return None
-
-        # Validate amount
-        if amount_usdc <= 0:
-            log.warning("x402_bet_rejected", reason="invalid_amount", amount=amount_usdc)
-            return None
-
-        # Create bet
-        bet = Bet(
-            bet_id=str(uuid4()),
-            game_id=self.game_id,
-            bettor_id=bettor_address,  # Use wallet address as bettor_id
+            bettor_id=bettor_address,
             bet_type=bet_type_enum,
             target=target,
             amount=amount_usdc,
             round_placed=round_number,
-            payment_method="x402",
             tx_hash=tx_hash,
         )
 
@@ -200,7 +116,7 @@ class BettingManager:
         )
 
         log.info(
-            "x402_bet_placed",
+            "bet_placed",
             bettor_address=bettor_address,
             bet_type=bet_type,
             target=target,
@@ -267,24 +183,17 @@ class BettingManager:
         return odds_board
 
     def settle(self, winner: str) -> dict[str, Decimal]:
-        """Settle all bets and distribute payouts.
+        """Settle all bets and calculate payouts.
 
         Args:
             winner: Winner of the game ("mafia" or "citizens").
 
         Returns:
-            Dict of session_id → total payout amount.
+            Dict of wallet_address → total payout amount in USDC.
         """
         # Settle side_win pool
         side_pool = self.pools[BetType.SIDE_WIN]
         payouts = calculate_payout(side_pool, winner)
-
-        # Apply payouts to spectator balances
-        for session_id, payout in payouts.items():
-            if session_id in self.spectators:
-                self.spectators[session_id] += payout
-            else:
-                self.spectators[session_id] = payout
 
         log.info(
             "bets_settled",
@@ -295,19 +204,6 @@ class BettingManager:
 
         return payouts
 
-    def get_spectator_balance(self, session_id: str) -> Decimal:
-        """Get spectator chip balance.
-
-        Args:
-            session_id: Spectator session ID.
-
-        Returns:
-            Current chip balance.
-        """
-        if session_id not in self.spectators:
-            self.register_spectator(session_id)
-        return self.spectators[session_id]
-
     def settle_identity_bets(self, players: dict[str, "PlayerProtocol"]) -> dict[str, Decimal]:
         """Settle identity bets (IS_AI_OR_HUMAN).
 
@@ -317,7 +213,7 @@ class BettingManager:
             players: Dict of player name to PlayerProtocol implementation.
 
         Returns:
-            Dict of session_id → total payout amount.
+            Dict of wallet_address → total payout amount in USDC.
         """
         pool = self.pools[BetType.IS_AI_OR_HUMAN]
 
@@ -368,13 +264,6 @@ class BettingManager:
                     payouts[bet.bettor_id] += payout
                 else:
                     payouts[bet.bettor_id] = payout
-
-        # Apply payouts to spectator balances
-        for session_id, payout in payouts.items():
-            if session_id in self.spectators:
-                self.spectators[session_id] += payout
-            else:
-                self.spectators[session_id] = payout
 
         log.info(
             "identity_bets_settled",

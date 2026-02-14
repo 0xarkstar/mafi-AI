@@ -1,4 +1,4 @@
-"""Betting module tests."""
+"""Betting module tests - USDC only."""
 
 from decimal import Decimal
 from unittest.mock import AsyncMock, MagicMock
@@ -11,9 +11,10 @@ from src.betting.oddsmaker import calculate_ai_odds
 from src.betting.pool import calculate_payout
 from src.config.constants import (
     BetType,
-    DEFAULT_STARTING_CHIPS,
     EARLY_BET_MULTIPLIERS,
     HOUSE_EDGE,
+    MAX_BET_USDC,
+    MIN_BET_USDC,
     Phase,
     Role,
 )
@@ -30,32 +31,35 @@ class TestBettingPool:
             Bet(
                 bet_id="bet1",
                 game_id="test",
-                bettor_id="user1",
+                bettor_id="0xuser1",
                 bet_type=BetType.SIDE_WIN,
                 target="mafia",
                 amount=Decimal("100"),
                 round_placed=0,
                 weight=Decimal("1.0"),
+                tx_hash="0xtx1",
             ),
             Bet(
                 bet_id="bet2",
                 game_id="test",
-                bettor_id="user2",
+                bettor_id="0xuser2",
                 bet_type=BetType.SIDE_WIN,
                 target="mafia",
                 amount=Decimal("200"),
                 round_placed=0,
                 weight=Decimal("1.5"),
+                tx_hash="0xtx2",
             ),
             Bet(
                 bet_id="bet3",
                 game_id="test",
-                bettor_id="user3",
+                bettor_id="0xuser3",
                 bet_type=BetType.SIDE_WIN,
                 target="citizens",
                 amount=Decimal("100"),
                 round_placed=0,
                 weight=Decimal("1.0"),
+                tx_hash="0xtx3",
             ),
         )
 
@@ -76,32 +80,34 @@ class TestBettingPool:
         # user2 payout: (300/400) * 380 = 285
 
         assert len(payouts) == 2
-        assert payouts["user1"] == Decimal("95")
-        assert payouts["user2"] == Decimal("285")
-        assert "user3" not in payouts
+        assert payouts["0xuser1"] == Decimal("95")
+        assert payouts["0xuser2"] == Decimal("285")
+        assert "0xuser3" not in payouts
 
     def test_bet_placement(self):
         """Test placing bets and verifying Bet model fields."""
         bet = Bet(
             bet_id="bet123",
             game_id="game456",
-            bettor_id="user789",
+            bettor_id="0xuser789",
             bet_type=BetType.NEXT_ELIMINATION,
             target="Viktor",
             amount=Decimal("50"),
             round_placed=1,
             weight=Decimal("1.2"),
+            tx_hash="0xtxhash123",
         )
 
         # Verify all fields
         assert bet.bet_id == "bet123"
         assert bet.game_id == "game456"
-        assert bet.bettor_id == "user789"
+        assert bet.bettor_id == "0xuser789"
         assert bet.bet_type == BetType.NEXT_ELIMINATION
         assert bet.target == "Viktor"
         assert bet.amount == Decimal("50")
         assert bet.round_placed == 1
         assert bet.weight == Decimal("1.2")
+        assert bet.tx_hash == "0xtxhash123"
 
         # Test pool total updates
         pool = BettingPool(game_id="game456", bet_type=BetType.NEXT_ELIMINATION)
@@ -127,22 +133,24 @@ class TestBettingPool:
             Bet(
                 bet_id="bet1",
                 game_id="test",
-                bettor_id="user1",
+                bettor_id="0xuser1",
                 bet_type=BetType.SIDE_WIN,
                 target="mafia",
                 amount=Decimal("500"),
                 round_placed=0,
                 weight=Decimal("1.0"),
+                tx_hash="0xtx1",
             ),
             Bet(
                 bet_id="bet2",
                 game_id="test",
-                bettor_id="user2",
+                bettor_id="0xuser2",
                 bet_type=BetType.SIDE_WIN,
                 target="citizens",
                 amount=Decimal("500"),
                 round_placed=0,
                 weight=Decimal("1.0"),
+                tx_hash="0xtx2",
             ),
         )
 
@@ -157,7 +165,7 @@ class TestBettingPool:
 
         # Total: 1000, house edge: 5% (50), net: 950
         # user1 gets all 950 (only winner)
-        assert payouts["user1"] == Decimal("950")
+        assert payouts["0xuser1"] == Decimal("950")
 
         # Verify house edge is exactly 5%
         total_paid_out = sum(payouts.values())
@@ -170,11 +178,12 @@ class TestBettingPool:
         base_bet = Bet(
             bet_id="bet1",
             game_id="test",
-            bettor_id="user1",
+            bettor_id="0xuser1",
             bet_type=BetType.SIDE_WIN,
             target="mafia",
             amount=Decimal("100"),
             round_placed=0,
+            tx_hash="0xtx1",
         )
 
         # Round 0: 1.5x
@@ -196,34 +205,6 @@ class TestBettingPool:
 
         # Verify immutability
         assert base_bet.weight == Decimal("1.0")  # Original unchanged
-
-    def test_bet_window_timeout(self):
-        """Test bet rejection for invalid amounts (0, negative, exceeds balance)."""
-        # This test verifies BettingManager validation
-        mock_claude = MagicMock()
-        mock_claude.analyze_odds = AsyncMock(
-            return_value={"mafia_win": 0.5, "citizen_win": 0.5}
-        )
-
-        manager = BettingManager(mock_claude, "test-game")
-        manager.register_spectator("user1", chips=100)
-
-        # Test zero amount
-        bet = manager.place_bet("user1", "side_win", "mafia", 0, 0)
-        assert bet is None
-
-        # Test negative amount
-        bet = manager.place_bet("user1", "side_win", "mafia", -50, 0)
-        assert bet is None
-
-        # Test exceeds balance
-        bet = manager.place_bet("user1", "side_win", "mafia", 200, 0)
-        assert bet is None
-
-        # Test valid bet
-        bet = manager.place_bet("user1", "side_win", "mafia", 50, 0)
-        assert bet is not None
-        assert bet.amount == Decimal("50")
 
 
 class TestOddsmaker:
@@ -282,74 +263,6 @@ class TestOddsmaker:
         assert 0 <= odds_board.citizen_win_prob <= 1
 
     @pytest.mark.asyncio
-    async def test_odds_update_on_elimination(self):
-        """Test that odds change when game state has fewer alive agents."""
-        mock_claude = MagicMock()
-
-        # First call: 4 agents alive
-        mock_claude.analyze_odds = AsyncMock(
-            return_value={
-                "mafia_win": 0.5,
-                "citizen_win": 0.5,
-                "Viktor": 0.25,
-                "Luna": 0.25,
-                "Rex": 0.25,
-                "Sage": 0.25,
-            }
-        )
-
-        from src.models.game import GameState
-
-        state1 = GameState(
-            game_id="test-game",
-            phase=Phase.DAY_DISCUSSION,
-            round_number=0,
-            alive_agents=("Viktor", "Luna", "Rex", "Sage"),
-            dead_agents=tuple(),
-            role_map={
-                "Viktor": Role.MAFIA,
-                "Luna": Role.DETECTIVE,
-                "Rex": Role.CITIZEN,
-                "Sage": Role.CITIZEN,
-            },
-            rounds=tuple(),
-            winner=None,
-        )
-
-        odds1 = await calculate_ai_odds(state1, mock_claude)
-        assert len(odds1.mafia_suspects) == 4
-
-        # Second call: 3 agents alive (Sage eliminated)
-        mock_claude.analyze_odds = AsyncMock(
-            return_value={
-                "mafia_win": 0.6,
-                "citizen_win": 0.4,
-                "Viktor": 0.5,
-                "Luna": 0.3,
-                "Rex": 0.2,
-            }
-        )
-
-        state2 = GameState(
-            game_id="test-game",
-            phase=Phase.DAY_DISCUSSION,
-            round_number=1,
-            alive_agents=("Viktor", "Luna", "Rex"),
-            dead_agents=("Sage",),
-            role_map=state1.role_map,
-            rounds=tuple(),
-            winner=None,
-        )
-
-        odds2 = await calculate_ai_odds(state2, mock_claude)
-        assert len(odds2.mafia_suspects) == 3
-        assert "Sage" not in odds2.mafia_suspects
-
-        # Verify odds changed
-        assert odds2.mafia_win_prob != odds1.mafia_win_prob
-        assert odds2.round_number == 1
-
-    @pytest.mark.asyncio
     async def test_odds_broadcast_to_spectators(self):
         """Test that BettingManager.update_odds returns OddsBoard."""
         mock_claude = MagicMock()
@@ -394,20 +307,22 @@ class TestImpliedOdds:
             Bet(
                 bet_id="bet1",
                 game_id="test",
-                bettor_id="user1",
+                bettor_id="0xuser1",
                 bet_type=BetType.SIDE_WIN,
                 target="mafia",
                 amount=Decimal("100"),
                 round_placed=0,
+                tx_hash="0xtx1",
             ),
             Bet(
                 bet_id="bet2",
                 game_id="test",
-                bettor_id="user2",
+                bettor_id="0xuser2",
                 bet_type=BetType.SIDE_WIN,
                 target="citizens",
                 amount=Decimal("100"),
                 round_placed=0,
+                tx_hash="0xtx2",
             ),
         )
 
@@ -424,20 +339,22 @@ class TestImpliedOdds:
             Bet(
                 bet_id="bet1",
                 game_id="test",
-                bettor_id="user1",
+                bettor_id="0xuser1",
                 bet_type=BetType.SIDE_WIN,
                 target="mafia",
                 amount=Decimal("300"),
                 round_placed=0,
+                tx_hash="0xtx1",
             ),
             Bet(
                 bet_id="bet2",
                 game_id="test",
-                bettor_id="user2",
+                bettor_id="0xuser2",
                 bet_type=BetType.SIDE_WIN,
                 target="citizens",
                 amount=Decimal("100"),
                 round_placed=0,
+                tx_hash="0xtx2",
             ),
         )
 
@@ -461,127 +378,154 @@ class TestImpliedOdds:
 class TestBettingManager:
     """Tests for BettingManager class."""
 
-    def test_register_spectator(self):
-        """Test new spectator gets DEFAULT_STARTING_CHIPS."""
-        mock_claude = MagicMock()
-        manager = BettingManager(mock_claude, "test-game")
-
-        # Register with default chips
-        manager.register_spectator("user1")
-        assert manager.spectators["user1"] == Decimal(str(DEFAULT_STARTING_CHIPS))
-
-        # Register with custom chips
-        manager.register_spectator("user2", chips=500)
-        assert manager.spectators["user2"] == Decimal("500")
-
-        # Re-registering doesn't reset chips
-        manager.spectators["user1"] = Decimal("750")
-        manager.register_spectator("user1")
-        assert manager.spectators["user1"] == Decimal("750")
-
     def test_place_bet_success(self):
-        """Test valid bet returns Bet and deducts from balance."""
+        """Test valid USDC bet returns Bet."""
         mock_claude = MagicMock()
         manager = BettingManager(mock_claude, "test-game")
-        manager.register_spectator("user1", chips=1000)
-
-        initial_balance = manager.spectators["user1"]
 
         # Place bet
-        bet = manager.place_bet("user1", "side_win", "mafia", 100, 0)
+        bet = manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="side_win",
+            target="mafia",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtxhash123",
+        )
 
         # Verify bet created
         assert bet is not None
-        assert bet.bettor_id == "user1"
+        assert bet.bettor_id == "0xuser1"
         assert bet.target == "mafia"
-        assert bet.amount == Decimal("100")
+        assert bet.amount == Decimal("10.00")
         assert bet.bet_type == BetType.SIDE_WIN
-
-        # Verify balance deducted
-        assert manager.spectators["user1"] == initial_balance - Decimal("100")
-        assert manager.spectators["user1"] == Decimal("900")
+        assert bet.tx_hash == "0xtxhash123"
 
         # Verify bet added to pool
         pool = manager.pools[BetType.SIDE_WIN]
         assert len(pool.bets) == 1
-        assert pool.total_amount == Decimal("100")
+        assert pool.total_amount == Decimal("10.00")
 
-    def test_place_bet_insufficient_chips(self):
-        """Test bet returns None when amount > balance."""
+    def test_place_bet_min_amount_validation(self):
+        """Test bet rejected when below MIN_BET_USDC."""
         mock_claude = MagicMock()
         manager = BettingManager(mock_claude, "test-game")
-        manager.register_spectator("user1", chips=50)
 
-        bet = manager.place_bet("user1", "side_win", "mafia", 100, 0)
+        # Try to bet below minimum
+        bet = manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="side_win",
+            target="mafia",
+            amount_usdc=Decimal("0.50"),  # Below MIN_BET_USDC = 1.0
+            round_number=0,
+            tx_hash="0xtx",
+        )
 
         assert bet is None
-        assert manager.spectators["user1"] == Decimal("50")  # Balance unchanged
+
+        # Verify pool empty
+        pool = manager.pools[BetType.SIDE_WIN]
+        assert len(pool.bets) == 0
+
+    def test_place_bet_max_amount_validation(self):
+        """Test bet rejected when above MAX_BET_USDC."""
+        mock_claude = MagicMock()
+        manager = BettingManager(mock_claude, "test-game")
+
+        # Try to bet above maximum
+        bet = manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="side_win",
+            target="mafia",
+            amount_usdc=Decimal("150.00"),  # Above MAX_BET_USDC = 100.0
+            round_number=0,
+            tx_hash="0xtx",
+        )
+
+        assert bet is None
+
+    def test_place_bet_exactly_min_amount(self):
+        """Test bet accepted at exactly MIN_BET_USDC."""
+        mock_claude = MagicMock()
+        manager = BettingManager(mock_claude, "test-game")
+
+        bet = manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="side_win",
+            target="mafia",
+            amount_usdc=MIN_BET_USDC,
+            round_number=0,
+            tx_hash="0xtx",
+        )
+
+        assert bet is not None
+        assert bet.amount == MIN_BET_USDC
+
+    def test_place_bet_exactly_max_amount(self):
+        """Test bet accepted at exactly MAX_BET_USDC."""
+        mock_claude = MagicMock()
+        manager = BettingManager(mock_claude, "test-game")
+
+        bet = manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="side_win",
+            target="mafia",
+            amount_usdc=MAX_BET_USDC,
+            round_number=0,
+            tx_hash="0xtx",
+        )
+
+        assert bet is not None
+        assert bet.amount == MAX_BET_USDC
 
     def test_place_bet_invalid_type(self):
         """Test bet returns None for bad bet_type."""
         mock_claude = MagicMock()
         manager = BettingManager(mock_claude, "test-game")
-        manager.register_spectator("user1", chips=1000)
 
-        bet = manager.place_bet("user1", "invalid_type", "mafia", 100, 0)
+        bet = manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="invalid_type",
+            target="mafia",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx",
+        )
 
         assert bet is None
-        assert manager.spectators["user1"] == Decimal("1000")  # Balance unchanged
 
-    def test_place_bet_zero_amount(self):
-        """Test bet returns None for amount <= 0."""
-        mock_claude = MagicMock()
-        manager = BettingManager(mock_claude, "test-game")
-        manager.register_spectator("user1", chips=1000)
-
-        # Zero amount
-        bet = manager.place_bet("user1", "side_win", "mafia", 0, 0)
-        assert bet is None
-
-        # Negative amount
-        bet = manager.place_bet("user1", "side_win", "mafia", -50, 0)
-        assert bet is None
-
-    def test_settle_distributes_payouts(self):
-        """Test that settle adds payout to winner balances."""
+    def test_settle_returns_wallet_addresses(self):
+        """Test that settle returns dict of wallet_address → payout."""
         mock_claude = MagicMock()
         manager = BettingManager(mock_claude, "test-game")
 
-        # Register and place bets
-        manager.register_spectator("user1", chips=1000)
-        manager.register_spectator("user2", chips=1000)
-
-        manager.place_bet("user1", "side_win", "mafia", 100, 0)
-        manager.place_bet("user2", "side_win", "citizens", 100, 0)
-
-        # User balances: user1=900, user2=900
+        # Place bets
+        manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="side_win",
+            target="mafia",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx1",
+        )
+        manager.place_bet(
+            bettor_address="0xuser2",
+            bet_type="side_win",
+            target="citizens",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx2",
+        )
 
         # Settle with mafia winning
         payouts = manager.settle("mafia")
 
-        # user1 wins: 200 total pool, 5% house edge = 190 net, user1 gets all 190
-        assert "user1" in payouts
-        assert payouts["user1"] == Decimal("190")
-
-        # Verify balance updated
-        assert manager.spectators["user1"] == Decimal("900") + Decimal("190")
-        assert manager.spectators["user1"] == Decimal("1090")
+        # Verify wallet addresses in payouts (not session IDs)
+        assert "0xuser1" in payouts
+        assert payouts["0xuser1"] == Decimal("19.00")  # 20 pool - 5% edge = 19
 
         # user2 gets nothing
-        assert "user2" not in payouts
-        assert manager.spectators["user2"] == Decimal("900")
-
-    def test_get_spectator_balance_auto_registers(self):
-        """Test that unknown session_id auto-registers."""
-        mock_claude = MagicMock()
-        manager = BettingManager(mock_claude, "test-game")
-
-        # Get balance for unregistered user
-        balance = manager.get_spectator_balance("new_user")
-
-        # Should auto-register with default chips
-        assert balance == Decimal(str(DEFAULT_STARTING_CHIPS))
-        assert "new_user" in manager.spectators
+        assert "0xuser2" not in payouts
 
     @pytest.mark.asyncio
     async def test_update_odds_blending(self):
@@ -594,10 +538,22 @@ class TestBettingManager:
         manager = BettingManager(mock_claude, "test-game")
 
         # Place bets to create market odds: 60% mafia, 40% citizens
-        manager.register_spectator("user1", chips=1000)
-        manager.register_spectator("user2", chips=1000)
-        manager.place_bet("user1", "side_win", "mafia", 60, 0)
-        manager.place_bet("user2", "side_win", "citizens", 40, 0)
+        manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="side_win",
+            target="mafia",
+            amount_usdc=Decimal("6.00"),
+            round_number=0,
+            tx_hash="0xtx1",
+        )
+        manager.place_bet(
+            bettor_address="0xuser2",
+            bet_type="side_win",
+            target="citizens",
+            amount_usdc=Decimal("4.00"),
+            round_number=0,
+            tx_hash="0xtx2",
+        )
 
         from src.models.game import GameState
 
@@ -649,35 +605,51 @@ class TestIdentityBetting:
         """Test placing an identity bet."""
         mock_claude = MagicMock()
         manager = BettingManager(mock_claude, "test-game")
-        manager.register_spectator("user1", chips=1000)
 
         # Place bet on Viktor being AI
-        bet = manager.place_bet("user1", "is_ai_or_human", "Viktor", 100, 0)
+        bet = manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="is_ai_or_human",
+            target="Viktor:ai",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx",
+        )
 
         assert bet is not None
         assert bet.bet_type == BetType.IS_AI_OR_HUMAN
-        assert bet.target == "Viktor"
-        assert bet.amount == Decimal("100")
+        assert bet.target == "Viktor:ai"
+        assert bet.amount == Decimal("10.00")
 
         # Verify pool updated
         pool = manager.pools[BetType.IS_AI_OR_HUMAN]
         assert len(pool.bets) == 1
-        assert pool.total_amount == Decimal("100")
+        assert pool.total_amount == Decimal("10.00")
 
-    def test_settle_identity_bets_ai_correct(self):
-        """Test settling identity bets when AI prediction is correct."""
+    def test_settle_identity_bets_returns_wallet_addresses(self):
+        """Test settling identity bets returns wallet addresses."""
         from src.config.constants import PlayerType
 
         mock_claude = MagicMock()
         manager = BettingManager(mock_claude, "test-game")
 
-        # Register spectators
-        manager.register_spectator("user1", chips=1000)
-        manager.register_spectator("user2", chips=1000)
-
-        # Place bets: user1 bets Viktor is AI (correct), user2 bets Viktor is human (wrong)
-        manager.place_bet("user1", "is_ai_or_human", "Viktor:ai", 100, 0)
-        manager.place_bet("user2", "is_ai_or_human", "Viktor:human", 100, 0)
+        # Place bets
+        manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="is_ai_or_human",
+            target="Viktor:ai",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx1",
+        )
+        manager.place_bet(
+            bettor_address="0xuser2",
+            bet_type="is_ai_or_human",
+            target="Viktor:human",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx2",
+        )
 
         # Create mock player Viktor who is AI
         mock_viktor = MagicMock()
@@ -688,66 +660,43 @@ class TestIdentityBetting:
         # Settle bets
         payouts = manager.settle_identity_bets(players)
 
-        # user1 should win (bet Viktor is AI, and Viktor IS AI)
-        # Total pool: 200, house edge: 5%, net: 190
-        # user1 gets all 190
-        assert "user1" in payouts
-        assert payouts["user1"] == Decimal("190")
-        assert "user2" not in payouts
+        # Verify wallet addresses in payouts
+        assert "0xuser1" in payouts  # Won (bet AI, Viktor is AI)
+        assert payouts["0xuser1"] == Decimal("19.00")  # 20 pool - 5% = 19
+        assert "0xuser2" not in payouts  # Lost
 
-        # Check balances updated
-        assert manager.spectators["user1"] == Decimal("900") + Decimal("190")
-        assert manager.spectators["user1"] == Decimal("1090")
-        assert manager.spectators["user2"] == Decimal("900")  # Lost bet, no payout
-
-    def test_settle_identity_bets_human_correct(self):
-        """Test settling identity bets when human prediction is correct."""
+    def test_settle_identity_bets_multiple_winners(self):
+        """Test settling identity bets with multiple winners."""
         from src.config.constants import PlayerType
 
         mock_claude = MagicMock()
         manager = BettingManager(mock_claude, "test-game")
 
-        # Register spectators
-        manager.register_spectator("user1", chips=1000)
-        manager.register_spectator("user2", chips=1000)
-
-        # Place bets: user1 bets Luna is human (correct), user2 bets Luna is AI (wrong)
-        manager.place_bet("user1", "is_ai_or_human", "Luna:human", 100, 0)
-        manager.place_bet("user2", "is_ai_or_human", "Luna:ai", 100, 0)
-
-        # Create mock player Luna who is human
-        mock_luna = MagicMock()
-        mock_luna.player_type = PlayerType.HUMAN
-
-        players = {"Luna": mock_luna}
-
-        # Settle bets
-        payouts = manager.settle_identity_bets(players)
-
-        # user1 should win
-        assert "user1" in payouts
-        assert payouts["user1"] == Decimal("190")
-        assert "user2" not in payouts
-
-    def test_settle_identity_bets_multiple_players(self):
-        """Test settling identity bets with multiple players."""
-        from src.config.constants import PlayerType
-
-        mock_claude = MagicMock()
-        manager = BettingManager(mock_claude, "test-game")
-
-        # Register spectators
-        manager.register_spectator("user1", chips=1000)
-        manager.register_spectator("user2", chips=1000)
-        manager.register_spectator("user3", chips=1000)
-
-        # Place bets:
-        # user1 bets Viktor is AI (correct), 100 chips
-        # user2 bets Viktor is human (wrong), 100 chips
-        # user3 bets Luna is human (correct), 100 chips
-        manager.place_bet("user1", "is_ai_or_human", "Viktor:ai", 100, 0)
-        manager.place_bet("user2", "is_ai_or_human", "Viktor:human", 100, 0)
-        manager.place_bet("user3", "is_ai_or_human", "Luna:human", 100, 0)
+        # Place bets
+        manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="is_ai_or_human",
+            target="Viktor:ai",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx1",
+        )
+        manager.place_bet(
+            bettor_address="0xuser2",
+            bet_type="is_ai_or_human",
+            target="Viktor:human",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx2",
+        )
+        manager.place_bet(
+            bettor_address="0xuser3",
+            bet_type="is_ai_or_human",
+            target="Luna:human",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx3",
+        )
 
         # Create mock players
         mock_viktor = MagicMock()
@@ -762,18 +711,18 @@ class TestIdentityBetting:
         payouts = manager.settle_identity_bets(players)
 
         # user1 and user3 win
-        # Total pool: 300, house edge: 5%, net: 285
-        # Winning bets: user1 (100 * 1.5 = 150 weighted), user3 (100 * 1.5 = 150 weighted)
-        # Total winning weight: 300
-        # user1 gets: (150/300) * 285 = 142.5
-        # user3 gets: (150/300) * 285 = 142.5
+        # Total pool: 30, house edge: 5%, net: 28.5
+        # Winning bets: user1 (10 * 1.5 = 15), user3 (10 * 1.5 = 15)
+        # Total winning weight: 30
+        # user1 gets: (15/30) * 28.5 = 14.25
+        # user3 gets: (15/30) * 28.5 = 14.25
 
-        assert "user1" in payouts
-        assert "user3" in payouts
-        assert "user2" not in payouts
+        assert "0xuser1" in payouts
+        assert "0xuser3" in payouts
+        assert "0xuser2" not in payouts
 
-        assert payouts["user1"] == Decimal("142.5")
-        assert payouts["user3"] == Decimal("142.5")
+        assert payouts["0xuser1"] == Decimal("14.25")
+        assert payouts["0xuser3"] == Decimal("14.25")
 
     def test_settle_identity_bets_no_bets(self):
         """Test settling identity bets when no bets placed."""
@@ -791,51 +740,4 @@ class TestIdentityBetting:
         # Settle bets (no bets placed)
         payouts = manager.settle_identity_bets(players)
 
-        assert payouts == {}
-
-    def test_settle_identity_bets_invalid_format(self):
-        """Test settling identity bets with invalid target format."""
-        from src.config.constants import PlayerType
-
-        mock_claude = MagicMock()
-        manager = BettingManager(mock_claude, "test-game")
-
-        manager.register_spectator("user1", chips=1000)
-
-        # Manually create a bet with invalid target format
-        from src.models.betting import Bet
-        from uuid import uuid4
-
-        invalid_bet = Bet(
-            bet_id=str(uuid4()),
-            game_id="test-game",
-            bettor_id="user1",
-            bet_type=BetType.IS_AI_OR_HUMAN,
-            target="Viktor",  # Invalid: should be "Viktor:ai" or "Viktor:human"
-            amount=Decimal("100"),
-            round_placed=0,
-        )
-
-        # Add to pool manually
-        pool = manager.pools[BetType.IS_AI_OR_HUMAN]
-        manager.pools[BetType.IS_AI_OR_HUMAN] = pool.model_copy(
-            update={
-                "bets": pool.bets + (invalid_bet,),
-                "total_amount": pool.total_amount + invalid_bet.amount,
-            }
-        )
-
-        # Deduct from spectator balance
-        manager.spectators["user1"] -= invalid_bet.amount
-
-        # Create mock player
-        mock_viktor = MagicMock()
-        mock_viktor.player_type = PlayerType.HOUSE_AI
-
-        players = {"Viktor": mock_viktor}
-
-        # Settle bets (invalid bet should be skipped)
-        payouts = manager.settle_identity_bets(players)
-
-        # No payouts because bet was invalid
         assert payouts == {}

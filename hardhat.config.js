@@ -16,12 +16,12 @@ module.exports = {
     monadTestnet: {
       url: "https://testnet-rpc.monad.xyz",
       chainId: 10143,
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : []
+      accounts: process.env.PRIVATE_KEY && process.env.PRIVATE_KEY.length >= 64 ? [process.env.PRIVATE_KEY] : []
     },
     monadMainnet: {
       url: "https://rpc.monad.xyz",
       chainId: 143,
-      accounts: process.env.PRIVATE_KEY ? [process.env.PRIVATE_KEY] : []
+      accounts: process.env.PRIVATE_KEY && process.env.PRIVATE_KEY.length >= 64 ? [process.env.PRIVATE_KEY] : []
     }
   }
 };

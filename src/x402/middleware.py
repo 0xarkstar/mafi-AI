@@ -38,7 +38,7 @@ class X402Middleware(BaseHTTPMiddleware):
         """
         super().__init__(app)
         self.settings = settings
-        self.protected_paths = protected_paths or ["/api/bets/x402"]
+        self.protected_paths = protected_paths or ["/api/bets"]
         self.enabled = settings.x402_enabled
 
         # Only initialize x402 server if enabled
@@ -64,7 +64,7 @@ class X402Middleware(BaseHTTPMiddleware):
 
                 self.x402_server.register(
                     method="POST",
-                    route_pattern="/api/bets/x402",
+                    route_pattern="/api/bets",
                     payment_requirements=[
                         {
                             "network": Network(settings.x402_network),
@@ -106,8 +106,15 @@ class X402Middleware(BaseHTTPMiddleware):
         Returns:
             Response with payment requirement or successful response
         """
-        # Skip if x402 is disabled
+        # If x402 is disabled, return 503 Service Unavailable for protected paths
         if not self.enabled:
+            path = request.url.path
+            if any(path.startswith(protected) for protected in self.protected_paths):
+                if request.method == "POST":
+                    return Response(
+                        content="X402 betting is not enabled",
+                        status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+                    )
             return await call_next(request)
 
         # Check if this path requires payment

@@ -29,12 +29,15 @@ class Settings(BaseSettings):
 
     # Game
     betting_window_seconds: int = 30
-    starting_chips: int = 1000
 
     # Lobby & Players
     lobby_timeout_seconds: int = 300  # 5 minutes
     human_turn_timeout: int = 60  # 1 minute
     moltbook_api_url: str = "https://api.moltbook.io"
+
+    # Moltbook Identity Authentication
+    moltbook_app_key: SecretStr = SecretStr("")
+    moltbook_audience: str = "mafia-ai.example.com"
 
     # Database
     db_path: Path = Field(default=Path("data/mafia-ai.db"))
@@ -60,6 +63,10 @@ class Settings(BaseSettings):
     ai_bettor_enabled: bool = False
     ai_bettor_private_key: SecretStr = SecretStr("")
     ai_bettor_budget_usdc: float = 50.0
+
+    # USDC Settlement (optional)
+    settlement_enabled: bool = False
+    settlement_private_key: SecretStr = SecretStr("")
 
 
 def load_settings() -> Settings:

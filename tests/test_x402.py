@@ -174,24 +174,23 @@ class TestX402Middleware:
 
     @pytest.mark.asyncio
     async def test_middleware_passthrough_when_disabled(self):
-        """Test middleware passes through requests when disabled."""
+        """Test middleware returns 503 for protected paths when disabled."""
         settings = Settings(x402_enabled=False)
         app = MagicMock()
 
-        middleware = X402Middleware(app, settings)
+        middleware = X402Middleware(app, settings, protected_paths=["/api/bets"])
 
-        # Mock request and call_next
+        # Mock request to protected path
         mock_request = MagicMock()
-        mock_request.url.path = "/api/bets/x402"
+        mock_request.url.path = "/api/bets"
         mock_request.method = "POST"
 
-        mock_response = MagicMock()
-        mock_call_next = AsyncMock(return_value=mock_response)
+        mock_call_next = AsyncMock()
 
         result = await middleware.dispatch(mock_request, mock_call_next)
 
-        assert result == mock_response
-        mock_call_next.assert_called_once_with(mock_request)
+        # Should return 503 when x402 is disabled for protected paths
+        assert result.status_code == 503
 
     @pytest.mark.asyncio
     async def test_middleware_passthrough_unprotected_path(self):
@@ -228,7 +227,7 @@ class TestX402Middleware:
         with patch("x402.FacilitatorClient"), patch(
             "x402.server.x402ResourceServer"
         ):
-            middleware = X402Middleware(app, settings, protected_paths=["/api/bets/x402"])
+            middleware = X402Middleware(app, settings, protected_paths=["/api/bets"])
 
         # Mock GET request to protected path (payment only on POST)
         mock_request = MagicMock()

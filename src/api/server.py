@@ -72,13 +72,14 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
             "rpc_url": s.blockchain_rpc_url if s.blockchain_enabled else "",
         }
 
-    # X402 betting endpoint
-    @app.post("/api/bets/x402")
-    async def place_x402_bet(request: Request):
-        """Place a bet via X402 payment protocol.
+    # Unified betting endpoint (requires X402 payment)
+    @app.post("/api/bets")
+    async def place_bet(request: Request):
+        """Place a bet via X402 payment protocol (unified endpoint).
 
+        All bets (chip-based betting removed) require X402 USDC payment.
         Any X402-compatible client (Moltbook agents, spectator agents,
-        House AI bettor) can call this endpoint.
+        AI Bettor) can call this endpoint.
         """
         from decimal import Decimal as D
 
@@ -91,20 +92,14 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
             round_number = body.get("round", 0)
 
             # Extract payment info from request state (injected by x402 middleware)
-            # If x402_enabled=False, use a mock/test payment from headers
-            if app.state.settings.x402_enabled:
-                payment_info = getattr(request.state, "x402_payment", None)
-                if not payment_info:
-                    return {
-                        "success": False,
-                        "error": "X402 payment info missing",
-                    }
-                bettor_address = payment_info.payer_address
-                tx_hash = payment_info.tx_hash
-            else:
-                # Test mode: accept any bet with mock payment
-                bettor_address = request.headers.get("X-Test-Address", "test-address")
-                tx_hash = request.headers.get("X-Test-TxHash", "test-tx-hash")
+            payment_info = getattr(request.state, "x402_payment", None)
+            if not payment_info:
+                return {
+                    "success": False,
+                    "error": "X402 payment info missing",
+                }
+            bettor_address = payment_info.payer_address
+            tx_hash = payment_info.tx_hash
 
             # Validate betting manager exists
             if not app.state.betting_manager:
@@ -113,8 +108,8 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                     "error": "Betting not enabled",
                 }
 
-            # Place bet via X402 handler
-            bet = app.state.betting_manager.handle_x402_bet(
+            # Place bet via unified handler
+            bet = app.state.betting_manager.place_bet(
                 bettor_address=bettor_address,
                 bet_type=bet_type,
                 target=target,
@@ -152,48 +147,63 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
             }
 
         except Exception as exc:
-            log.error("x402_bet_error", error=str(exc))
+            log.error("bet_placement_error", error=str(exc))
             return {
                 "success": False,
                 "error": str(exc),
             }
 
-    # Moltbook agent join endpoint
+    # Moltbook agent join endpoint (with Identity verification)
     @app.post("/api/lobby/join-agent")
-    async def join_agent(request_data: dict):
-        """Moltbook agent joins the lobby.
+    async def join_agent(request: Request):
+        """Moltbook agent joins the lobby via Identity verification.
 
-        Args:
-            request_data: Request body with api_key.
+        Requires X-Moltbook-Identity header with JWT token.
 
         Returns:
             Success/failure response.
         """
-        api_key = request_data.get("api_key", "")
-
-        if not api_key:
-            return {"success": False, "error": "API key required"}
-
         # Check if lobby exists
         if not hasattr(app.state, "lobby_manager") or not app.state.lobby_manager:
             return {"success": False, "error": "Lobby not available"}
 
         try:
-            # TODO: Validate with Moltbook API
-            # For now, accept any non-empty key
+            # Read X-Moltbook-Identity header
+            identity_token = request.headers.get("X-Moltbook-Identity", "")
+
+            if not identity_token:
+                return {"success": False, "error": "Moltbook Identity token required"}
+
+            # Verify identity via Moltbook
+            from src.moltbook.auth import MoltbookAuth
+
+            auth = MoltbookAuth(
+                app_key=app.state.settings.moltbook_app_key.get_secret_value(),
+                audience=app.state.settings.moltbook_audience,
+                moltbook_api_url=app.state.settings.moltbook_api_url,
+            )
+
+            agent_info = await auth.verify_identity(identity_token)
+
+            # Extract verified agent info
+            agent_id = agent_info["id"]
+            agent_name = agent_info["name"]
+            wallet_address = agent_info["wallet_address"]
+
+            # Create MoltbookAgentPlayer
             from src.moltbook.client import MoltbookClient
             from src.players.moltbook_agent import MoltbookAgentPlayer
 
-            agent_name = f"Moltbook-{api_key[:6]}"
             moltbook_client = MoltbookClient(
                 base_url=app.state.settings.moltbook_api_url
             )
             player = MoltbookAgentPlayer(
                 name=agent_name,
                 moltbook_client=moltbook_client,
-                agent_id=api_key[:12],
-                api_key=api_key,
+                agent_id=agent_id,
+                api_key="",  # No longer needed (verified via Identity)
             )
+
             success = await app.state.lobby_manager.join(player)
 
             if success:
@@ -216,6 +226,7 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
             return {
                 "success": success,
                 "agent_name": agent_name if success else None,
+                "wallet_address": wallet_address if success else None,
                 "players": list(app.state.lobby_manager.players.keys()),
             }
 
@@ -328,57 +339,22 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                     response = data.get("response", "")
                     ws_manager.resolve_response(player_name, response)
 
-                # Handle bet placement from client
+                # Handle bet placement from client (redirect to REST API)
                 elif data.get("type") == "place_bet":
-                    log.info("bet_received", data=data)
+                    log.info("bet_request_via_websocket", data=data)
 
-                    if app.state.betting_manager:
-                        bet_type = data.get("bet_type")
-                        target = data.get("target")
-                        amount = data.get("amount", 0)
-                        round_number = data.get("round", 0)
-
-                        bet = app.state.betting_manager.place_bet(
-                            session_id, bet_type, target, amount, round_number
-                        )
-
-                        if bet:
-                            balance = app.state.betting_manager.get_spectator_balance(
-                                session_id
-                            )
-                            await ws.send_json(
-                                {
-                                    "type": "bet_confirmed",
-                                    "data": {
-                                        "bet_id": bet.bet_id,
-                                        "bet_type": bet.bet_type.value,
-                                        "target": bet.target,
-                                        "amount": float(bet.amount),
-                                        "weight": float(bet.weight),
-                                        "new_balance": float(balance),
-                                    },
-                                }
-                            )
-                        else:
-                            balance = app.state.betting_manager.get_spectator_balance(
-                                session_id
-                            )
-                            await ws.send_json(
-                                {
-                                    "type": "bet_rejected",
-                                    "data": {
-                                        "reason": "Insufficient chips or invalid bet",
-                                        "balance": float(balance),
-                                    },
-                                }
-                            )
-                    else:
-                        await ws.send_json(
-                            {
-                                "type": "bet_rejected",
-                                "data": {"reason": "Betting not enabled"},
-                            }
-                        )
+                    # WebSocket is for spectating only, not betting
+                    # Direct users to use the REST API with X402 payment
+                    await ws.send_json(
+                        {
+                            "type": "bet_info",
+                            "data": {
+                                "message": "Betting is via REST API only",
+                                "endpoint": "POST /api/bets",
+                                "instructions": "Use X402 payment protocol to place bets",
+                            },
+                        }
+                    )
 
                 # Echo for debugging
                 elif data.get("type") == "ping":

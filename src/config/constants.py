@@ -1,5 +1,6 @@
 """Game constants and enums."""
 
+from decimal import Decimal
 from enum import Enum
 
 
@@ -49,4 +50,5 @@ MAX_DISCUSSION_STATEMENTS = 2  # per agent per day
 BETTING_WINDOW_SECONDS = 30
 HOUSE_EDGE = 0.05  # 5%
 EARLY_BET_MULTIPLIERS = {0: 1.5, 1: 1.2}  # round → weight multiplier
-DEFAULT_STARTING_CHIPS = 1000
+MIN_BET_USDC = Decimal("1.0")  # $1 minimum
+MAX_BET_USDC = Decimal("100.0")  # $100 maximum

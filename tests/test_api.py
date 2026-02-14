@@ -265,12 +265,11 @@ class TestWebSocket:
 
             assert response["type"] == "pong"
 
-    def test_websocket_place_bet_success(self, client, betting_manager):
-        """Test placing bet via WebSocket."""
+    def test_websocket_place_bet_redirects_to_rest(self, client, betting_manager):
+        """Test placing bet via WebSocket returns redirect to REST API."""
         routes.set_betting_manager(betting_manager)
 
         with client.websocket_connect("/ws") as websocket:
-            # Place bet
             websocket.send_json(
                 {
                     "type": "place_bet",
@@ -283,39 +282,35 @@ class TestWebSocket:
 
             response = websocket.receive_json()
 
-            assert response["type"] == "bet_confirmed"
+            # WebSocket betting now redirects to REST API
+            assert response["type"] == "bet_info"
             assert "data" in response
-            assert response["data"]["bet_type"] == "side_win"
-            assert response["data"]["target"] == "mafia"
-            assert response["data"]["amount"] == 100.0
-            assert response["data"]["weight"] == 1.5  # Round 0 bonus
-            assert "new_balance" in response["data"]
+            assert "REST API" in response["data"]["message"]
+            assert response["data"]["endpoint"] == "POST /api/bets"
 
-    def test_websocket_place_bet_insufficient_chips(self, client, betting_manager):
-        """Test placing bet with insufficient chips."""
+    def test_websocket_place_bet_redirects_regardless_of_amount(self, client, betting_manager):
+        """Test WebSocket bet redirect works for any amount."""
         routes.set_betting_manager(betting_manager)
 
         with client.websocket_connect("/ws") as websocket:
-            # Try to bet more than balance
             websocket.send_json(
                 {
                     "type": "place_bet",
                     "bet_type": "side_win",
                     "target": "mafia",
-                    "amount": 10000,  # More than DEFAULT_STARTING_CHIPS
+                    "amount": 10000,
                     "round": 0,
                 }
             )
 
             response = websocket.receive_json()
 
-            assert response["type"] == "bet_rejected"
-            assert "data" in response
-            assert "reason" in response["data"]
-            assert "balance" in response["data"]
+            # Always redirects to REST API
+            assert response["type"] == "bet_info"
+            assert "REST API" in response["data"]["message"]
 
-    def test_websocket_place_bet_invalid_type(self, client, betting_manager):
-        """Test placing bet with invalid bet_type."""
+    def test_websocket_place_bet_redirects_invalid_type(self, client, betting_manager):
+        """Test WebSocket bet redirect even for invalid bet types."""
         routes.set_betting_manager(betting_manager)
 
         with client.websocket_connect("/ws") as websocket:
@@ -331,12 +326,10 @@ class TestWebSocket:
 
             response = websocket.receive_json()
 
-            assert response["type"] == "bet_rejected"
-            assert "reason" in response["data"]
+            assert response["type"] == "bet_info"
 
-    def test_websocket_place_bet_no_manager(self, mock_settings, ws_manager):
-        """Test placing bet when betting not enabled."""
-        # Create app WITHOUT betting manager
+    def test_websocket_place_bet_redirects_no_manager(self, mock_settings, ws_manager):
+        """Test WebSocket bet redirect when no betting manager."""
         app = create_app(mock_settings, ws_manager, betting_manager=None)
         test_client = TestClient(app)
 
@@ -353,8 +346,7 @@ class TestWebSocket:
 
             response = websocket.receive_json()
 
-            assert response["type"] == "bet_rejected"
-            assert response["data"]["reason"] == "Betting not enabled"
+            assert response["type"] == "bet_info"
 
 
 class TestRootEndpoint:
@@ -414,18 +406,27 @@ class TestLobbyWebSocket:
 class TestMoltbookJoin:
     """Tests for Moltbook agent join endpoint."""
 
-    def test_join_agent_no_api_key(self, client):
-        """Test POST /api/lobby/join-agent without API key."""
-        response = client.post("/api/lobby/join-agent", json={})
+    def test_join_agent_no_identity_token(self, mock_settings, ws_manager):
+        """Test POST /api/lobby/join-agent without Moltbook Identity token."""
+        # Need a lobby_manager so we reach the token check
+        app = create_app(mock_settings, ws_manager, betting_manager=None)
+        mock_lobby = MagicMock()
+        app.state.lobby_manager = mock_lobby
+        test_client = TestClient(app)
+
+        response = test_client.post("/api/lobby/join-agent")
 
         assert response.status_code == 200
         data = response.json()
         assert data["success"] is False
-        assert "API key required" in data["error"]
+        assert "token" in data["error"].lower() or "Identity" in data["error"]
 
     def test_join_agent_no_lobby(self, client):
         """Test POST /api/lobby/join-agent when lobby not available."""
-        response = client.post("/api/lobby/join-agent", json={"api_key": "test-key"})
+        response = client.post(
+            "/api/lobby/join-agent",
+            headers={"X-Moltbook-Identity": "fake-token"},
+        )
 
         assert response.status_code == 200
         data = response.json()

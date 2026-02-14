@@ -3,20 +3,32 @@ const { ethers } = require("hardhat");
 
 describe("MafiaBetting", function () {
   let mafiaBetting;
+  let usdc;
   let owner;
   let player1;
   let player2;
   let player3;
 
   const GAME_ID = 1;
-  const BET_AMOUNT = ethers.parseEther("1");
+  const BET_AMOUNT = ethers.parseUnits("10", 6); // 10 USDC (6 decimals)
 
   beforeEach(async function () {
     [owner, player1, player2, player3] = await ethers.getSigners();
 
+    // Deploy mock USDC token
+    const MockERC20 = await ethers.getContractFactory("MockERC20");
+    usdc = await MockERC20.deploy("USD Coin", "USDC", 6);
+    await usdc.waitForDeployment();
+
+    // Deploy MafiaBetting contract with USDC address
     const MafiaBetting = await ethers.getContractFactory("MafiaBetting");
-    mafiaBetting = await MafiaBetting.deploy();
+    mafiaBetting = await MafiaBetting.deploy(await usdc.getAddress());
     await mafiaBetting.waitForDeployment();
+
+    // Mint USDC to test accounts
+    await usdc.mint(player1.address, ethers.parseUnits("1000", 6));
+    await usdc.mint(player2.address, ethers.parseUnits("1000", 6));
+    await usdc.mint(player3.address, ethers.parseUnits("1000", 6));
   });
 
   describe("Deployment", function () {
@@ -27,6 +39,17 @@ describe("MafiaBetting", function () {
     it("Should have correct fee constants", async function () {
       expect(await mafiaBetting.HOUSE_FEE_BPS()).to.equal(50);
       expect(await mafiaBetting.FEE_DENOMINATOR()).to.equal(1000);
+    });
+
+    it("Should set the correct USDC address", async function () {
+      expect(await mafiaBetting.usdc()).to.equal(await usdc.getAddress());
+    });
+
+    it("Should reject zero address for USDC", async function () {
+      const MafiaBetting = await ethers.getContractFactory("MafiaBetting");
+      await expect(
+        MafiaBetting.deploy(ethers.ZeroAddress)
+      ).to.be.revertedWith("Invalid USDC address");
     });
   });
 
@@ -62,9 +85,12 @@ describe("MafiaBetting", function () {
       await mafiaBetting.createGame(GAME_ID);
     });
 
-    it("Should allow betting on mafia", async function () {
+    it("Should allow betting on mafia with USDC", async function () {
+      // Approve USDC first
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+
       await expect(
-        mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT })
+        mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT)
       )
         .to.emit(mafiaBetting, "BetPlaced")
         .withArgs(GAME_ID, player1.address, true, BET_AMOUNT);
@@ -77,9 +103,12 @@ describe("MafiaBetting", function () {
       expect(bet.mafiaAmount).to.equal(BET_AMOUNT);
     });
 
-    it("Should allow betting on citizens", async function () {
+    it("Should allow betting on citizens with USDC", async function () {
+      // Approve USDC first
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+
       await expect(
-        mafiaBetting.connect(player1).placeBet(GAME_ID, false, { value: BET_AMOUNT })
+        mafiaBetting.connect(player1).placeBet(GAME_ID, false, BET_AMOUNT)
       )
         .to.emit(mafiaBetting, "BetPlaced")
         .withArgs(GAME_ID, player1.address, false, BET_AMOUNT);
@@ -93,30 +122,67 @@ describe("MafiaBetting", function () {
     });
 
     it("Should allow multiple bets from same player", async function () {
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT });
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT });
+      // Approve USDC for 2 bets
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT * 2n);
+
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
 
       const bet = await mafiaBetting.getPlayerBet(GAME_ID, player1.address);
       expect(bet.mafiaAmount).to.equal(BET_AMOUNT * 2n);
     });
 
     it("Should not allow zero-value bets", async function () {
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+
       await expect(
-        mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: 0 })
+        mafiaBetting.connect(player1).placeBet(GAME_ID, true, 0)
       ).to.be.revertedWith("Bet amount must be greater than 0");
     });
 
-    it("Should not allow betting on non-existent game", async function () {
+    it("Should not allow betting without USDC approval", async function () {
+      // No approval
       await expect(
-        mafiaBetting.connect(player1).placeBet(999, true, { value: BET_AMOUNT })
+        mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT)
+      ).to.be.reverted; // ERC20: insufficient allowance
+    });
+
+    it("Should not allow betting with insufficient USDC balance", async function () {
+      const hugeAmount = ethers.parseUnits("10000", 6);
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), hugeAmount);
+
+      await expect(
+        mafiaBetting.connect(player1).placeBet(GAME_ID, true, hugeAmount)
+      ).to.be.reverted; // ERC20: transfer amount exceeds balance
+    });
+
+    it("Should not allow betting on non-existent game", async function () {
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+
+      await expect(
+        mafiaBetting.connect(player1).placeBet(999, true, BET_AMOUNT)
       ).to.be.revertedWith("Game does not exist");
     });
 
     it("Should not allow betting on locked game", async function () {
       await mafiaBetting.lockBetting(GAME_ID);
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+
       await expect(
-        mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT })
+        mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT)
       ).to.be.revertedWith("Betting is locked");
+    });
+
+    it("Should transfer USDC from bettor to contract", async function () {
+      const initialBalance = await usdc.balanceOf(player1.address);
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
+
+      const finalBalance = await usdc.balanceOf(player1.address);
+      expect(finalBalance).to.equal(initialBalance - BET_AMOUNT);
+
+      const contractBalance = await usdc.balanceOf(await mafiaBetting.getAddress());
+      expect(contractBalance).to.equal(BET_AMOUNT);
     });
   });
 
@@ -157,7 +223,8 @@ describe("MafiaBetting", function () {
   describe("Settling Games", function () {
     beforeEach(async function () {
       await mafiaBetting.createGame(GAME_ID);
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT });
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
       await mafiaBetting.lockBetting(GAME_ID);
     });
 
@@ -204,9 +271,12 @@ describe("MafiaBetting", function () {
     });
 
     it("Should calculate correct payout for winner with 5% house edge", async function () {
-      // Player1 bets 1 ETH on mafia, Player2 bets 1 ETH on citizens
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT });
-      await mafiaBetting.connect(player2).placeBet(GAME_ID, false, { value: BET_AMOUNT });
+      // Player1 bets 10 USDC on mafia, Player2 bets 10 USDC on citizens
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+      await usdc.connect(player2).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
+      await mafiaBetting.connect(player2).placeBet(GAME_ID, false, BET_AMOUNT);
       await mafiaBetting.lockBetting(GAME_ID);
       await mafiaBetting.settle(GAME_ID, true); // Mafia wins
 
@@ -219,20 +289,24 @@ describe("MafiaBetting", function () {
     });
 
     it("Should calculate proportional payouts for multiple winners", async function () {
-      // Player1 bets 2 ETH on mafia, Player2 bets 1 ETH on mafia, Player3 bets 3 ETH on citizens
-      const bet1 = ethers.parseEther("2");
-      const bet2 = ethers.parseEther("1");
-      const bet3 = ethers.parseEther("3");
+      // Player1 bets 20 USDC on mafia, Player2 bets 10 USDC on mafia, Player3 bets 30 USDC on citizens
+      const bet1 = ethers.parseUnits("20", 6);
+      const bet2 = ethers.parseUnits("10", 6);
+      const bet3 = ethers.parseUnits("30", 6);
 
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: bet1 });
-      await mafiaBetting.connect(player2).placeBet(GAME_ID, true, { value: bet2 });
-      await mafiaBetting.connect(player3).placeBet(GAME_ID, false, { value: bet3 });
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), bet1);
+      await usdc.connect(player2).approve(await mafiaBetting.getAddress(), bet2);
+      await usdc.connect(player3).approve(await mafiaBetting.getAddress(), bet3);
+
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, bet1);
+      await mafiaBetting.connect(player2).placeBet(GAME_ID, true, bet2);
+      await mafiaBetting.connect(player3).placeBet(GAME_ID, false, bet3);
       await mafiaBetting.lockBetting(GAME_ID);
       await mafiaBetting.settle(GAME_ID, true); // Mafia wins
 
-      const totalPool = bet1 + bet2 + bet3; // 6 ETH
-      const netPool = (totalPool * 950n) / 1000n; // 5.7 ETH
-      const mafiaPool = bet1 + bet2; // 3 ETH
+      const totalPool = bet1 + bet2 + bet3; // 60 USDC
+      const netPool = (totalPool * 950n) / 1000n; // 57 USDC
+      const mafiaPool = bet1 + bet2; // 30 USDC
 
       // Player1 (2/3 of mafia pool) should get 2/3 of net pool
       const payout1 = await mafiaBetting.calculatePayout(GAME_ID, player1.address);
@@ -250,7 +324,8 @@ describe("MafiaBetting", function () {
     });
 
     it("Should return 0 for non-bettors", async function () {
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT });
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
       await mafiaBetting.lockBetting(GAME_ID);
       await mafiaBetting.settle(GAME_ID, true);
 
@@ -259,8 +334,11 @@ describe("MafiaBetting", function () {
     });
 
     it("Should return 0 for losers", async function () {
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT });
-      await mafiaBetting.connect(player2).placeBet(GAME_ID, false, { value: BET_AMOUNT });
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+      await usdc.connect(player2).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
+      await mafiaBetting.connect(player2).placeBet(GAME_ID, false, BET_AMOUNT);
       await mafiaBetting.lockBetting(GAME_ID);
       await mafiaBetting.settle(GAME_ID, true); // Mafia wins
 
@@ -269,7 +347,8 @@ describe("MafiaBetting", function () {
     });
 
     it("Should return 0 before game is settled", async function () {
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT });
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
       await mafiaBetting.lockBetting(GAME_ID);
 
       const payout = await mafiaBetting.calculatePayout(GAME_ID, player1.address);
@@ -280,26 +359,26 @@ describe("MafiaBetting", function () {
   describe("Claiming Winnings", function () {
     beforeEach(async function () {
       await mafiaBetting.createGame(GAME_ID);
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT });
-      await mafiaBetting.connect(player2).placeBet(GAME_ID, false, { value: BET_AMOUNT });
+
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+      await usdc.connect(player2).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
+      await mafiaBetting.connect(player2).placeBet(GAME_ID, false, BET_AMOUNT);
       await mafiaBetting.lockBetting(GAME_ID);
       await mafiaBetting.settle(GAME_ID, true); // Mafia wins
     });
 
-    it("Should allow winner to claim winnings", async function () {
-      const initialBalance = await ethers.provider.getBalance(player1.address);
+    it("Should allow winner to claim USDC winnings", async function () {
+      const initialBalance = await usdc.balanceOf(player1.address);
       const expectedPayout = await mafiaBetting.calculatePayout(GAME_ID, player1.address);
 
-      const tx = await mafiaBetting.connect(player1).claimWinnings(GAME_ID);
-      const receipt = await tx.wait();
-      const gasUsed = receipt.gasUsed * receipt.gasPrice;
-
-      await expect(tx)
+      await expect(mafiaBetting.connect(player1).claimWinnings(GAME_ID))
         .to.emit(mafiaBetting, "PayoutClaimed")
         .withArgs(GAME_ID, player1.address, expectedPayout);
 
-      const finalBalance = await ethers.provider.getBalance(player1.address);
-      expect(finalBalance).to.equal(initialBalance + expectedPayout - gasUsed);
+      const finalBalance = await usdc.balanceOf(player1.address);
+      expect(finalBalance).to.equal(initialBalance + expectedPayout);
 
       const bet = await mafiaBetting.getPlayerBet(GAME_ID, player1.address);
       expect(bet.claimed).to.be.true;
@@ -314,7 +393,8 @@ describe("MafiaBetting", function () {
 
     it("Should not allow claiming before settlement", async function () {
       await mafiaBetting.createGame(2);
-      await mafiaBetting.connect(player1).placeBet(2, true, { value: BET_AMOUNT });
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+      await mafiaBetting.connect(player1).placeBet(2, true, BET_AMOUNT);
       await mafiaBetting.lockBetting(2);
 
       await expect(
@@ -338,25 +418,22 @@ describe("MafiaBetting", function () {
   describe("Fee Withdrawal", function () {
     beforeEach(async function () {
       await mafiaBetting.createGame(GAME_ID);
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: BET_AMOUNT });
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), BET_AMOUNT);
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, BET_AMOUNT);
       await mafiaBetting.lockBetting(GAME_ID);
       await mafiaBetting.settle(GAME_ID, true);
     });
 
-    it("Should allow owner to withdraw fees", async function () {
+    it("Should allow owner to withdraw USDC fees", async function () {
       const expectedFee = (BET_AMOUNT * 50n) / 1000n;
-      const initialBalance = await ethers.provider.getBalance(owner.address);
+      const initialBalance = await usdc.balanceOf(owner.address);
 
-      const tx = await mafiaBetting.withdrawFees();
-      const receipt = await tx.wait();
-      const gasUsed = receipt.gasUsed * receipt.gasPrice;
-
-      await expect(tx)
+      await expect(mafiaBetting.withdrawFees())
         .to.emit(mafiaBetting, "FeesWithdrawn")
         .withArgs(owner.address, expectedFee);
 
-      const finalBalance = await ethers.provider.getBalance(owner.address);
-      expect(finalBalance).to.equal(initialBalance + expectedFee - gasUsed);
+      const finalBalance = await usdc.balanceOf(owner.address);
+      expect(finalBalance).to.equal(initialBalance + expectedFee);
       expect(await mafiaBetting.accumulatedFees()).to.equal(0);
     });
 
@@ -375,18 +452,22 @@ describe("MafiaBetting", function () {
   });
 
   describe("Complete Game Lifecycle", function () {
-    it("Should handle complete game flow with multiple bettors", async function () {
+    it("Should handle complete game flow with multiple bettors using USDC", async function () {
       // Setup game
       await mafiaBetting.createGame(GAME_ID);
 
       // Players place bets
-      const bet1 = ethers.parseEther("3");
-      const bet2 = ethers.parseEther("2");
-      const bet3 = ethers.parseEther("5");
+      const bet1 = ethers.parseUnits("30", 6);
+      const bet2 = ethers.parseUnits("20", 6);
+      const bet3 = ethers.parseUnits("50", 6);
 
-      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, { value: bet1 });
-      await mafiaBetting.connect(player2).placeBet(GAME_ID, true, { value: bet2 });
-      await mafiaBetting.connect(player3).placeBet(GAME_ID, false, { value: bet3 });
+      await usdc.connect(player1).approve(await mafiaBetting.getAddress(), bet1);
+      await usdc.connect(player2).approve(await mafiaBetting.getAddress(), bet2);
+      await usdc.connect(player3).approve(await mafiaBetting.getAddress(), bet3);
+
+      await mafiaBetting.connect(player1).placeBet(GAME_ID, true, bet1);
+      await mafiaBetting.connect(player2).placeBet(GAME_ID, true, bet2);
+      await mafiaBetting.connect(player3).placeBet(GAME_ID, false, bet3);
 
       // Verify pool totals
       const gameBeforeLock = await mafiaBetting.getGame(GAME_ID);

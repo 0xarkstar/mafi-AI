@@ -12,14 +12,13 @@ class Bet(BaseModel, frozen=True):
 
     bet_id: str
     game_id: str
-    bettor_id: str  # spectator session id or wallet address
+    bettor_id: str  # wallet address (0x...)
     bet_type: BetType
     target: str  # "mafia", "citizens", or agent name
     amount: Decimal
     round_placed: int
     weight: Decimal = Decimal("1.0")  # early bet bonus weight
-    payment_method: str = "chips"  # "chips" or "x402"
-    tx_hash: str | None = None  # blockchain tx hash for x402 bets
+    tx_hash: str  # x402 payment transaction hash (always required)
 
 
 class BettingPool(BaseModel, frozen=True):

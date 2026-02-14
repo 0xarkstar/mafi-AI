@@ -3,16 +3,23 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
+import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 
 /**
  * @title MafiaBetting
- * @notice Pari-mutuel betting contract for Mafia games on Monad testnet
+ * @notice Pari-mutuel betting contract for Mafia games using USDC on Monad testnet
  * @dev Uses pull payment pattern with 5% house edge
  */
 contract MafiaBetting is ReentrancyGuard, Ownable {
+    using SafeERC20 for IERC20;
+
     // Constants
     uint256 public constant HOUSE_FEE_BPS = 50; // 5% = 50 basis points
     uint256 public constant FEE_DENOMINATOR = 1000;
+
+    // USDC token contract
+    IERC20 public immutable usdc;
 
     // Structs
     struct Game {
@@ -44,7 +51,14 @@ contract MafiaBetting is ReentrancyGuard, Ownable {
     event PayoutClaimed(uint256 indexed gameId, address indexed bettor, uint256 amount);
     event FeesWithdrawn(address indexed owner, uint256 amount);
 
-    constructor() Ownable(msg.sender) {}
+    /**
+     * @notice Constructor initializes contract with USDC token address
+     * @param _usdc USDC token contract address on Monad testnet
+     */
+    constructor(address _usdc) Ownable(msg.sender) {
+        require(_usdc != address(0), "Invalid USDC address");
+        usdc = IERC20(_usdc);
+    }
 
     /**
      * @notice Create a new game (oracle only)
@@ -101,30 +115,35 @@ contract MafiaBetting is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Place a bet on a game
+     * @notice Place a bet on a game using USDC
+     * @dev User must approve() this contract to spend USDC before calling
      * @param gameId Game identifier
      * @param betMafia True to bet on mafia, false to bet on citizens
+     * @param amount Amount of USDC to bet (in USDC's smallest unit, 6 decimals)
      */
-    function placeBet(uint256 gameId, bool betMafia) external payable nonReentrant {
-        require(msg.value > 0, "Bet amount must be greater than 0");
+    function placeBet(uint256 gameId, bool betMafia, uint256 amount) external nonReentrant {
+        require(amount > 0, "Bet amount must be greater than 0");
 
         Game storage game = games[gameId];
         require(game.exists, "Game does not exist");
         require(!game.locked, "Betting is locked");
 
+        // Transfer USDC from bettor to this contract
+        usdc.safeTransferFrom(msg.sender, address(this), amount);
+
         PlayerBet storage playerBet = bets[gameId][msg.sender];
 
         if (betMafia) {
-            playerBet.mafiaAmount += msg.value;
-            game.mafiaPool += msg.value;
+            playerBet.mafiaAmount += amount;
+            game.mafiaPool += amount;
         } else {
-            playerBet.citizenAmount += msg.value;
-            game.citizenPool += msg.value;
+            playerBet.citizenAmount += amount;
+            game.citizenPool += amount;
         }
 
-        game.totalPool += msg.value;
+        game.totalPool += amount;
 
-        emit BetPlaced(gameId, msg.sender, betMafia, msg.value);
+        emit BetPlaced(gameId, msg.sender, betMafia, amount);
     }
 
     /**
@@ -144,9 +163,8 @@ contract MafiaBetting is ReentrancyGuard, Ownable {
 
         playerBet.claimed = true;
 
-        // Transfer winnings (Checks-Effects-Interactions pattern)
-        (bool success, ) = msg.sender.call{value: payout}("");
-        require(success, "Transfer failed");
+        // Transfer USDC winnings (Checks-Effects-Interactions pattern)
+        usdc.safeTransfer(msg.sender, payout);
 
         emit PayoutClaimed(gameId, msg.sender, payout);
     }
@@ -155,7 +173,7 @@ contract MafiaBetting is ReentrancyGuard, Ownable {
      * @notice Calculate payout for a bettor
      * @param gameId Game identifier
      * @param bettor Address of the bettor
-     * @return Payout amount in wei
+     * @return Payout amount in USDC (6 decimals)
      */
     function calculatePayout(uint256 gameId, address bettor) public view returns (uint256) {
         Game storage game = games[gameId];
@@ -194,8 +212,8 @@ contract MafiaBetting is ReentrancyGuard, Ownable {
 
         accumulatedFees = 0;
 
-        (bool success, ) = msg.sender.call{value: amount}("");
-        require(success, "Transfer failed");
+        // Transfer USDC fees to owner
+        usdc.safeTransfer(msg.sender, amount);
 
         emit FeesWithdrawn(msg.sender, amount);
     }

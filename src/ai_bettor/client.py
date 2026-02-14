@@ -267,7 +267,10 @@ class AIBettorClient:
     async def _place_bet_via_api(
         self, game_id: str, bet_type: str, target: str, amount: Decimal
     ) -> bool:
-        """Place bet via REST API.
+        """Place bet via REST API (unified endpoint with X402).
+
+        TODO: Implement X402 payment signing before calling the API.
+        For now, this will fail with 402 Payment Required.
 
         Args:
             game_id: Game ID
@@ -279,7 +282,7 @@ class AIBettorClient:
             True if bet was placed successfully
         """
         try:
-            url = f"{self.api_url}/api/bets/x402"
+            url = f"{self.api_url}/api/bets"
             payload = {
                 "game_id": game_id,
                 "bet_type": bet_type,
@@ -287,6 +290,10 @@ class AIBettorClient:
                 "amount_usdc": float(amount),
                 "round": self.current_round,
             }
+
+            # TODO: Add X402 payment signing here
+            # The request needs x-payment header with signed payment
+            # For now, this will return 402 Payment Required
 
             response = await self.http_client.post(url, json=payload)
 

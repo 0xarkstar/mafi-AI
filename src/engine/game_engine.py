@@ -70,25 +70,11 @@ class GameEngine:
                     update={"phase": Phase.GAME_OVER, "winner": winner}
                 )
 
-                # Settle bets if betting is enabled
+                # Settle bets if betting is enabled (calculate payouts only)
                 payouts = {}
                 if self.betting_manager:
                     payouts = self.betting_manager.settle(winner)
                     log.info("bets_settled", num_payouts=len(payouts))
-
-                # Settle on-chain if blockchain is enabled
-                if self.blockchain_contract:
-                    try:
-                        numeric_game_id = self._uuid_to_uint256(self.state.game_id)
-                        mafia_won = winner == "mafia"
-                        await self.blockchain_contract.settle(numeric_game_id, mafia_won)
-                        log.info("blockchain_game_settled", winner=winner)
-                    except Exception as exc:
-                        log.warning(
-                            "blockchain_settle_failed",
-                            error=str(exc),
-                            msg="Continuing with local settlement",
-                        )
 
                 await self.event_callback(
                     WSEvent(
@@ -128,9 +114,72 @@ class GameEngine:
                     )
 
                 # Settle identity bets
+                identity_payouts = {}
                 if self.betting_manager:
                     identity_payouts = self.betting_manager.settle_identity_bets(self.players)
                     log.info("identity_bets_settled", num_payouts=len(identity_payouts))
+
+                    # Combine payouts from both side_win and identity bets
+                    combined_payouts = payouts.copy()
+                    for address, amount in identity_payouts.items():
+                        if address in combined_payouts:
+                            combined_payouts[address] += amount
+                        else:
+                            combined_payouts[address] = amount
+
+                    # Transfer USDC to winners if settlement is enabled
+                    if combined_payouts:
+                        from src.config.settings import load_settings
+
+                        settings = load_settings()
+
+                        if settings.settlement_enabled:
+                            try:
+                                from src.betting.settlement import USDCSettlement
+                                from src.blockchain.provider import create_web3_provider
+
+                                # Initialize web3 provider
+                                w3 = await create_web3_provider(
+                                    settings.blockchain_rpc_url, settings.blockchain_chain_id
+                                )
+
+                                # Initialize USDC settlement
+                                settlement = USDCSettlement(
+                                    w3=w3,
+                                    usdc_address=settings.x402_usdc_address,
+                                    private_key=settings.settlement_private_key.get_secret_value(),
+                                )
+
+                                # Transfer USDC to winners
+                                transfer_results = await settlement.settle_payouts(combined_payouts)
+
+                                log.info(
+                                    "usdc_settlement_complete",
+                                    num_transfers=len(transfer_results),
+                                )
+
+                                # Broadcast settlement results
+                                await self.event_callback(
+                                    WSEvent(
+                                        event_type="usdc_settlement",
+                                        data={
+                                            "transfers": transfer_results,
+                                        },
+                                        game_id=self.state.game_id,
+                                        timestamp=datetime.now().isoformat(),
+                                    )
+                                )
+
+                            except Exception as exc:
+                                log.error(
+                                    "usdc_settlement_failed",
+                                    error=str(exc),
+                                )
+                        else:
+                            log.info(
+                                "usdc_settlement_disabled",
+                                total_payouts=float(sum(combined_payouts.values())),
+                            )
 
                 log.info("reveal_phase_complete", player_count=len(self.players))
                 break
