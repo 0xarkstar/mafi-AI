@@ -135,15 +135,119 @@
 ## Mixed-Player Arena — P3 Polish — COMPLETE
 - README.md, CLAUDE.md, .env.example updated with new modules and settings
 
+## Previous Pipeline Complete (Mixed-Player Arena)
+- 188 total tests (154 Python + 34 Solidity), 73% coverage
+- 4 player types, lobby system, identity betting, REVEAL phase
+
+---
+
+## USDC Betting Unification Pipeline
+
+### Goal
+Unify 3 fragmented betting systems (chips/MON/USDC) into single USDC-only system.
+
+### Design Doc
+See `docs/pipeline/USDC_DESIGN.md`
+
+### P0 Design — COMPLETE
+- Architecture finalized: single USDC via x402, Moltbook Identity auth
+- File ownership map defined
+- All technical decisions documented
+
+### P1 Implementation — COMPLETE
+- Started: 2026-02-14
+- Team: p-impl-backend (sonnet), p-impl-contract (sonnet), p-test-writer (sonnet)
+
+#### p-impl-contract (Smart Contract + Frontend)
+- ✅ `contracts/MafiaBetting.sol` — Rewritten for USDC ERC-20 (SafeERC20, approve+transferFrom)
+- ✅ `contracts/MockERC20.sol` — Created for Hardhat tests
+- ✅ `test/MafiaBetting.test.js` — 39 tests passing
+- ✅ `static/blockchain.js` — USDC approval flow, 6 decimals
+- ✅ `scripts/deploy.js` — USDC address parameter
+
+#### p-impl-backend (Python Backend)
+- ✅ `src/moltbook/auth.py` — NEW: MoltbookAuth with JWT verify_identity()
+- ✅ `src/betting/settlement.py` — NEW: USDCSettlement (web3.py ERC-20 transfers)
+- ✅ `src/betting/manager.py` — REWRITTEN: unified place_bet(USDC), no chips
+- ✅ `src/models/betting.py` — Bet: tx_hash required, payment_method removed
+- ✅ `src/config/settings.py` — +moltbook_app_key, +settlement_enabled, -starting_chips
+- ✅ `src/config/constants.py` — +MIN/MAX_BET_USDC, -DEFAULT_STARTING_CHIPS
+- ✅ `src/api/server.py` — Moltbook Identity auth, unified /api/bets, WS redirect
+- ✅ `src/x402/middleware.py` — Simplified (no test mode fallback)
+- ✅ `src/engine/game_engine.py` — Settlement hook
+- ✅ `src/ai_bettor/client.py` — REST /api/bets endpoint
+
+#### p-test-writer + Lead (Test Suite)
+- ✅ `tests/test_moltbook_auth.py` — NEW: 11 tests (100% coverage)
+- ✅ `tests/test_settlement.py` — NEW: 10 tests (86% coverage)
+- ✅ `tests/test_betting.py` — REWRITTEN: 29 tests, USDC-only
+- ✅ `tests/test_x402_betting.py` — REWRITTEN: 16 tests, unified API
+- ✅ `tests/test_api.py` — UPDATED: WebSocket redirect, Moltbook Identity
+- ✅ `tests/test_x402.py` — All passing
+
+### P2 Verification — COMPLETE
+- **236 Python tests + 39 Hardhat tests = 275 total**, ALL PASSING
+- **72% Python coverage** (moltbook/auth: 100%, models: 100%, betting/manager: 90%)
+- Zero import errors, zero syntax errors
+
 ## Pipeline Complete
 
-### Final Summary — Mixed-Player Arena
-- **154 Python tests + 34 Solidity = 188 total tests**, all passing
-- **73% Python coverage** (up from 68%)
-- **4 player types**: HouseAI, MoltbookAgent, AgentHuman, Human
-- **Lobby system**: dynamic player registration, auto-fill with House AI
-- **Identity betting**: IS_AI_OR_HUMAN bet type, settles at REVEAL phase
-- **REVEAL phase**: broadcasts identity_reveal events after GAME_OVER
-- **WebSocket human input**: join_lobby, action_request/response flow
-- **Moltbook integration**: REST API client for external AI agents
-- **Inverse cost curve**: as more external agents/humans join, server LLM cost → $0
+### Final Summary — USDC Betting Unification
+- **275 total tests** (236 Python + 39 Solidity), all passing
+- **72% Python coverage**
+- **Single USDC currency** — chips removed entirely, MON for gas only
+- **Moltbook Identity auth** — JWT-based via X-Moltbook-Identity header
+- **Unified /api/bets endpoint** — all bets via x402 USDC payment
+- **USDC ERC-20 smart contract** — SafeERC20, approve+transferFrom pattern
+- **Server-side settlement** — USDCSettlement class for web3.py USDC transfers
+- **WebSocket spectating only** — betting redirected to REST API
+- **MIN $1 / MAX $100** — USDC bet limits enforced
+
+---
+
+## Frontend Redesign — React + TypeScript + Tailwind
+
+### Goal
+Replace vanilla HTML/CSS/JS SPA with modern React 19 + TypeScript + Vite + Tailwind + Framer Motion frontend.
+
+### P1 Implementation — COMPLETE
+- Started: 2026-02-14
+- Completed: 2026-02-14
+- Team: p-impl-core (sonnet), p-impl-ui (sonnet), p-impl-bet (sonnet)
+
+| Agent | Status | Files Created | Focus |
+|-------|--------|:---:|-------|
+| p-impl-core | ✅ DONE | 16 | Project setup, stores, hooks, WebSocket, types |
+| p-impl-ui | ✅ DONE | 26 | Game UI components, layout, animations |
+| p-impl-bet | ✅ DONE | 13 | Betting panel, wallet, blockchain integration |
+
+### Integration Fixes (Lead)
+- WebSocket message format: `type` field (not `event_type`) for client→server
+- Event handler field names: `agent` not `eliminated`, `name` not `player_name`
+- BettingPanel integrated into GameLayout (desktop + mobile tabs)
+- ConnectButton integrated into Header
+- TxToast added to App root
+- Code splitting: ethers.js + framer-motion as separate chunks
+
+### Build Results
+- **48 TypeScript source files** created
+- **0 TypeScript errors** (`tsc --noEmit` clean)
+- **Build output**: 3 JS chunks + 1 CSS
+  - `index.js` — 244KB (74KB gzip) — app code
+  - `ethers.js` — 269KB (98KB gzip) — blockchain lib
+  - `framer-motion.js` — 125KB (41KB gzip) — animation lib
+  - `index.css` — 43KB (8KB gzip) — Tailwind styles
+
+### Architecture
+- **React 19** + TypeScript strict mode
+- **Vite 6** with HMR, dev proxy to FastAPI :8080, build to `../static`
+- **Tailwind CSS v4** (CSS-first `@theme` config)
+- **Zustand** stores: gameStore, chatStore, bettingStore, walletStore
+- **Framer Motion** for phase overlays, card animations, tab transitions
+- **ethers.js v6** for MetaMask + Monad testnet + USDC contract
+- **15 WebSocket event types** routed to stores
+- **7 CSS-art character avatars** (no external images)
+- **Mobile-first** with 3-tab bottom navigation
+- **Desktop** 3-column layout (players | chat | betting)
+
+## Pipeline Complete
