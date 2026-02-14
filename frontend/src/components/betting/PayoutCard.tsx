@@ -8,10 +8,10 @@ import { createContracts } from '../../lib/blockchain'
 
 export function PayoutCard() {
   const [isClaiming, setIsClaiming] = useState(false)
-  const { phase } = useGameStore()
-  const { bets } = useBettingStore()
+  const phase = useGameStore((s) => s.phase)
+  const bets = useBettingStore((s) => s.bets)
   const { signer, address } = useWallet()
-  const { setTxStatus } = useWalletStore()
+  const setTxStatus = useWalletStore((s) => s.setTxStatus)
 
   const hasWinningBets = bets.some((bet) => bet.status === 'won')
   const totalWinnings = bets

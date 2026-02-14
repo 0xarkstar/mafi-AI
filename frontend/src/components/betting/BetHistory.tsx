@@ -2,7 +2,7 @@ import { useBettingStore } from '../../stores/bettingStore'
 import { Check, X, Loader2 } from 'lucide-react'
 
 export function BetHistory() {
-  const { bets } = useBettingStore()
+  const bets = useBettingStore((s) => s.bets)
 
   if (bets.length === 0) {
     return (

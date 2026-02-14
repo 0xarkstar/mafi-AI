@@ -4,18 +4,16 @@ import { useWalletStore } from '../stores/walletStore'
 import { connectWallet, switchToMonad, getUSDCBalance, MONAD_TESTNET } from '../lib/blockchain'
 
 export function useWallet() {
-  const {
-    connected,
-    address,
-    balance,
-    isConnecting,
-    error,
-    setConnected,
-    setDisconnected,
-    setBalance,
-    setConnecting,
-    setError,
-  } = useWalletStore()
+  const connected = useWalletStore((s) => s.connected)
+  const address = useWalletStore((s) => s.address)
+  const balance = useWalletStore((s) => s.balance)
+  const isConnecting = useWalletStore((s) => s.isConnecting)
+  const error = useWalletStore((s) => s.error)
+  const setConnected = useWalletStore((s) => s.setConnected)
+  const setDisconnected = useWalletStore((s) => s.setDisconnected)
+  const setBalance = useWalletStore((s) => s.setBalance)
+  const setConnecting = useWalletStore((s) => s.setConnecting)
+  const setError = useWalletStore((s) => s.setError)
 
   const providerRef = useRef<ethers.BrowserProvider | null>(null)
   const signerRef = useRef<ethers.Signer | null>(null)

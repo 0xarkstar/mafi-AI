@@ -9,7 +9,8 @@ export function BetSlip() {
   const [selectedAmount, setSelectedAmount] = useState<number>(BET_AMOUNTS[0])
   const { connected, balance } = useWallet()
   const { placeBet, isPlacing } = useBetting()
-  const { phase, round } = useGameStore()
+  const phase = useGameStore((s) => s.phase)
+  const round = useGameStore((s) => s.round)
 
   const isGameActive = phase !== 'lobby' && phase !== 'game_over'
   const balanceNum = parseFloat(balance || '0')

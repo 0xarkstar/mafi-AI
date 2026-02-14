@@ -4,7 +4,8 @@ import { Check, X, Loader2 } from 'lucide-react'
 import { useWalletStore } from '../../stores/walletStore'
 
 export function TxToast() {
-  const { txStatus, setTxStatus } = useWalletStore()
+  const txStatus = useWalletStore((s) => s.txStatus)
+  const setTxStatus = useWalletStore((s) => s.setTxStatus)
 
   useEffect(() => {
     if (!txStatus) return

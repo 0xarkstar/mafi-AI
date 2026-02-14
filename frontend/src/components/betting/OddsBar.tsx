@@ -2,7 +2,7 @@ import { motion } from 'framer-motion'
 import { useBettingStore } from '../../stores/bettingStore'
 
 export function OddsBar() {
-  const { odds } = useBettingStore()
+  const odds = useBettingStore((s) => s.odds)
 
   const mafiaPercent = Math.round(odds.mafiaWinProb * 100)
   const citizenPercent = Math.round(odds.citizenWinProb * 100)

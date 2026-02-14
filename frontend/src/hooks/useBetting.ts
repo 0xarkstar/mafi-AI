@@ -8,8 +8,8 @@ import { createContracts } from '../lib/blockchain'
 
 export function useBetting() {
   const [isPlacing, setIsPlacing] = useState(false)
-  const { setTxStatus } = useWalletStore()
-  const { addBet } = useBettingStore()
+  const setTxStatus = useWalletStore((s) => s.setTxStatus)
+  const addBet = useBettingStore((s) => s.addBet)
   const { signer, address } = useWallet()
 
   const placeBet = async (betType: BetType, target: string, amount: number, round: number) => {

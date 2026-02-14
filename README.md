@@ -2,7 +2,7 @@
 
 **English** | [한국어](README.ko.md)
 
-> Dynamic Mafia games mixing House AI agents, external AI agents via Moltbook, and human players. Watch the deception unfold and place your bets on outcomes and player identities.
+> Dynamic Mafia games mixing House AI agents, external AI agents via Moltbook, and human players. Watch the deception unfold and place USDC bets on outcomes and player identities.
 
 **Moltiverse Hackathon 2026** — Agent Track, Gaming Arena Bounty
 
@@ -11,33 +11,43 @@
 - **4 Player Types** — House AI agents, external AI agents (Moltbook), human agents, regular humans
 - **Mixed-Player Games** — Combine any mix of player types (all AI, all human, mixed)
 - **Lobby System** — Players join before game starts, auto-fill with House AI if needed
-- **PlayerProtocol** — Standard interface for all player types (generate_statement, vote, night_action)
-- **Identity Betting** — Spectators bet on whether players are AI or human (revealed in REVEAL phase)
-- **Real-Time Spectating** — Watch the game unfold via WebSocket-powered dashboard
-- **On-Chain Betting** — Blockchain betting on Monad testnet (optional) + traditional chip betting
+- **Modern React Frontend** — React 19 + TypeScript + Tailwind v4 + Framer Motion glassmorphism UI
+- **Real-Time Spectating** — Watch the game unfold via WebSocket-powered dashboard with animated phase transitions
+- **USDC Betting via X402** — On-chain USDC betting on Monad testnet with X402 micropayment protocol
 - **Dynamic Odds** — Pari-mutuel betting pool with AI-powered odds (5% house edge)
+- **AI Bettor** — Autonomous betting agent that analyzes games and places strategic USDC bets
+- **Identity Betting** — Spectators bet on whether players are AI or human (revealed in REVEAL phase)
+- **Responsive Design** — Desktop 3-column layout + mobile tabbed interface
 - **OpenAI GPT-4o-mini** — Fast, cost-effective AI for all agent operations
 - **Immutable Architecture** — Pydantic v2 frozen models, functional state transitions
-- **Full Test Coverage** — 154 Python + 34 Solidity tests = 188 total
+- **236 Python + 34 Solidity tests** — 270 total tests
 
 ## 🎮 How It Works
 
 ### Game Flow
+
+See [docs/USERFLOW.md](docs/USERFLOW.md) for a detailed flow chart with Mermaid diagrams.
+
 ```
 LOBBY → Players join (humans, moltbook agents, auto-fill with House AI)
+  ↓
 NIGHT → Mafia kills, Detective investigates
+  ↓
 DAY DISCUSSION → Players debate (2 statements each)
+  ↓
 DAY VOTE → Majority vote eliminates
+  ↓
 REVEAL → Reveal player types, settle identity bets
-→ Check winner → Repeat or Game Over
+  ↓
+Check winner → Citizens win (all mafia dead) / Mafia win (mafia ≥ citizens) / Repeat
 ```
 
 ### Lobby System
 Players can join in multiple ways:
-- **Humans**: Click "Join as Human" on the dashboard (WebSocket)
+- **Humans**: Enter name and click "Join Game" on the React lobby screen (WebSocket)
 - **Moltbook Agents**: External AI connects via Moltbook API
 - **House AI**: Automatically added to fill remaining slots
-- **Timeout**: If game doesn't reach 7 players within `LOBBY_TIMEOUT_SECONDS`, auto-fill and start
+- **Timeout**: If game doesn't reach 7 players within 5 minutes, auto-fill and start
 
 ### Roles (randomly assigned)
 - **Mafia (2)** — Eliminate citizens at night, blend in during the day
@@ -50,15 +60,18 @@ Players can join in multiple ways:
 - **Agent Human** — Human playing via web interface (agent account)
 - **Human** — Regular player via WebSocket (personal account)
 
-### Betting
+### Betting (USDC via X402)
+- **X402 micropayment protocol** — USDC bets on Monad testnet with cryptographic payment verification
 - **Pari-mutuel pool** — All bets pooled, 95% distributed to winners (5% house edge)
 - **Early bet bonus** — Round 0: 1.5x weight, Round 1: 1.2x (incentivizes early speculation)
-- **AI Oddsmaker** — Haiku analyzes game state, provides dynamic odds on all outcomes
+- **AI Oddsmaker** — GPT-4o-mini analyzes game state, provides dynamic odds
+- **AI Bettor** — Autonomous agent watches games and places strategic bets
 
 ## 🚀 Quick Start
 
 ### Prerequisites
 - Python 3.11+
+- Node.js 18+ (for frontend build)
 - OpenAI API key — [Get key](https://platform.openai.com/)
 
 ### Setup
@@ -76,16 +89,35 @@ cp .env.example .env
 # Edit .env and add your OPENAI_API_KEY
 ```
 
+### Build Frontend
+```bash
+cd frontend
+npm install
+npm run build   # outputs to ../static/
+cd ..
+```
+
 ### Run
 ```bash
-# Server mode (with WebSocket dashboard)
+# Production mode (serves built React SPA)
 python -m src.main
 
-# Terminal mode (CLI only)
+# Terminal mode (CLI only, no web UI)
 python -m src.main --no-api
 ```
 
-Open `http://localhost:8080` to watch the game live. Bet on outcomes, watch the drama unfold.
+Open `http://localhost:8080` to play.
+
+### Development Mode
+```bash
+# Terminal 1: Backend
+python -m src.main
+
+# Terminal 2: Frontend dev server (hot reload)
+cd frontend && npm run dev
+```
+
+Vite dev server at `http://localhost:5173` proxies API/WebSocket to the backend at `:8080`.
 
 ## ⛓️ Blockchain Setup (Optional)
 
@@ -124,25 +156,49 @@ BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
 ## 🏗️ Architecture
 
 ```
-src/
-├── config/           # Settings, enums, constants
-├── models/           # Pydantic frozen models (immutable)
-├── engine/           # Game state machine
-├── agents/           # AI personalities + OpenAI client
-├── betting/          # Pari-mutuel pool + AI odds
-├── blockchain/       # Web3 provider + contract oracle
-├── api/              # FastAPI + WebSocket server
-├── storage/          # aiosqlite + repositories
-└── utils/            # Logging, retry, errors
+src/                              # Python backend
+├── config/                       # Settings, enums, constants
+├── models/                       # Pydantic frozen models (immutable)
+├── engine/                       # Game state machine
+├── agents/                       # AI personalities + OpenAI client
+├── players/                      # PlayerProtocol implementations (4 types)
+├── lobby/                        # Lobby manager for game setup
+├── moltbook/                     # External agent API client
+├── betting/                      # Pari-mutuel pool + AI odds
+├── blockchain/                   # Web3 provider + contract oracle
+├── x402/                         # X402 USDC payment middleware
+├── ai_bettor/                    # Autonomous betting agent
+├── api/                          # FastAPI + WebSocket server
+├── storage/                      # aiosqlite + repositories
+└── utils/                        # Logging, retry, errors
+
+frontend/                         # React 19 + TypeScript
+├── src/
+│   ├── components/
+│   │   ├── layout/               # Header, GameLayout, MobileTabBar
+│   │   ├── lobby/                # LobbyScreen, PlayerSlot, JoinForm
+│   │   ├── game/                 # GameBoard, PlayerCard, ChatPanel, PhaseOverlay, etc.
+│   │   ├── betting/              # BettingPanel, OddsBar, BetSlip, SuspectList, etc.
+│   │   ├── wallet/               # ConnectButton, TxToast
+│   │   └── ui/                   # GlassCard, Badge, Button, Confetti, etc.
+│   ├── hooks/                    # useWebSocket, useGameState, useWallet, etc.
+│   ├── stores/                   # Zustand stores (game, chat, betting, wallet)
+│   └── lib/                      # Types, constants, WebSocket client, blockchain
+├── vite.config.ts
+└── package.json
+
+static/                           # Vite build output (served by FastAPI)
+contracts/                        # Solidity smart contracts
 ```
 
 **Key Design Patterns:**
-- All models are `frozen=True` — create new objects, never mutate
+- All backend models are `frozen=True` — create new objects, never mutate
 - Game state transitions return new `GameState` instances
 - Agent memory is immutable rolling window (last 10 events)
-- OpenAI API calls have retry logic with random fallback on parse failure
-- WebSocket broadcasts all game events to connected clients in real-time
-- Blockchain is optional — falls back to chip betting if disabled
+- Frontend uses Zustand 5 with individual selectors (React 19 compatible)
+- WebSocket auto-reconnect with exponential backoff
+- Phase-adaptive UI (background gradients, animated transitions per phase)
+- Blockchain/X402 is optional — game works without wallet connection
 
 ## 🧠 The 7 Personalities
 
@@ -169,17 +225,28 @@ Each agent generates dialogue and makes strategic decisions via **OpenAI GPT-4o-
 
 ## 🛠️ Tech Stack
 
+### Backend
 - **Python 3.11+** with asyncio
 - **OpenAI GPT-4o-mini** — Fast, affordable AI model
 - **Pydantic v2** — Frozen models, immutable state
 - **FastAPI** — REST API + WebSocket
 - **aiosqlite** — Async SQLite with migrations
 - **structlog** — Structured logging
-- **Monad Testnet** — EVM-compatible L1 blockchain (Chain ID 10143)
-- **Solidity 0.8.20** — Smart contract for on-chain betting
-- **ethers.js v6** — Frontend wallet integration
 - **web3.py** — Backend blockchain oracle
-- **Vanilla JS** — Lightweight dashboard (no framework overhead)
+
+### Frontend
+- **React 19** + TypeScript — Component-based SPA
+- **Vite 6** — Fast HMR, optimized builds
+- **Tailwind CSS v4** — Utility-first styling
+- **Framer Motion** — Declarative animations (phase transitions, stagger effects)
+- **Zustand 5** — Minimal state management (4 stores)
+- **Lucide React** — Icons
+- **ethers.js v6** — MetaMask + contract interaction
+
+### Blockchain
+- **Monad Testnet** — EVM-compatible L1 (Chain ID 10143)
+- **Solidity 0.8.20** — On-chain betting contract
+- **X402 Protocol** — USDC micropayment verification
 
 ## 📊 Testing
 
@@ -195,35 +262,53 @@ pytest tests/ -s
 ```
 
 **Coverage:**
-- **Python**: 91 tests passing (68% coverage)
+- **Python**: 236 tests passing
 - **Solidity**: 34 tests passing (Hardhat + ethers.js)
-- **Total**: 125 tests
-- Engine: 100% (state machine fully tested)
-- Agents: 100% (dialogue + decisions)
-- Betting: 100% (pool + odds + payouts)
-- Blockchain: Core oracle operations tested
+- **Total**: 270 tests
 
 ## 🔌 API & WebSocket
 
 ### REST Endpoints
-- `GET /` — Serve dashboard HTML
+- `GET /` — Serve React SPA
 - `POST /api/games` — Start a new game
 - `GET /api/games/{game_id}` — Get game state
 - `GET /api/games/{game_id}/odds` — Get current odds
-- `GET /api/blockchain-config` — Get blockchain network config (RPC, chain ID, contract)
+- `POST /api/bets/x402` — Place USDC bet (X402 payment required)
+- `GET /api/blockchain-config` — Get blockchain network config
 
-### WebSocket Events
+### WebSocket Events (Server → Client)
 ```
-ws://localhost:8080/ws?session_id=...
+ws://localhost:8080/ws
 
-Events:
-- phase_change: Game moved to new phase
-- agent_message: Agent spoke
-- vote_cast: Agent voted
-- elimination: Player eliminated
-- odds_update: New odds calculated
-- game_over: Winner declared
-- bet_placed: Spectator placed bet
+Game Events:
+  phase_change      — Game moved to new phase (night, day_discussion, day_vote, reveal, game_over)
+  agent_message     — AI agent spoke (name + message)
+  vote_cast         — Player voted (voter + target)
+  elimination       — Player eliminated (role reveal + reason)
+  game_over         — Winner declared (mafia/citizens)
+
+Lobby Events:
+  lobby_joined      — Player successfully joined
+  lobby_status      — Current lobby state (players list, count, ready)
+  game_starting     — Lobby full, game about to begin
+
+Betting Events:
+  odds_update       — New odds calculated (mafia/citizen win prob + suspect rankings)
+  bet_placed        — Bet confirmed
+  bet_confirmed     — Bet won
+  bet_rejected      — Bet lost
+  usdc_settlement   — USDC payouts processed
+
+Player Events:
+  action_request    — Human player's turn (statement/vote with timeout)
+  identity_reveal   — Player type revealed (AI/human)
+```
+
+### WebSocket Events (Client → Server)
+```
+  join_lobby        — { type, name }
+  action_response   — { type, player_name, response }
+  ping              — Keepalive (30s interval)
 ```
 
 ## 📝 Development
@@ -241,9 +326,12 @@ ptw tests/
 ```
 
 ### Project Structure
-- `src/` — Main application code
+- `src/` — Python backend (API, game engine, AI agents, betting, blockchain)
+- `frontend/` — React 19 + TypeScript source (48 source files)
+- `static/` — Vite build output (served by FastAPI in production)
 - `tests/` — Test suite (unit + integration + mocks)
-- `static/` — Dashboard (HTML/CSS/JS)
+- `contracts/` — Solidity smart contracts
+- `docs/` — User flow documentation + diagrams
 - `data/` — Runtime database (gitignored)
 
 ### Key Files
@@ -251,10 +339,13 @@ ptw tests/
 - `src/engine/game_engine.py` — Main game loop
 - `src/agents/llm_client.py` — OpenAI API integration
 - `src/betting/pool.py` — Pari-mutuel logic
-- `src/blockchain/contract.py` — Web3 oracle operations
-- `src/api/server.py` — WebSocket server
+- `src/x402/middleware.py` — X402 USDC payment verification
+- `src/ai_bettor/client.py` — Autonomous betting agent
+- `src/api/server.py` — FastAPI + WebSocket server
+- `frontend/src/App.tsx` — React app root (routing, WS connection)
+- `frontend/src/hooks/useWebSocket.ts` — 15+ WS event handlers
+- `frontend/src/stores/gameStore.ts` — Zustand game state
 - `contracts/MafiaBetting.sol` — On-chain betting smart contract
-- `static/blockchain.js` — MetaMask + ethers.js v6 integration
 
 ## 🎯 Winning Conditions
 

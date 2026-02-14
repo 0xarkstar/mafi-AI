@@ -3,8 +3,8 @@ import { useBettingStore } from '../../stores/bettingStore'
 import { useGameStore } from '../../stores/gameStore'
 
 export function SuspectList() {
-  const { odds } = useBettingStore()
-  const { players } = useGameStore()
+  const odds = useBettingStore((s) => s.odds)
+  const players = useGameStore((s) => s.players)
 
   const suspects = Object.entries(odds.mafiaSuspects || {})
     .filter(([name]) => players[name]?.isAlive)
