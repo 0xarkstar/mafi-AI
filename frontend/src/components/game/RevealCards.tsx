@@ -19,7 +19,7 @@ export function RevealCards({ players }: RevealCardsProps) {
     <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
       {players.map((player, i) => {
         const isFlipped = flipped.has(player.name)
-        const isAI = player.playerType === 'house_ai' || player.playerType === 'moltbook_agent'
+        const isAI = player.playerType === 'HOUSE_AI' || player.playerType === 'MOLTBOOK_AGENT'
 
         return (
           <motion.div

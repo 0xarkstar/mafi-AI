@@ -1,25 +1,4 @@
-@import "tailwindcss";
-
-@theme {
-  /* Phase ambient gradient backgrounds */
-  --color-phase-lobby-from: #09090b;
-  --color-phase-lobby-to: #18181b;
-
-  --color-phase-night-from: #1e1b4b;
-  --color-phase-night-to: #020617;
-
-  --color-phase-day-from: #451a03;
-  --color-phase-day-to: #1c1917;
-
-  --color-phase-vote-from: #450a0a;
-  --color-phase-vote-to: #1c1917;
-
-  --color-phase-reveal-from: #4a044e;
-  --color-phase-reveal-to: #0f172a;
-
-  --color-phase-gameover-from: #022c22;
-  --color-phase-gameover-to: #0f172a;
-}
+@import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
 
 * {
   margin: 0;
@@ -30,120 +9,14 @@
 html,
 body {
   height: 100%;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+  background-color: #030712;
+  color: rgba(255, 255, 255, 0.9);
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
-}
-
-code,
-pre {
-  font-family: 'JetBrains Mono', monospace;
+  overflow-x: hidden;
 }
 
 #root {
   height: 100%;
-}
-
-/* Glass card utility */
-.glass-card {
-  background: rgba(0, 0, 0, 0.4);
-  backdrop-filter: blur(12px);
-  border: 1px solid rgba(255, 255, 255, 0.1);
-  border-radius: 0.75rem;
-}
-
-/* Phase ambient backgrounds */
-body.phase-lobby {
-  background: linear-gradient(to bottom right, var(--color-phase-lobby-from), var(--color-phase-lobby-to));
-}
-
-body.phase-night {
-  background: linear-gradient(to bottom right, var(--color-phase-night-from), var(--color-phase-night-to));
-}
-
-body.phase-day_discussion {
-  background: linear-gradient(to bottom right, var(--color-phase-day-from), var(--color-phase-day-to));
-}
-
-body.phase-day_vote {
-  background: linear-gradient(to bottom right, var(--color-phase-vote-from), var(--color-phase-vote-to));
-}
-
-body.phase-reveal {
-  background: linear-gradient(to bottom right, var(--color-phase-reveal-from), var(--color-phase-reveal-to));
-}
-
-body.phase-game_over {
-  background: linear-gradient(to bottom right, var(--color-phase-gameover-from), var(--color-phase-gameover-to));
-}
-
-/* Scrollbar customization */
-::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
-}
-
-::-webkit-scrollbar-track {
-  background: rgba(0, 0, 0, 0.2);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb {
-  background: rgba(255, 255, 255, 0.2);
-  border-radius: 4px;
-}
-
-::-webkit-scrollbar-thumb:hover {
-  background: rgba(255, 255, 255, 0.3);
-}
-
-/* Animation keyframes */
-@keyframes pulse-glow {
-  0%, 100% {
-    opacity: 1;
-  }
-  50% {
-    opacity: 0.6;
-  }
-}
-
-@keyframes shimmer {
-  0% {
-    background-position: -1000px 0;
-  }
-  100% {
-    background-position: 1000px 0;
-  }
-}
-
-.animate-pulse-glow {
-  animation: pulse-glow 2s ease-in-out infinite;
-}
-
-.animate-shimmer {
-  animation: shimmer 2s linear infinite;
-  background: linear-gradient(
-    to right,
-    transparent 0%,
-    rgba(255, 255, 255, 0.1) 50%,
-    transparent 100%
-  );
-  background-size: 1000px 100%;
-}
-
-/* 3D transforms for card flip */
-.perspective-1000 {
-  perspective: 1000px;
-}
-
-.preserve-3d {
-  transform-style: preserve-3d;
-}
-
-.backface-hidden {
-  backface-visibility: hidden;
-}
-
-.rotate-y-180 {
-  transform: rotateY(180deg);
 }

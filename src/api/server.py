@@ -237,8 +237,11 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
     # Static files — mount /assets for Vite bundles, explicit route for /
     static_dir = Path(__file__).parent.parent.parent / "static"
     assets_dir = static_dir / "assets"
+    images_dir = static_dir / "images"
     if static_dir.exists() and assets_dir.exists():
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
+        if images_dir.exists():
+            app.mount("/images", StaticFiles(directory=str(images_dir)), name="images")
         log.info("static_files_mounted", path=str(static_dir))
 
         @app.get("/")

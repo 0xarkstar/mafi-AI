@@ -6,7 +6,7 @@ import { useBetting } from '../../hooks/useBetting'
 import { useGameStore } from '../../stores/gameStore'
 
 export function BetSlip() {
-  const [selectedAmount, setSelectedAmount] = useState<number>(BET_AMOUNTS[0])
+  const [selectedAmount, setSelectedAmount] = useState<number>(BET_AMOUNTS[0] ?? 1)
   const { connected, balance } = useWallet()
   const { placeBet, isPlacing } = useBetting()
   const phase = useGameStore((s) => s.phase)

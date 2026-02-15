@@ -5,6 +5,7 @@ import { useGameStore } from '../../stores/gameStore'
 import type { Phase } from '../../lib/types'
 
 const phaseConfig: Record<Phase, { icon: typeof Moon; label: string; gradient: string }> = {
+  landing: { icon: Moon, label: 'Welcome', gradient: 'from-gray-950 to-black' },
   lobby: { icon: Vote, label: 'Lobby', gradient: 'from-zinc-900 to-zinc-950' },
   night: { icon: Moon, label: 'Night Phase', gradient: 'from-indigo-950 via-slate-950 to-black' },
   day_discussion: { icon: Sun, label: 'Day Discussion', gradient: 'from-amber-900 via-stone-950 to-black' },
@@ -19,7 +20,7 @@ export function PhaseOverlay() {
   const [currentPhase, setCurrentPhase] = useState<Phase>(phase)
 
   useEffect(() => {
-    if (phase !== 'lobby' && phase !== currentPhase) {
+    if (phase !== 'landing' && phase !== 'lobby' && phase !== currentPhase) {
       setCurrentPhase(phase)
       setShowOverlay(true)
       const timer = setTimeout(() => setShowOverlay(false), 2000)

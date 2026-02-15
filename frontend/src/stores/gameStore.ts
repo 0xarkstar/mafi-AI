@@ -33,7 +33,7 @@ interface GameStore {
 
 export const useGameStore = create<GameStore>((set) => ({
   // Initial state
-  phase: 'lobby',
+  phase: 'landing',
   round: 0,
   players: {},
   votes: [],
