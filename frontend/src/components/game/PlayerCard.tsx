@@ -41,23 +41,18 @@ export function PlayerCard({
       transition={{ type: 'spring', stiffness: 200, damping: 20 }}
     >
       <div className="relative w-full aspect-[4/5] group pointer-events-auto">
-        {/* Chat Bubble Overlay - ABOVE card */}
+        {/* Chat Bubble Overlay - inside card, top area */}
         <AnimatePresence>
           {chatMessage && (
             <motion.div
-              initial={{ opacity: 0, y: 10 }}
-              animate={{ opacity: 1, y: 0 }}
-              exit={{ opacity: 0, y: 10 }}
+              initial={{ opacity: 0, scale: 0.9 }}
+              animate={{ opacity: 1, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
               transition={{ duration: 0.2 }}
-              className="absolute bottom-full left-0 right-0 mb-2 z-[60]"
+              className="absolute top-1 left-1 right-1 z-[60] pointer-events-none"
             >
-              <div className="bg-[#1e293b] text-white text-xs p-3 rounded-2xl border border-gold/40 relative max-w-[220px] mx-auto">
-                <span className="text-gold font-bold uppercase text-[9px] block mb-1 opacity-70">
-                  {name}
-                </span>
-                <p className="leading-snug">{chatMessage}</p>
-                {/* Arrow */}
-                <div className="absolute -bottom-1.5 left-1/2 -translate-x-1/2 w-3 h-3 bg-[#1e293b] border-b border-r border-gold/40 transform rotate-45" />
+              <div className="bg-[#1e293b]/95 backdrop-blur-sm text-white text-[10px] p-2 rounded-lg border border-gold/40 shadow-lg">
+                <p className="leading-snug line-clamp-3">{chatMessage}</p>
               </div>
             </motion.div>
           )}
@@ -82,7 +77,7 @@ export function PlayerCard({
 
         {/* Main Card */}
         <div
-          className={canVote ? 'cursor-pointer' : ''}
+          className={`h-full ${canVote ? 'cursor-pointer' : ''}`}
           onClick={() => canVote && onVote(name)}
         >
           <GlassCard
