@@ -42,6 +42,20 @@ Bring ~15 interactive visual features from MAFI_AI_FRONT branch into main, wired
 12. Spectator chat panel (spring-animated, unread count badge)
 13. Game log in SpectatorScreen (last 15 messages, type-colored)
 
+### Visual QA (Playwright)
+- **Day phase**: Portrait images, role badges, vote count badges, chat bubbles inside cards ✅
+- **Night phase**: Background crossfade to dark blue/purple, stars, moon overlay ✅
+- **Day vote phase**: Red tint overlay, "Voting Time" ballot overlay ✅
+- **SpectatorScreen**: Full betting terminal (4 bet types, quick amounts, payout calc, My Bets) ✅
+- **Spectator Chat**: Toggle panel with "watching" indicator ✅
+- **Live Market Feed**: Scrolling ticker with phase/pool/player info ✅
+
+### Bug Fixes (post-implementation)
+- `PlayerCard.tsx`: Added `h-full` to click-wrapper div (GlassCard collapsed to 2px)
+- `PlayerCard.tsx`: Repositioned chat bubble from above-card (`bottom-full`) to inside-card overlay (`top-1`) — sidebar `overflow-y-auto` was clipping external elements
+- `gameStore.ts`: Added `activeEmotes` timeout cleanup in `resetGame()` (memory leak)
+- `SpectatorScreen.tsx`: Added NaN/negative guard on amount input
+
 ### Files Changed
 - `frontend/src/components/game/PlayerCard.tsx` — Major rewrite (portrait images, overlays)
 - `frontend/src/components/game/GameBoard.tsx` — Store wiring for new props
