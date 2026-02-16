@@ -5,18 +5,25 @@ import { MobileTabBar } from './MobileTabBar'
 import { GameBoard } from '../game/GameBoard'
 import { ChatPanel } from '../game/ChatPanel'
 import { BettingPanel } from '../betting/BettingPanel'
+import { BettingStatusBar } from '../game/BettingStatusBar'
+import { NightOverlay } from '../game/NightOverlay'
+import { useGameStore } from '../../stores/gameStore'
 
 type MobileTab = 'game' | 'chat' | 'bet'
 
 export function GameLayout() {
   const [activeTab, setActiveTab] = useState<MobileTab>('game')
+  const phase = useGameStore((s) => s.phase)
 
   return (
-    <div className="h-full flex flex-col">
+    <div className="h-full flex flex-col relative">
+      {/* Night overlay (full screen) */}
+      <NightOverlay isVisible={phase === 'night'} />
+
       <Header />
 
       {/* Desktop Layout (3 columns) */}
-      <div className="hidden lg:grid lg:grid-cols-[280px_1fr_320px] gap-4 p-4 flex-1 overflow-hidden">
+      <div className="hidden lg:grid lg:grid-cols-[280px_1fr_320px] gap-4 p-4 flex-1 overflow-hidden relative">
         {/* Left: Player cards sidebar */}
         <div className="overflow-y-auto">
           <GameBoard />
@@ -27,10 +34,13 @@ export function GameLayout() {
           <ChatPanel />
         </div>
 
-        {/* Right: Betting panel (placeholder for p-impl-bet) */}
+        {/* Right: Betting panel */}
         <div className="overflow-y-auto space-y-4">
           <BettingPanel />
         </div>
+
+        {/* Betting Status Bar (bottom center overlay) */}
+        <BettingStatusBar />
       </div>
 
       {/* Mobile Layout (single column with tabs) */}

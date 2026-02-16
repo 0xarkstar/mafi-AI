@@ -19,6 +19,23 @@
 
   --color-phase-gameover-from: #022c22;
   --color-phase-gameover-to: #0f172a;
+
+  /* Gold theme colors */
+  --color-gold: #D4A853;
+  --color-gold-light: #f0d78c;
+  --color-gold-dark: #9a7a3a;
+
+  /* Glass surface colors */
+  --color-glass-surface: rgba(255, 255, 255, 0.03);
+  --color-glass-border: rgba(255, 255, 255, 0.08);
+
+  /* Role colors */
+  --color-role-mafia: #ef4444;
+  --color-role-citizen: #22c55e;
+  --color-role-detective: #3b82f6;
+
+  /* Background */
+  --color-background: #030712;
 }
 
 * {
@@ -30,7 +47,7 @@
 html,
 body {
   height: 100%;
-  font-family: 'Inter', system-ui, -apple-system, sans-serif;
+  font-family: 'Outfit', system-ui, -apple-system, sans-serif;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 }
@@ -146,4 +163,17 @@ body.phase-game_over {
 
 .rotate-y-180 {
   transform: rotateY(180deg);
+}
+
+/* Text glow utilities */
+.text-glow {
+  text-shadow: 0 0 20px rgba(212, 168, 83, 0.3);
+}
+
+.text-glow-red {
+  text-shadow: 0 0 20px rgba(239, 68, 68, 0.5);
+}
+
+.text-glow-green {
+  text-shadow: 0 0 20px rgba(34, 197, 94, 0.5);
 }

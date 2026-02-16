@@ -5,6 +5,7 @@ import { useBettingStore } from '../../stores/bettingStore'
 import { useWallet } from '../../hooks/useWallet'
 import { useWalletStore } from '../../stores/walletStore'
 import { createContracts } from '../../lib/blockchain'
+import { cn } from '../../lib/utils'
 
 export function PayoutCard() {
   const [isClaiming, setIsClaiming] = useState(false)
@@ -58,29 +59,27 @@ export function PayoutCard() {
   }
 
   return (
-    <div className="glass-card p-6 space-y-4 border-2 border-yellow-500/30">
+    <div className="glass-card p-6 space-y-4 border-2 border-[#D4A853]/50 bg-gradient-to-br from-[#9a7a3a]/10 to-transparent">
       <div className="text-center">
-        <div className="text-xs text-white/60 uppercase tracking-wide mb-2">
+        <div className="text-xs text-[#D4A853] uppercase tracking-wider mb-2 font-semibold">
           Your Winnings
         </div>
-        <div className="text-4xl font-bold text-yellow-400 flex items-center justify-center gap-2">
+        <div className="text-4xl font-bold text-[#D4A853] flex items-center justify-center gap-2 text-glow">
           <DollarSign className="w-8 h-8" />
           {totalWinnings.toFixed(2)}
         </div>
-        <div className="text-xs text-white/40 mt-1">USDC</div>
+        <div className="text-xs text-[#f0d78c] mt-1 font-medium">USDC</div>
       </div>
 
       <button
         onClick={handleClaim}
         disabled={isClaiming || !address}
-        className={`
-          w-full px-4 py-3 rounded-lg font-bold text-white transition-all
-          ${
-            isClaiming || !address
-              ? 'bg-yellow-900/40 cursor-not-allowed opacity-50'
-              : 'bg-yellow-600 hover:bg-yellow-700 active:scale-95'
-          }
-        `}
+        className={cn(
+          'w-full px-4 py-3 rounded-lg font-bold text-white transition-all',
+          isClaiming || !address
+            ? 'bg-[#9a7a3a]/40 cursor-not-allowed opacity-50'
+            : 'bg-gradient-to-r from-[#9a7a3a] to-[#D4A853] hover:from-[#D4A853] hover:to-[#f0d78c] active:scale-95'
+        )}
       >
         {isClaiming ? (
           <span className="flex items-center justify-center gap-2">

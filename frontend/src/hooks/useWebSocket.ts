@@ -19,6 +19,8 @@ export function useWebSocket() {
   const updateLobby = useGameStore((s) => s.updateLobby)
   const setActionRequest = useGameStore((s) => s.setActionRequest)
   const initPlayers = useGameStore((s) => s.initPlayers)
+  const setScreen = useGameStore((s) => s.setScreen)
+  const isSpectator = useGameStore((s) => s.isSpectator)
 
   const addMessage = useChatStore((s) => s.addMessage)
   const addSystemMessage = useChatStore((s) => s.addSystemMessage)
@@ -92,6 +94,8 @@ export function useWebSocket() {
           const winner = data['winner'] as string
           setWinner(winner)
           addSystemMessage(`Game Over! ${winner} wins!`, 'game-over')
+          // Transition to reveal screen first (if enabled), then to game_over
+          setScreen('reveal')
           break
         }
 
@@ -135,10 +139,15 @@ export function useWebSocket() {
 
         case 'game_starting': {
           addSystemMessage('Game starting!')
+          setScreen('game')
+          initPlayers()
           break
         }
 
         case 'action_request': {
+          // Skip action requests for spectators
+          if (isSpectator) break
+
           const prompt = data['prompt'] as string
           const actionType = data['action_type'] as string
           const options = data['options'] as string[]
@@ -158,6 +167,12 @@ export function useWebSocket() {
           setPlayerType(playerName, playerType as any)
           const typeLabel = playerType === 'human' ? '👤 Human' : '🤖 AI'
           addSystemMessage(`${playerName} is ${typeLabel}`)
+
+          // Check if all players revealed - if so, transition to game_over
+          const allRevealed = data['all_revealed'] as boolean | undefined
+          if (allRevealed) {
+            setTimeout(() => setScreen('game_over'), 2000)
+          }
           break
         }
 
@@ -200,6 +215,8 @@ export function useWebSocket() {
     setOdds,
     addBet,
     updateBetStatus,
+    setScreen,
+    isSpectator,
   ])
 
   const send = (data: Record<string, unknown>) => {

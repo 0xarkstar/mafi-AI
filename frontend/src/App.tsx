@@ -1,9 +1,12 @@
 import { useState, useEffect } from 'react'
+import { AnimatePresence } from 'framer-motion'
+import { useGameStore } from './stores/gameStore'
 import { useWebSocket } from './hooks/useWebSocket'
 import { usePhaseTheme } from './hooks/usePhaseTheme'
-import { useGameState } from './hooks/useGameState'
-import { useGameStore } from './stores/gameStore'
 import { LobbyScreen } from './components/lobby/LobbyScreen'
+import { LandingScreen } from './screens/LandingScreen'
+import { SpectatorScreen } from './screens/SpectatorScreen'
+import { RevealScreen } from './screens/RevealScreen'
 import { GameLayout } from './components/layout/GameLayout'
 import { PhaseOverlay } from './components/game/PhaseOverlay'
 import { EliminationModal } from './components/game/EliminationModal'
@@ -18,27 +21,29 @@ interface EliminationData {
   reason: 'killed_at_night' | 'voted_out'
 }
 
-export default function App() {
+// Wrapper for Lobby Screen with WebSocket
+function LobbyScreenWrapper() {
   const { send } = useWebSocket()
-  usePhaseTheme()
-  const { phase, winner, actionRequest } = useGameState()
 
+  const handleJoin = (name: string) => {
+    send({ type: 'join_lobby', name })
+  }
+
+  return <LobbyScreen onJoin={handleJoin} />
+}
+
+// Wrapper for Game Screen with WebSocket
+function GameScreenWrapper() {
+  const { send } = useWebSocket()
+  const actionRequest = useGameStore((s) => s.actionRequest)
   const [eliminationData, setEliminationData] = useState<EliminationData | null>(null)
 
-  // Listen for elimination events from WebSocket
   useEffect(() => {
-    // This would ideally be in useWebSocket, but for now we'll handle it here
-    // In production, you'd extract the elimination event and pass it up
-    // For now, we'll just clear it after a delay if it's set
     if (eliminationData) {
       const timer = setTimeout(() => setEliminationData(null), 3500)
       return () => clearTimeout(timer)
     }
   }, [eliminationData])
-
-  const handleJoin = (name: string) => {
-    send({ type: 'join_lobby', name })
-  }
 
   const handleActionSubmit = (response: string) => {
     if (!actionRequest) return
@@ -52,17 +57,9 @@ export default function App() {
 
   return (
     <>
-      {phase === 'lobby' && <LobbyScreen onJoin={handleJoin} />}
-
-      {phase !== 'lobby' && (
-        <>
-          <GameLayout />
-          {actionRequest && <ActionPanel onSubmit={handleActionSubmit} />}
-        </>
-      )}
-
+      <GameLayout />
+      {actionRequest && <ActionPanel onSubmit={handleActionSubmit} />}
       <PhaseOverlay />
-
       {eliminationData && (
         <EliminationModal
           playerName={eliminationData.playerName}
@@ -71,9 +68,30 @@ export default function App() {
           onClose={() => setEliminationData(null)}
         />
       )}
+    </>
+  )
+}
 
-      {winner && <GameOverScreen winner={winner} />}
+// Wrapper for Game Over Screen
+function GameOverScreenWrapper() {
+  const winner = useGameStore((s) => s.winner)
+  return winner ? <GameOverScreen /> : null
+}
 
+export default function App() {
+  const screen = useGameStore((s) => s.screen)
+  usePhaseTheme()
+
+  return (
+    <>
+      <AnimatePresence mode="wait">
+        {screen === 'landing' && <LandingScreen key="landing" />}
+        {screen === 'lobby' && <LobbyScreenWrapper key="lobby" />}
+        {screen === 'game' && <GameScreenWrapper key="game" />}
+        {screen === 'spectate' && <SpectatorScreen key="spectate" />}
+        {screen === 'reveal' && <RevealScreen key="reveal" />}
+        {screen === 'game_over' && <GameOverScreenWrapper key="game_over" />}
+      </AnimatePresence>
       <TxToast />
     </>
   )

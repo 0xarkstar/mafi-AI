@@ -21,7 +21,7 @@ export function SuspectList() {
 
   return (
     <div className="space-y-2">
-      <div className="text-xs text-white/60 uppercase tracking-wide">
+      <div className="text-xs text-[#D4A853] uppercase tracking-wider font-semibold">
         Mafia Suspicion
       </div>
       <div className="space-y-1.5">
@@ -32,14 +32,17 @@ export function SuspectList() {
           const percentage = Math.round(prob * 100)
 
           return (
-            <div key={name} className="space-y-1">
+            <div
+              key={name}
+              className="space-y-1 p-2 rounded-lg bg-white/5 backdrop-blur-sm border border-white/10"
+            >
               <div className="flex items-center justify-between text-xs">
                 <span className="font-medium" style={{ color: player.color }}>
                   #{index + 1} {name}
                 </span>
-                <span className="text-white/60">{percentage}%</span>
+                <span className="text-[#f0d78c] font-semibold">{percentage}%</span>
               </div>
-              <div className="h-1.5 bg-black/30 rounded-full overflow-hidden">
+              <div className="h-1.5 bg-black/30 rounded-full overflow-hidden border border-[#D4A853]/20">
                 <motion.div
                   className="h-full bg-red-500"
                   initial={{ width: 0 }}

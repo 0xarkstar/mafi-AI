@@ -1,6 +1,7 @@
 import { Wallet, AlertTriangle, Loader2 } from 'lucide-react'
 import { useWallet } from '../../hooks/useWallet'
 import { MONAD_TESTNET } from '../../lib/blockchain'
+import { cn } from '../../lib/utils'
 
 export function ConnectButton() {
   const { connected, address, balance, isConnecting, connect, disconnect } = useWallet()
@@ -24,15 +25,15 @@ export function ConnectButton() {
         )}
         <button
           onClick={disconnect}
-          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors"
+          className="flex items-center gap-2 px-3 py-1.5 rounded-lg bg-white/10 hover:bg-white/20 transition-colors border border-[#D4A853]/30"
         >
           <div className="flex items-center gap-2">
-            <div className="w-2 h-2 rounded-full bg-green-500" />
-            <span className="text-white font-medium text-sm">
+            <div className="w-2 h-2 rounded-full bg-[#D4A853] shadow-[0_0_8px_rgba(212,168,83,0.6)]" />
+            <span className="text-[#f0d78c] font-medium text-sm">
               {truncateAddress(address)}
             </span>
           </div>
-          <div className="text-white/60 text-xs">
+          <div className="text-[#D4A853] text-xs font-semibold">
             ${parseFloat(balance || '0').toFixed(2)} USDC
           </div>
         </button>
@@ -44,14 +45,12 @@ export function ConnectButton() {
     <button
       onClick={connect}
       disabled={isConnecting}
-      className={`
-        flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-white transition-all
-        ${
-          isConnecting
-            ? 'bg-blue-600/50 cursor-not-allowed'
-            : 'bg-blue-600 hover:bg-blue-700 active:scale-95'
-        }
-      `}
+      className={cn(
+        'flex items-center gap-2 px-4 py-2 rounded-lg font-semibold text-white transition-all',
+        isConnecting
+          ? 'bg-[#9a7a3a]/50 cursor-not-allowed'
+          : 'bg-gradient-to-r from-[#9a7a3a] to-[#D4A853] hover:from-[#D4A853] hover:to-[#f0d78c] active:scale-95'
+      )}
     >
       {isConnecting ? (
         <>

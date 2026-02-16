@@ -25,23 +25,38 @@ export function LobbyScreen({ onJoin }: LobbyScreenProps) {
           transition={{ type: 'spring', stiffness: 200, damping: 20 }}
           className="text-center mb-12"
         >
-          <h1 className="text-6xl font-bold mb-4">
-            <span className="text-5xl mr-2">🎭</span>
-            <span className="bg-gradient-to-r from-white via-zinc-200 to-zinc-400 bg-clip-text text-transparent">
-              MAFIA AI
-            </span>
+          <h1
+            className="text-6xl font-black tracking-tight text-transparent bg-clip-text mb-4 text-glow"
+            style={{
+              backgroundImage: 'linear-gradient(180deg, #FFF2CC 0%, #D4A853 50%, #805F1F 100%)',
+            }}
+          >
+            MAFI-AI
           </h1>
+          <div className="flex items-center justify-center gap-4 mb-4">
+            {/* Progress bar */}
+            <div className="w-64 h-2 bg-black/40 rounded-full overflow-hidden border border-white/10">
+              <motion.div
+                initial={{ width: 0 }}
+                animate={{ width: `${(lobbyCount / 7) * 100}%` }}
+                className="h-full bg-gradient-to-r from-gold-dark to-gold"
+              />
+            </div>
+            <span className="text-sm font-mono text-white/60">
+              {lobbyCount}/7
+            </span>
+          </div>
           <p className="text-zinc-400 text-lg">
             {lobbyReady ? (
               <motion.span
                 animate={{ opacity: [1, 0.5, 1] }}
                 transition={{ duration: 1.5, repeat: Infinity }}
-                className="text-emerald-400 font-semibold"
+                className="text-gold font-semibold"
               >
                 Game starting soon...
               </motion.span>
             ) : (
-              `Waiting for players ${lobbyCount}/7`
+              'Waiting for players to join'
             )}
           </p>
         </motion.div>

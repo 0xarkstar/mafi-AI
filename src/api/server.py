@@ -241,6 +241,12 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
         app.mount("/assets", StaticFiles(directory=str(assets_dir)), name="assets")
         log.info("static_files_mounted", path=str(static_dir))
 
+    # Image assets from frontend
+    images_dir = Path(__file__).parent.parent.parent / "frontend" / "public" / "images"
+    if images_dir.exists():
+        app.mount("/images", StaticFiles(directory=str(images_dir)), name="images")
+        log.info("images_mounted", path=str(images_dir))
+
         @app.get("/")
         async def index():
             """Serve the SPA index.html."""

@@ -190,6 +190,60 @@ See `docs/pipeline/USDC_DESIGN.md`
 - **72% Python coverage** (moltbook/auth: 100%, models: 100%, betting/manager: 90%)
 - Zero import errors, zero syntax errors
 
+## Previous Pipeline Complete (Frontend Redesign)
+
+---
+
+## MAFI_AI_FRONT UI Merge Pipeline
+
+### Goal
+Merge MAFI_AI_FRONT branch visual design into main's real WebSocket architecture.
+
+### P1 Implementation — COMPLETE
+- Started: 2026-02-16
+- Completed: 2026-02-16
+- Team: p-impl-core (sonnet), p-impl-ui (sonnet), p-impl-bet (sonnet)
+
+### Phase Status
+- [x] P1a: Foundation (p-impl-core) — types, constants, store, App, useWebSocket, globals.css, server.py
+- [x] P1b: Visual Components + Screens (p-impl-ui) — LandingScreen, SpectatorScreen, RevealScreen, components
+- [x] P1c: Betting Integration (p-impl-bet) — BettingPanel, wallet, spectator betting
+- [x] P2: Verification — build passes (0 errors), 236 backend tests pass
+
+### Changes Summary (28 files, +517/-355)
+
+**New files created:**
+- `frontend/public/images/` — 13 image assets (character portraits, backgrounds, logo)
+- `frontend/src/screens/LandingScreen.tsx` — 368 lines, shattered mask effect, avatar selection, wallet connect
+- `frontend/src/screens/SpectatorScreen.tsx` — 220 lines, real WebSocket spectating + betting panel
+- `frontend/src/screens/RevealScreen.tsx` — 149 lines, 3D card flip reveal
+- `frontend/src/components/game/RoleRevealModal.tsx` — 115 lines, dramatic role reveal at game start
+- `frontend/src/components/game/NightOverlay.tsx` — 39 lines, night phase transition
+- `frontend/src/components/game/BettingStatusBar.tsx` — 48 lines, floating odds bar
+- `frontend/src/components/ui/Input.tsx` — 26 lines, gold-themed input
+
+**Modified files:**
+- `gameStore.ts` — +screen routing, nickname, avatarIndex, isSpectator, emotes, resetGame
+- `useWebSocket.ts` — +spectator support, screen transitions, identity reveal handling
+- `App.tsx` — screen-based routing (landing→lobby→game→spectate→reveal→game_over)
+- `types.ts` — +ScreenState, avatarIndex, ActiveEmote
+- `constants.ts` — +AVATAR_IMAGES, avatarIndex per agent
+- `globals.css` — +Outfit font, gold theme vars, text-glow utilities
+- `server.py` — +/images static mount
+- `GameOverScreen.tsx` — canvas confetti, redesigned win/lose card, play again/reset
+- `PlayerCard.tsx`, `GameBoard.tsx` — avatar images
+- `LobbyScreen.tsx`, `PlayerSlot.tsx` — avatar cards, progress styling
+- `Header.tsx`, `GameLayout.tsx` — gold branding, BettingStatusBar, NightOverlay
+- `BettingPanel.tsx`, `OddsBar.tsx`, `BetSlip.tsx`, `BetHistory.tsx`, `PayoutCard.tsx`, `SuspectList.tsx` — gold theme
+- `ConnectButton.tsx`, `TxToast.tsx` — gold theme
+- `Button.tsx` — +gold variant
+- `GlassCard.tsx` — +blur variants
+
+### Build Output
+- 0 TypeScript errors
+- 3 JS chunks + 1 CSS: index.js (273KB), ethers.js (269KB), framer-motion.js (125KB), index.css (71KB)
+- 236 Python backend tests pass, 0 failures
+
 ## Pipeline Complete
 
 ### Final Summary — USDC Betting Unification

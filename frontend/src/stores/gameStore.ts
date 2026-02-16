@@ -1,5 +1,5 @@
 import { create } from 'zustand'
-import type { Phase, Player, Vote, Role, PlayerType, ActionRequest } from '../lib/types'
+import type { Phase, Player, Vote, Role, PlayerType, ActionRequest, ScreenState } from '../lib/types'
 import { AGENTS } from '../lib/constants'
 
 interface GameStore {
@@ -15,6 +15,11 @@ interface GameStore {
   lobbyCount: number
   lobbyReady: boolean
   actionRequest: ActionRequest | null
+  screen: ScreenState
+  nickname: string
+  avatarIndex: number
+  isSpectator: boolean
+  activeEmotes: Record<string, { emoji: string; timeout: ReturnType<typeof setTimeout> }>
 
   // Actions
   setPhase: (phase: Phase, round: number) => void
@@ -29,6 +34,12 @@ interface GameStore {
   updateLobby: (players: string[], count: number, ready: boolean) => void
   setActionRequest: (req: ActionRequest | null) => void
   initPlayers: () => void
+  setScreen: (screen: ScreenState) => void
+  setNickname: (name: string) => void
+  setAvatarIndex: (index: number) => void
+  setIsSpectator: (isSpectator: boolean) => void
+  triggerEmote: (playerId: string, emoji: string) => void
+  resetGame: () => void
 }
 
 export const useGameStore = create<GameStore>((set) => ({
@@ -44,6 +55,11 @@ export const useGameStore = create<GameStore>((set) => ({
   lobbyCount: 0,
   lobbyReady: false,
   actionRequest: null,
+  screen: 'landing',
+  nickname: '',
+  avatarIndex: 0,
+  isSpectator: false,
+  activeEmotes: {},
 
   // Actions
   setPhase: (phase, round) => set({ phase, round }),
@@ -124,10 +140,60 @@ export const useGameStore = create<GameStore>((set) => ({
             role: null,
             playerType: null,
             isSpeaking: false,
+            avatarIndex: agent.avatarIndex,
           }
           return acc
         },
         {} as Record<string, Player>
       ),
+    }),
+
+  setScreen: (screen) => set({ screen }),
+
+  setNickname: (name) => set({ nickname: name }),
+
+  setAvatarIndex: (index) => set({ avatarIndex: index }),
+
+  setIsSpectator: (isSpectator) => set({ isSpectator }),
+
+  triggerEmote: (playerId, emoji) =>
+    set((state) => {
+      // Clear existing timeout if any
+      const existing = state.activeEmotes[playerId]
+      if (existing?.timeout) {
+        clearTimeout(existing.timeout)
+      }
+
+      // Set new emote with auto-clear after 3 seconds
+      const timeout = setTimeout(() => {
+        set((s) => {
+          const { [playerId]: _, ...rest } = s.activeEmotes
+          return { activeEmotes: rest }
+        })
+      }, 3000)
+
+      return {
+        activeEmotes: {
+          ...state.activeEmotes,
+          [playerId]: { emoji, timeout },
+        },
+      }
+    }),
+
+  resetGame: () =>
+    set({
+      screen: 'landing',
+      phase: 'lobby',
+      round: 0,
+      players: {},
+      votes: [],
+      winner: null,
+      isPlayer: false,
+      myPlayerName: null,
+      lobbyPlayers: [],
+      lobbyCount: 0,
+      lobbyReady: false,
+      actionRequest: null,
+      activeEmotes: {},
     }),
 }))

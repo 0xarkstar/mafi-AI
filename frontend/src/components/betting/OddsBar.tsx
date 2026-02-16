@@ -9,10 +9,10 @@ export function OddsBar() {
 
   return (
     <div className="space-y-2">
-      <div className="flex justify-between text-xs text-white/60 uppercase tracking-wide">
+      <div className="flex justify-between text-xs text-[#D4A853] uppercase tracking-wider font-semibold">
         <span>Win Probability</span>
       </div>
-      <div className="h-8 flex rounded-lg overflow-hidden bg-black/30">
+      <div className="h-8 flex rounded-xl overflow-hidden bg-black/30 border border-[#D4A853]/30 relative">
         <motion.div
           className="bg-red-600 flex items-center justify-start px-3 text-white font-semibold text-sm"
           initial={{ width: '50%' }}
@@ -21,6 +21,7 @@ export function OddsBar() {
         >
           Mafia {mafiaPercent}%
         </motion.div>
+        <div className="absolute left-1/2 top-0 bottom-0 w-px bg-[#D4A853] shadow-[0_0_8px_rgba(212,168,83,0.5)]" />
         <motion.div
           className="bg-green-600 flex items-center justify-end px-3 text-white font-semibold text-sm"
           initial={{ width: '50%' }}

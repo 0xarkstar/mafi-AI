@@ -19,9 +19,13 @@ export function Header() {
         <div className="flex items-center justify-between">
           {/* Logo */}
           <div className="flex items-center gap-3">
-            <span className="text-2xl">🎭</span>
-            <h1 className="text-xl font-bold bg-gradient-to-r from-white to-zinc-300 bg-clip-text text-transparent">
-              MAFIA AI
+            <h1
+              className="text-xl font-black tracking-tight text-transparent bg-clip-text text-glow"
+              style={{
+                backgroundImage: 'linear-gradient(180deg, #FFF2CC 0%, #D4A853 50%, #805F1F 100%)',
+              }}
+            >
+              MAFI-AI
             </h1>
           </div>
 
