@@ -53,6 +53,9 @@ class HumanPlayer:
         Returns:
             Player response or random choice on timeout.
         """
+        # Cancel any existing future to prevent race conditions
+        if self._response_future and not self._response_future.done():
+            self._response_future.cancel()
         self._response_future = asyncio.Future()
 
         try:

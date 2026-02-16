@@ -6,6 +6,8 @@ import { useBettingStore } from '../stores/bettingStore'
 
 export function useWebSocket() {
   const wsRef = useRef<WebSocketClient | null>(null)
+  const speakingTimersRef = useRef<Map<string, NodeJS.Timeout>>(new Map())
+  const revealTimerRef = useRef<NodeJS.Timeout | null>(null)
 
   const setPhase = useGameStore((s) => s.setPhase)
   const setPlayerAlive = useGameStore((s) => s.setPlayerAlive)
@@ -67,7 +69,14 @@ export function useWebSocket() {
           const message = data['message'] as string
           addMessage({ agent, message, type: 'agent' })
           setPlayerSpeaking(agent, true)
-          setTimeout(() => setPlayerSpeaking(agent, false), 3000)
+          // Clear previous timer for this agent to prevent memory leak
+          const prevTimer = speakingTimersRef.current.get(agent)
+          if (prevTimer) clearTimeout(prevTimer)
+          const timer = setTimeout(() => {
+            setPlayerSpeaking(agent, false)
+            speakingTimersRef.current.delete(agent)
+          }, 3000)
+          speakingTimersRef.current.set(agent, timer)
           setChatBubble(agent, message)
           // Auto-transition if client missed game_starting event
           if (useGameStore.getState().screen === 'lobby') {
@@ -204,7 +213,9 @@ export function useWebSocket() {
           // Check if all players revealed - if so, transition to game_over
           const allRevealed = data['all_revealed'] as boolean | undefined
           if (allRevealed) {
-            setTimeout(() => setScreen('game_over'), 2000)
+            // Clear previous timer to prevent memory leak
+            if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
+            revealTimerRef.current = setTimeout(() => setScreen('game_over'), 2000)
           }
           break
         }
@@ -229,6 +240,11 @@ export function useWebSocket() {
     setWsSend((data: Record<string, unknown>) => ws.send(data))
 
     return () => {
+      // Clear all speaking timers to prevent memory leaks
+      speakingTimersRef.current.forEach((timer) => clearTimeout(timer))
+      speakingTimersRef.current.clear()
+      // Clear reveal timer to prevent memory leak
+      if (revealTimerRef.current) clearTimeout(revealTimerRef.current)
       ws.disconnect()
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps

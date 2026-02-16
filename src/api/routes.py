@@ -1,5 +1,7 @@
 """REST API routes."""
 
+import asyncio
+
 from fastapi import APIRouter, HTTPException
 
 from src.models.game import GameState
@@ -13,6 +15,7 @@ router = APIRouter(prefix="/api")
 _current_game: GameState | None = None
 _game_active: bool = False
 _betting_manager = None
+_state_lock = asyncio.Lock()
 
 
 def set_game_state(state: GameState | None) -> None:

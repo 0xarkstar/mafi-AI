@@ -1,5 +1,6 @@
 """FastAPI application factory."""
 
+import re
 from pathlib import Path
 
 from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
@@ -14,6 +15,20 @@ from src.models.events import WSEvent
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
+
+# Validation helpers
+NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_\- ]+$")
+
+
+def validate_player_name(name: str) -> str | None:
+    """Validate player name. Returns error message if invalid, None if valid."""
+    if not name or not isinstance(name, str):
+        return "Name must be a non-empty string"
+    if len(name) < 1 or len(name) > 32:
+        return "Name must be 1-32 characters"
+    if not NAME_PATTERN.match(name):
+        return "Name can only contain letters, numbers, spaces, hyphens, and underscores"
+    return None
 
 
 def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) -> FastAPI:
@@ -41,7 +56,6 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
     app.add_middleware(
         CORSMiddleware,
         allow_origins=["*"],
-        allow_credentials=True,
         allow_methods=["*"],
         allow_headers=["*"],
     )
@@ -287,6 +301,15 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                 if data.get("type") == "join_lobby":
                     player_name = data.get("name", f"Human-{session_id[:6]}")
 
+                    # Validate player name
+                    error = validate_player_name(player_name)
+                    if error:
+                        await ws.send_json({
+                            "type": "error",
+                            "message": f"Invalid player name: {error}"
+                        })
+                        continue
+
                     # Register this WS as a player
                     await ws_manager.register_player(player_name, ws)
 
@@ -343,7 +366,23 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                 # Human action response
                 elif data.get("type") == "action_response":
                     player_name = data.get("player_name")
-                    response = data.get("response", "")
+                    response = data.get("response")
+
+                    # Validate action_response fields
+                    if not player_name or not isinstance(player_name, str):
+                        await ws.send_json({
+                            "type": "error",
+                            "message": "Invalid action_response: player_name must be a non-empty string"
+                        })
+                        continue
+
+                    if not response or not isinstance(response, str):
+                        await ws.send_json({
+                            "type": "error",
+                            "message": "Invalid action_response: response must be a non-empty string"
+                        })
+                        continue
+
                     ws_manager.resolve_response(player_name, response)
 
                 # Handle bet placement from client (redirect to REST API)

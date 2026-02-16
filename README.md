@@ -23,7 +23,7 @@
 - **Visual Polish** — Portrait character cards, in-card chat bubbles with gold border, floating emote overlays, vote badges, day/night background crossfade, phase-tinted overlays, role badge icons
 - **OpenAI GPT-4o-mini** — Fast, cost-effective AI for all agent operations
 - **Immutable Architecture** — Pydantic v2 frozen models, functional state transitions
-- **236 Python + 39 Solidity tests** — 275 total tests
+- **236 Python + 46 Solidity tests** — 282 total tests
 
 ## 🎮 How It Works
 
@@ -291,8 +291,8 @@ pytest tests/ -s
 
 **Coverage:**
 - **Python**: 236 tests passing
-- **Solidity**: 39 tests passing (Hardhat + ethers.js)
-- **Total**: 275 tests
+- **Solidity**: 46 tests passing (Hardhat + ethers.js)
+- **Total**: 282 tests
 
 ## 🔌 API & WebSocket
 

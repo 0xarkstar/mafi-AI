@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useState, useEffect, useRef } from 'react'
 import { ethers } from 'ethers'
 import type { BetType } from '../lib/types'
 import { useWalletStore } from '../stores/walletStore'
@@ -8,9 +8,23 @@ import { createContracts } from '../lib/blockchain'
 
 export function useBetting() {
   const [isPlacing, setIsPlacing] = useState(false)
+  const statusTimerRef = useRef<NodeJS.Timeout | null>(null)
   const setTxStatus = useWalletStore((s) => s.setTxStatus)
   const addBet = useBettingStore((s) => s.addBet)
   const { signer, address } = useWallet()
+
+  // Cleanup timer on unmount
+  useEffect(() => {
+    return () => {
+      if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
+    }
+  }, [])
+
+  // Helper to auto-dismiss status with cleanup
+  const autoDismissStatus = (delay: number) => {
+    if (statusTimerRef.current) clearTimeout(statusTimerRef.current)
+    statusTimerRef.current = setTimeout(() => setTxStatus(null), delay)
+  }
 
   const placeBet = async (betType: BetType, target: string, amount: number, round: number) => {
     if (!address) {
@@ -91,14 +105,14 @@ export function useBetting() {
         })
       }
 
-      // Auto-dismiss success message after 3s
-      setTimeout(() => setTxStatus(null), 3000)
+      // Auto-dismiss success message after 3s (with cleanup)
+      autoDismissStatus(3000)
     } catch (err: any) {
       console.error('Place bet error:', err)
       setTxStatus({ type: 'error', message: err.message || 'Failed to place bet' })
 
-      // Auto-dismiss error after 5s
-      setTimeout(() => setTxStatus(null), 5000)
+      // Auto-dismiss error after 5s (with cleanup)
+      autoDismissStatus(5000)
     } finally {
       setIsPlacing(false)
     }

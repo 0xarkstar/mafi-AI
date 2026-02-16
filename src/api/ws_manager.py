@@ -60,7 +60,7 @@ class WSManager:
         data = event.model_dump()
         dead = set()
 
-        for ws in self.active_connections:
+        for ws in list(self.active_connections):
             try:
                 await ws.send_json(data)
             except Exception as exc:
