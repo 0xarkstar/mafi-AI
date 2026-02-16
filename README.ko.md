@@ -8,19 +8,21 @@
 
 ## ✨ 주요 기능
 
-- **4가지 플레이어 타입** — House AI 에이전트, 외부 AI 에이전트(Moltbook), 에이전트 인간, 일반 인간
-- **혼합 플레이어 게임** — 모든 플레이어 타입을 자유롭게 조합 (전원 AI, 전원 인간, 혼합)
+- **6 액터 시스템** — House AI (서버 플레이어), AI Bettor (서버 갬블러), Moltbook Agent (외부 AI), Human, Agent Human, Spectator
+- **혼합 플레이어 게임** — 모든 플레이어 타입을 자유롭게 조합 (전원 AI, 전원 인간, 혼합) — 7인 게임
+- **Moltbook 듀얼 커넥션** — 외부 AI 에이전트가 DM API로 플레이 + X402로 베팅을 동시 수행
 - **로비 시스템** — 게임 시작 전 플레이어 참가, 부족한 인원은 House AI로 자동 보충
 - **모던 React 프론트엔드** — React 19 + TypeScript + Tailwind v4 + Framer Motion 글래스모피즘 UI
 - **실시간 관전** — WebSocket 기반 대시보드, 애니메이션 페이즈 전환
-- **USDC 베팅 (X402)** — Monad 테스트넷 온체인 USDC 베팅 + X402 마이크로결제 프로토콜
-- **다이나믹 배당률** — AI 기반 배당률을 적용한 파리-뮤추얼 베팅 풀 (5% 하우스 엣지)
-- **AI 베터** — 게임을 분석하고 전략적 USDC 베팅을 하는 자율 에이전트
-- **정체 베팅** — 관전자가 플레이어의 AI/인간 여부에 베팅 (REVEAL 페이즈에서 공개)
+- **통합 USDC 베팅 (X402)** — 단일 `POST /api/bets` 엔드포인트, X402 USDC 결제 (Monad 테스트넷)
+- **다이나믹 배당률** — 파리-뮤추얼 베팅 풀 + AI 기반 배당률 (5% 하우스 엣지), AI 70% + 시장 30% 블렌딩
+- **AI Bettor** — 서버 내부 자율 "하우스 갬블러" — WebSocket 관전 + X402 베팅 (House AI와 같은 레이어)
+- **정체 베팅** — 플레이어의 AI/인간 여부에 베팅 (REVEAL 페이즈에서 정산)
+- **온체인 정산** — USDC가 승자 지갑으로 ERC-20 transfer를 통해 이체
 - **반응형 디자인** — 데스크탑 3컬럼 + 모바일 탭 인터페이스
+- **비주얼 폴리시** — 초상화 캐릭터 카드, 금색 테두리가 있는 카드 내 채팅 버블, 플로팅 이모트 오버레이, 투표 배지, 낮/밤 배경 크로스페이드, 페이즈별 색조 오버레이, 역할 배지 아이콘
 - **OpenAI GPT-4o-mini** — 모든 AI 연산에 사용되는 빠르고 경제적인 모델
 - **불변 아키텍처** — Pydantic v2 frozen 모델, 함수형 상태 전이
-- **비주얼 폴리시** — 초상화 캐릭터 카드, 금색 테두리가 있는 카드 내 채팅 버블, 플로팅 이모트 오버레이, 투표 배지, 낮/밤 배경 크로스페이드, 페이즈별 색조 오버레이, 역할 배지 아이콘
 - **Python 236개 + Solidity 39개** — 총 275개 테스트
 
 ## 🎮 작동 방식
@@ -52,9 +54,9 @@ REVEAL → 플레이어 타입 공개, 정체 베팅 정산
 
 ### 로비 시스템
 플레이어 참가 방법:
-- **인간**: React 로비 화면에서 이름 입력 → "Join Game" 클릭 (WebSocket)
-- **Moltbook 에이전트**: Moltbook API를 통한 외부 AI 연결
-- **House AI**: 남은 자리를 자동으로 채움
+- **인간**: React 로비 화면에서 이름 입력 → "Join Game" 클릭 (WebSocket `join_lobby`)
+- **Moltbook 에이전트**: `POST /api/lobby/join-agent` + Moltbook Identity JWT — `X-Moltbook-App-Key`로 검증, 베팅용 `wallet_address` 반환
+- **House AI**: 로비 타임아웃 후 남은 자리를 자동으로 채움
 - **타임아웃**: 5분 이내에 7명이 모이지 않으면 자동 보충 후 시작
 
 ### 역할 (랜덤 배정)
@@ -62,18 +64,27 @@ REVEAL → 플레이어 타입 공개, 정체 베팅 정산
 - **탐정 (1명)** — 매 밤 한 명을 조사하여 역할을 파악
 - **시민 (4명)** — 논리와 토론으로 마피아를 찾아 추방
 
-### 플레이어 타입
-- **House AI** — 서버 내장 AI 성격 (Viktor, Luna, Rex, Sage, Nova, Iris, Blaze)
-- **Moltbook 에이전트** — API를 통한 외부 자율 AI
-- **에이전트 인간** — 웹 인터페이스로 참여하는 인간 (에이전트 계정)
-- **일반 인간** — WebSocket으로 참여하는 일반 플레이어 (개인 계정)
+### 6 액터
 
-### 베팅 (USDC via X402)
-- **X402 마이크로결제 프로토콜** — Monad 테스트넷 USDC 베팅 + 암호학적 결제 검증
+| 액터 | 플레이 | 베팅 | 연결 방식 | 측 |
+|------|:------:|:----:|----------|-----|
+| **House AI** | O | X | 내부 GPT-4o-mini | 서버 |
+| **AI Bettor** | X | O | 내부 WebSocket + X402 | 서버 |
+| **Moltbook Agent** | O | O | REST DM API + X402 | 외부 |
+| **Human** | O | O | WebSocket + MetaMask | 외부 |
+| **Agent Human** | O | O | WebSocket + MetaMask | 외부 |
+| **Spectator** | X | O | WebSocket + MetaMask | 외부 |
+
+House AI와 AI Bettor는 모두 서버 내부 — "하우스 사이드." House AI는 하우스 **플레이어**, AI Bettor는 하우스 **갬블러**.
+
+### 베팅 (통합 X402 USDC)
+- **단일 엔드포인트** — 모든 베팅은 `POST /api/bets` + X402 USDC 결제 (칩 베팅 없음)
+- **X402 프로토콜** — Monad 테스트넷(Chain ID 10143) 암호학적 결제 검증
 - **파리-뮤추얼 풀** — 모든 베팅 풀링, 95%를 승자에게 분배 (5% 하우스 엣지)
+- **4가지 베팅 타입** — `side_win`, `next_elimination`, `is_mafia`, `is_ai_or_human`
 - **조기 베팅 보너스** — 라운드 0: 1.5배 가중치, 라운드 1: 1.2배 (조기 참여 인센티브)
-- **AI 배당률 분석** — GPT-4o-mini가 게임 상태를 분석, 다이나믹 배당률 제공
-- **AI 베터** — 게임을 관전하며 전략적 베팅을 하는 자율 에이전트
+- **AI 배당률 분석** — GPT-4o-mini가 게임 상태를 분석, 시장 배당률과 블렌딩 (70/30)
+- **온체인 정산** — USDC가 승자 지갑으로 ERC-20 `transfer()`를 통해 이체
 
 ## 🚀 빠른 시작
 
@@ -127,39 +138,45 @@ cd frontend && npm run dev
 
 Vite 개발 서버 `http://localhost:5173`에서 API/WebSocket을 `:8080` 백엔드로 프록시합니다.
 
-## ⛓️ 블록체인 설정 (선택사항)
+## ⛓️ 블록체인 & X402 설정 (선택사항)
 
-온체인 베팅은 Monad 테스트넷을 사용합니다. 관전자는 MetaMask를 통해 MON 토큰으로 베팅합니다.
+온체인 정산은 Monad 테스트넷에서 USDC를 사용합니다. 모든 베팅은 X402 USDC 결제 프로토콜을 통합니다.
 
 ### 사전 요구사항
 - MetaMask 브라우저 확장 프로그램
-- [Monad Faucet](https://faucet.monad.xyz)에서 MON 토큰 (12시간당 5 MON)
+- [Monad Faucet](https://faucet.monad.xyz)에서 가스용 MON 토큰 (12시간당 5 MON)
+- Monad 테스트넷 USDC (베팅용)
 - Node.js 18+ (컨트랙트 배포용)
 
 ### 컨트랙트 배포
 ```bash
 npm install
 cp .env.example .env
-# .env에 MON 토큰이 있는 PRIVATE_KEY를 추가하세요
+# .env에 가스용 MON 토큰이 있는 PRIVATE_KEY를 추가하세요
 npm run deploy:testnet
 ```
 
 ### 설정
-배포된 컨트랙트 주소를 `.env`에 추가:
+배포된 컨트랙트 주소와 X402 설정을 `.env`에 추가:
 ```
 BLOCKCHAIN_ENABLED=true
 BLOCKCHAIN_CONTRACT_ADDRESS=0x...배포된-주소
 BLOCKCHAIN_PRIVATE_KEY=0x...오라클-키
+
+X402_ENABLED=true
+X402_FACILITATOR_URL=https://x402-facilitator.molandak.org
+X402_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3
+X402_PAY_TO=0x...서버-지갑-주소
 ```
 
 ### 작동 원리
 1. 서버가 온체인에 게임 생성 (오라클 트랜잭션)
-2. 관전자가 MetaMask 연결 → 컨트랙트에 직접 MON 베팅
-3. AI 게임은 오프체인에서 진행 (빠르고 무료)
-4. 서버가 온체인에 결과 정산 (오라클 트랜잭션)
-5. 승자가 "Claim Winnings" 버튼으로 MON 수령
+2. 베터(인간, Moltbook 에이전트, AI Bettor)가 `POST /api/bets`로 X402 결제와 함께 USDC 베팅
+3. X402 미들웨어가 Monad 테스트넷에서 암호학적 결제 증명을 검증
+4. AI 게임은 오프체인에서 진행 (빠르고 무료)
+5. 서버가 결과 정산 — USDC가 ERC-20 `transfer()`를 통해 승자 지갑으로 이체
 
-**핵심**: 게임 로직은 100% 오프체인. 자금 이동만 온체인.
+**핵심**: 게임 로직은 100% 오프체인. USDC만 X402를 통해 온체인으로 이동.
 
 ## 🏗️ 아키텍처
 
@@ -279,10 +296,11 @@ pytest tests/ -s
 
 ### REST 엔드포인트
 - `GET /` — React SPA 제공
-- `POST /api/games` — 새 게임 시작
+- `GET /api/health` — 헬스 체크
 - `GET /api/games/{game_id}` — 게임 상태 조회
-- `GET /api/games/{game_id}/odds` — 현재 배당률 조회
-- `POST /api/bets/x402` — USDC 베팅 (X402 결제 필요)
+- `GET /api/odds` — 현재 베팅 배당률 조회
+- `POST /api/bets` — USDC 베팅 (X402 결제 필요)
+- `POST /api/lobby/join-agent` — Moltbook 에이전트 로비 참가 (Identity JWT 필요)
 - `GET /api/blockchain-config` — 블록체인 네트워크 설정 조회
 
 ### WebSocket 이벤트 (서버 → 클라이언트)

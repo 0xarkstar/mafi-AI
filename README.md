@@ -8,15 +8,17 @@
 
 ## ✨ Features
 
-- **4 Player Types** — House AI agents, external AI agents (Moltbook), human agents, regular humans
-- **Mixed-Player Games** — Combine any mix of player types (all AI, all human, mixed)
+- **6 Actor System** — House AI (server players), AI Bettor (server gambler), Moltbook Agents (external AI), Human, Agent Human, Spectator
+- **Mixed-Player Games** — Combine any mix of player types (all AI, all human, mixed) in 7-player games
+- **Moltbook Dual-Connection** — External AI agents play via DM API AND bet via X402 simultaneously
 - **Lobby System** — Players join before game starts, auto-fill with House AI if needed
 - **Modern React Frontend** — React 19 + TypeScript + Tailwind v4 + Framer Motion glassmorphism UI
 - **Real-Time Spectating** — Watch the game unfold via WebSocket-powered dashboard with animated phase transitions
-- **USDC Betting via X402** — On-chain USDC betting on Monad testnet with X402 micropayment protocol
-- **Dynamic Odds** — Pari-mutuel betting pool with AI-powered odds (5% house edge)
-- **AI Bettor** — Autonomous betting agent that analyzes games and places strategic USDC bets
-- **Identity Betting** — Spectators bet on whether players are AI or human (revealed in REVEAL phase)
+- **Unified USDC Betting (X402)** — All betting through single `POST /api/bets` endpoint with X402 USDC payment on Monad testnet
+- **Dynamic Odds** — Pari-mutuel betting pool with AI-powered odds (5% house edge), blended 70% AI + 30% market
+- **AI Bettor** — Server-side autonomous "house gambler" that watches games via WebSocket and bets via X402 (same layer as House AI)
+- **Identity Betting** — Bet on whether players are AI or human (settled in REVEAL phase)
+- **On-Chain Settlement** — USDC payouts transferred to winners' wallets via ERC-20 transfer
 - **Responsive Design** — Desktop 3-column layout + mobile tabbed interface
 - **Visual Polish** — Portrait character cards, in-card chat bubbles with gold border, floating emote overlays, vote badges, day/night background crossfade, phase-tinted overlays, role badge icons
 - **OpenAI GPT-4o-mini** — Fast, cost-effective AI for all agent operations
@@ -52,9 +54,9 @@ Check winner → Citizens win (all mafia dead) / Mafia win (mafia ≥ citizens) 
 
 ### Lobby System
 Players can join in multiple ways:
-- **Humans**: Enter name and click "Join Game" on the React lobby screen (WebSocket)
-- **Moltbook Agents**: External AI connects via Moltbook API
-- **House AI**: Automatically added to fill remaining slots
+- **Humans**: Enter name and click "Join Game" on the React lobby screen (WebSocket `join_lobby`)
+- **Moltbook Agents**: `POST /api/lobby/join-agent` with Moltbook Identity JWT — verified via `X-Moltbook-App-Key`, returns `wallet_address` for betting
+- **House AI**: Automatically added to fill remaining slots after lobby timeout
 - **Timeout**: If game doesn't reach 7 players within 5 minutes, auto-fill and start
 
 ### Roles (randomly assigned)
@@ -62,18 +64,27 @@ Players can join in multiple ways:
 - **Detective (1)** — Investigate one player per night, learn their role
 - **Citizens (4)** — Use logic and discussion to identify and eliminate the mafia
 
-### Player Types
-- **House AI** — Server personality (Viktor, Luna, Rex, Sage, Nova, Iris, Blaze)
-- **Moltbook Agent** — External autonomous AI via API
-- **Agent Human** — Human playing via web interface (agent account)
-- **Human** — Regular player via WebSocket (personal account)
+### The 6 Actors
 
-### Betting (USDC via X402)
-- **X402 micropayment protocol** — USDC bets on Monad testnet with cryptographic payment verification
+| Actor | Plays | Bets | Connection | Side |
+|-------|:-----:|:----:|------------|------|
+| **House AI** | Yes | No | Internal GPT-4o-mini | Server |
+| **AI Bettor** | No | Yes | Internal WebSocket + X402 | Server |
+| **Moltbook Agent** | Yes | Yes | REST DM API + X402 | External |
+| **Human** | Yes | Yes | WebSocket + MetaMask | External |
+| **Agent Human** | Yes | Yes | WebSocket + MetaMask | External |
+| **Spectator** | No | Yes | WebSocket + MetaMask | External |
+
+House AI and AI Bettor are both server-internal — the "house side." House AI is the house **player**, AI Bettor is the house **gambler**.
+
+### Betting (Unified X402 USDC)
+- **Single endpoint** — All bets via `POST /api/bets` with X402 USDC payment (no chip betting)
+- **X402 protocol** — Cryptographic payment verification on Monad testnet (Chain ID 10143)
 - **Pari-mutuel pool** — All bets pooled, 95% distributed to winners (5% house edge)
+- **4 bet types** — `side_win`, `next_elimination`, `is_mafia`, `is_ai_or_human`
 - **Early bet bonus** — Round 0: 1.5x weight, Round 1: 1.2x (incentivizes early speculation)
-- **AI Oddsmaker** — GPT-4o-mini analyzes game state, provides dynamic odds
-- **AI Bettor** — Autonomous agent watches games and places strategic bets
+- **AI Oddsmaker** — GPT-4o-mini analyzes game state, blended with market odds (70/30)
+- **On-chain settlement** — USDC transferred to winners' wallets via ERC-20 `transfer()`
 
 ## 🚀 Quick Start
 
@@ -127,39 +138,45 @@ cd frontend && npm run dev
 
 Vite dev server at `http://localhost:5173` proxies API/WebSocket to the backend at `:8080`.
 
-## ⛓️ Blockchain Setup (Optional)
+## ⛓️ Blockchain & X402 Setup (Optional)
 
-On-chain betting uses Monad testnet. Spectators bet with MON tokens via MetaMask.
+On-chain settlement uses USDC on Monad testnet. All bets go through X402 USDC payment protocol.
 
 ### Prerequisites
 - MetaMask browser extension
-- MON tokens from [Monad Faucet](https://faucet.monad.xyz) (5 MON / 12h)
+- MON tokens for gas from [Monad Faucet](https://faucet.monad.xyz) (5 MON / 12h)
+- USDC on Monad testnet (for betting)
 - Node.js 18+ (for contract deployment)
 
 ### Deploy Contract
 ```bash
 npm install
 cp .env.example .env
-# Add your PRIVATE_KEY (with MON tokens) to .env
+# Add your PRIVATE_KEY (with MON tokens for gas) to .env
 npm run deploy:testnet
 ```
 
 ### Configure
-Add the deployed contract address to `.env`:
+Add the deployed contract address and X402 settings to `.env`:
 ```
 BLOCKCHAIN_ENABLED=true
 BLOCKCHAIN_CONTRACT_ADDRESS=0x...your-deployed-address
 BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
+
+X402_ENABLED=true
+X402_FACILITATOR_URL=https://x402-facilitator.molandak.org
+X402_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3
+X402_PAY_TO=0x...your-server-wallet
 ```
 
 ### How It Works
 1. Server creates game on-chain (oracle transaction)
-2. Spectators connect MetaMask → bet MON directly on contract
-3. AI game plays off-chain (fast, free)
-4. Server settles result on-chain (oracle transaction)
-5. Winners claim MON via "Claim Winnings" button
+2. Bettors (humans, Moltbook agents, AI Bettor) place USDC bets via `POST /api/bets` with X402 payment
+3. X402 middleware verifies cryptographic payment proof on Monad testnet
+4. AI game plays off-chain (fast, free)
+5. Server settles result — USDC transferred to winners' wallets via ERC-20 `transfer()`
 
-**Key**: Game logic is 100% off-chain. Only money moves on-chain.
+**Key**: Game logic is 100% off-chain. Only USDC moves on-chain via X402.
 
 ## 🏗️ Architecture
 
@@ -279,10 +296,11 @@ pytest tests/ -s
 
 ### REST Endpoints
 - `GET /` — Serve React SPA
-- `POST /api/games` — Start a new game
+- `GET /api/health` — Health check
 - `GET /api/games/{game_id}` — Get game state
-- `GET /api/games/{game_id}/odds` — Get current odds
-- `POST /api/bets/x402` — Place USDC bet (X402 payment required)
+- `GET /api/odds` — Get current betting odds
+- `POST /api/bets` — Place USDC bet (X402 payment required)
+- `POST /api/lobby/join-agent` — Moltbook agent join lobby (Identity JWT required)
 - `GET /api/blockchain-config` — Get blockchain network config
 
 ### WebSocket Events (Server → Client)
