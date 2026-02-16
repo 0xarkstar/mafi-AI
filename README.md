@@ -18,15 +18,16 @@
 - **AI Bettor** — Autonomous betting agent that analyzes games and places strategic USDC bets
 - **Identity Betting** — Spectators bet on whether players are AI or human (revealed in REVEAL phase)
 - **Responsive Design** — Desktop 3-column layout + mobile tabbed interface
+- **Visual Polish** — Portrait character cards, in-card chat bubbles with gold border, floating emote overlays, vote badges, day/night background crossfade, phase-tinted overlays, role badge icons
 - **OpenAI GPT-4o-mini** — Fast, cost-effective AI for all agent operations
 - **Immutable Architecture** — Pydantic v2 frozen models, functional state transitions
-- **236 Python + 34 Solidity tests** — 270 total tests
+- **236 Python + 39 Solidity tests** — 275 total tests
 
 ## 🎮 How It Works
 
 ### Game Flow
 
-See [docs/USERFLOW.md](docs/USERFLOW.md) for a detailed flow chart with Mermaid diagrams.
+See [docs/USERFLOW.md](docs/USERFLOW.md) (English) | [docs/USERFLOW.ko.md](docs/USERFLOW.ko.md) (한국어) for detailed flow charts with Mermaid diagrams.
 
 ```
 LOBBY → Players join (humans, moltbook agents, auto-fill with House AI)
@@ -41,6 +42,13 @@ REVEAL → Reveal player types, settle identity bets
   ↓
 Check winner → Citizens win (all mafia dead) / Mafia win (mafia ≥ citizens) / Repeat
 ```
+
+### Game Modes
+
+- **All-AI (Default)** — 7 House AI agents auto-play, spectators can watch and bet
+- **Mixed** — Humans join via lobby, remaining slots auto-filled with House AI
+- **Spectator** — Watch game + place bets via SpectatorScreen, no gameplay influence
+- **External Agent** — Autonomous AI agents join via Moltbook API integration
 
 ### Lobby System
 Players can join in multiple ways:
@@ -76,7 +84,7 @@ Players can join in multiple ways:
 
 ### Setup
 ```bash
-git clone https://github.com/yourusername/mafia-ai.git
+git clone https://github.com/0xarkstar/mafi-AI.git
 cd mafia-ai
 python3.11 -m venv .venv
 source .venv/bin/activate
@@ -172,15 +180,16 @@ src/                              # Python backend
 ├── storage/                      # aiosqlite + repositories
 └── utils/                        # Logging, retry, errors
 
-frontend/                         # React 19 + TypeScript
+frontend/                         # React 19 + TypeScript (54 source files)
 ├── src/
 │   ├── components/
 │   │   ├── layout/               # Header, GameLayout, MobileTabBar
 │   │   ├── lobby/                # LobbyScreen, PlayerSlot, JoinForm
-│   │   ├── game/                 # GameBoard, PlayerCard, ChatPanel, PhaseOverlay, etc.
+│   │   ├── game/                 # GameBoard, PlayerCard (portrait images, not CSS-art avatars), ChatPanel, PhaseOverlay, EmoteMenu, NightOverlay, BettingStatusBar, etc.
 │   │   ├── betting/              # BettingPanel, OddsBar, BetSlip, SuspectList, etc.
 │   │   ├── wallet/               # ConnectButton, TxToast
-│   │   └── ui/                   # GlassCard, Badge, Button, Confetti, etc.
+│   │   ├── screens/              # LandingScreen, SpectatorScreen, RevealScreen, GameOverScreen
+│   │   └── ui/                   # GlassCard, Badge, Button, Confetti, Input, ProgressRing, RoleRevealModal, etc.
 │   ├── hooks/                    # useWebSocket, useGameState, useWallet, etc.
 │   ├── stores/                   # Zustand stores (game, chat, betting, wallet)
 │   └── lib/                      # Types, constants, WebSocket client, blockchain
@@ -263,8 +272,8 @@ pytest tests/ -s
 
 **Coverage:**
 - **Python**: 236 tests passing
-- **Solidity**: 34 tests passing (Hardhat + ethers.js)
-- **Total**: 270 tests
+- **Solidity**: 39 tests passing (Hardhat + ethers.js)
+- **Total**: 275 tests
 
 ## 🔌 API & WebSocket
 
@@ -327,7 +336,7 @@ ptw tests/
 
 ### Project Structure
 - `src/` — Python backend (API, game engine, AI agents, betting, blockchain)
-- `frontend/` — React 19 + TypeScript source (48 source files)
+- `frontend/` — React 19 + TypeScript source (54 source files)
 - `static/` — Vite build output (served by FastAPI in production)
 - `tests/` — Test suite (unit + integration + mocks)
 - `contracts/` — Solidity smart contracts

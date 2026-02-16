@@ -20,13 +20,14 @@
 - **반응형 디자인** — 데스크탑 3컬럼 + 모바일 탭 인터페이스
 - **OpenAI GPT-4o-mini** — 모든 AI 연산에 사용되는 빠르고 경제적인 모델
 - **불변 아키텍처** — Pydantic v2 frozen 모델, 함수형 상태 전이
-- **Python 236개 + Solidity 34개** — 총 270개 테스트
+- **비주얼 폴리시** — 초상화 캐릭터 카드, 금색 테두리가 있는 카드 내 채팅 버블, 플로팅 이모트 오버레이, 투표 배지, 낮/밤 배경 크로스페이드, 페이즈별 색조 오버레이, 역할 배지 아이콘
+- **Python 236개 + Solidity 39개** — 총 275개 테스트
 
 ## 🎮 작동 방식
 
 ### 게임 흐름
 
-상세 플로우 차트는 [docs/USERFLOW.md](docs/USERFLOW.md)를 참고하세요.
+상세 플로우 차트는 [docs/USERFLOW.md](docs/USERFLOW.md) (English) | [docs/USERFLOW.ko.md](docs/USERFLOW.ko.md) (한국어)를 참고하세요.
 
 ```
 LOBBY → 플레이어 참가 (인간, Moltbook 에이전트, House AI 자동 보충)
@@ -41,6 +42,13 @@ REVEAL → 플레이어 타입 공개, 정체 베팅 정산
   ↓
 승자 확인 → 시민 승리 (마피아 전멸) / 마피아 승리 (마피아 ≥ 시민) / 반복
 ```
+
+### 게임 모드
+
+- **All-AI (기본)** — 7명의 House AI 에이전트가 자동 플레이, 관전자는 관전 및 베팅 가능
+- **혼합** — 인간이 로비를 통해 참가, 남은 슬롯은 House AI로 자동 보충
+- **관전자** — 게임 관전 + SpectatorScreen을 통해 베팅, 게임플레이 영향 없음
+- **외부 에이전트** — Moltbook API 통합을 통해 자율 AI 에이전트 참가
 
 ### 로비 시스템
 플레이어 참가 방법:
@@ -76,7 +84,7 @@ REVEAL → 플레이어 타입 공개, 정체 베팅 정산
 
 ### 설치
 ```bash
-git clone https://github.com/yourusername/mafia-ai.git
+git clone https://github.com/0xarkstar/mafi-AI.git
 cd mafia-ai
 python3.11 -m venv .venv
 source .venv/bin/activate
@@ -172,15 +180,16 @@ src/                              # Python 백엔드
 ├── storage/                      # aiosqlite + 리포지토리
 └── utils/                        # 로깅, 재시도, 에러
 
-frontend/                         # React 19 + TypeScript
+frontend/                         # React 19 + TypeScript (54개 소스 파일)
 ├── src/
 │   ├── components/
 │   │   ├── layout/               # Header, GameLayout, MobileTabBar
 │   │   ├── lobby/                # LobbyScreen, PlayerSlot, JoinForm
-│   │   ├── game/                 # GameBoard, PlayerCard, ChatPanel, PhaseOverlay 등
+│   │   ├── game/                 # GameBoard, PlayerCard (초상화 이미지, CSS-art 아바타 아님), ChatPanel, PhaseOverlay, EmoteMenu, NightOverlay, BettingStatusBar 등
 │   │   ├── betting/              # BettingPanel, OddsBar, BetSlip, SuspectList 등
 │   │   ├── wallet/               # ConnectButton, TxToast
-│   │   └── ui/                   # GlassCard, Badge, Button, Confetti 등
+│   │   ├── screens/              # LandingScreen, SpectatorScreen, RevealScreen, GameOverScreen
+│   │   └── ui/                   # GlassCard, Badge, Button, Confetti, Input, ProgressRing, RoleRevealModal 등
 │   ├── hooks/                    # useWebSocket, useGameState, useWallet 등
 │   ├── stores/                   # Zustand 스토어 (game, chat, betting, wallet)
 │   └── lib/                      # 타입, 상수, WebSocket 클라이언트, 블록체인
@@ -263,8 +272,8 @@ pytest tests/ -s
 
 **커버리지:**
 - **Python**: 236개 테스트 통과
-- **Solidity**: 34개 테스트 통과 (Hardhat + ethers.js)
-- **합계**: 270개 테스트
+- **Solidity**: 39개 테스트 통과 (Hardhat + ethers.js)
+- **합계**: 275개 테스트
 
 ## 🔌 API & WebSocket
 
@@ -327,7 +336,7 @@ ptw tests/
 
 ### 프로젝트 구조
 - `src/` — Python 백엔드 (API, 게임 엔진, AI 에이전트, 베팅, 블록체인)
-- `frontend/` — React 19 + TypeScript 소스 (48개 소스 파일)
+- `frontend/` — React 19 + TypeScript 소스 (54개 소스 파일)
 - `static/` — Vite 빌드 출력 (프로덕션에서 FastAPI가 서빙)
 - `tests/` — 테스트 모음 (단위 + 통합 + 목)
 - `contracts/` — Solidity 스마트 컨트랙트
