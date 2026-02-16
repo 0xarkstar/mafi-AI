@@ -74,8 +74,18 @@ async def run_terminal_mode(settings) -> None:
     Args:
         settings: Application settings.
     """
+    from src.agents.llm_client import LLMClient
+    from src.agents.personalities import ALL_PERSONALITIES
+    from src.lobby.manager import LobbyManager
+
+    # Create players via lobby (7 House AI agents)
+    llm_client = LLMClient(settings)
+    lobby = LobbyManager()
+    lobby.fill_with_house_ai(llm_client, ALL_PERSONALITIES)
+    players = lobby.get_players()
+
     # Create game engine with print callback (no betting in terminal mode)
-    engine = GameEngine(settings, print_event, betting_manager=None)
+    engine = GameEngine(players, print_event, betting_manager=None)
 
     # Run game
     print("\n" + "="*60)
@@ -245,12 +255,11 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
 
         # Create engine with players
         engine = GameEngine(
-            settings,
+            players,
             ws_manager.broadcast,
             betting_manager,
             game_id,
             blockchain_contract,
-            players=players,
         )
 
         # Broadcast game starting event
