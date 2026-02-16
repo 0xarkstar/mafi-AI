@@ -99,14 +99,18 @@ class GameEngine:
                 self.state = self.state.model_copy(update={"phase": Phase.REVEAL})
 
                 # Broadcast identity reveals
-                for name, player in self.players.items():
+                player_items = list(self.players.items())
+                for idx, (name, player) in enumerate(player_items):
+                    is_last = idx == len(player_items) - 1
                     await self.event_callback(
                         WSEvent(
                             event_type="identity_reveal",
                             data={
-                                "agent": name,
+                                "player_name": name,
+                                "name": name,
                                 "player_type": player.player_type.value,
                                 "role": self.state.role_map[name].value,
+                                "all_revealed": is_last,
                             },
                             game_id=self.state.game_id,
                             timestamp=datetime.now().isoformat(),

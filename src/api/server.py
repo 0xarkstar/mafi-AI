@@ -383,7 +383,20 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                         })
                         continue
 
-                    ws_manager.resolve_response(player_name, response)
+                    # Route response to the HumanPlayer instance
+                    if (
+                        hasattr(app.state, "lobby_manager")
+                        and app.state.lobby_manager
+                    ):
+                        player = app.state.lobby_manager.players.get(player_name)
+                        if player and hasattr(player, "set_response"):
+                            player.set_response(response)
+                            log.info("human_response_routed", name=player_name)
+                        else:
+                            # Fallback to WSManager futures
+                            ws_manager.resolve_response(player_name, response)
+                    else:
+                        ws_manager.resolve_response(player_name, response)
 
                 # Handle bet placement from client (redirect to REST API)
                 elif data.get("type") == "place_bet":

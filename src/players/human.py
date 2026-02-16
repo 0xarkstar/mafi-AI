@@ -83,7 +83,10 @@ class HumanPlayer:
         await self.send_to_player(
             {
                 "type": "action_request",
-                "action": "generate_statement",
+                "action_type": "statement",
+                "prompt": "It's your turn to speak. Share your thoughts with the group.",
+                "options": [],
+                "timeout": self.timeout,
                 "context": {
                     "alive_agents": list(context.alive_agents),
                     "round_number": context.round_number,
@@ -116,8 +119,10 @@ class HumanPlayer:
         await self.send_to_player(
             {
                 "type": "action_request",
-                "action": "vote",
-                "candidates": candidates,
+                "action_type": "vote",
+                "prompt": "Vote to eliminate a player you suspect is mafia.",
+                "options": candidates,
+                "timeout": self.timeout,
                 "context": {
                     "alive_agents": list(context.alive_agents),
                     "round_number": context.round_number,
@@ -148,9 +153,10 @@ class HumanPlayer:
         await self.send_to_player(
             {
                 "type": "action_request",
-                "action": "night_action",
-                "role": context.role.value,
-                "targets": targets,
+                "action_type": "night_action",
+                "prompt": f"Choose your target for tonight ({context.role.value}).",
+                "options": targets,
+                "timeout": self.timeout,
                 "context": {
                     "alive_agents": list(context.alive_agents),
                     "known_roles": context.known_roles,
