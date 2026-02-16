@@ -41,7 +41,10 @@ interface GameStore {
   updateLobby: (players: string[], count: number, ready: boolean) => void
   setActionRequest: (req: ActionRequest | null) => void
   initPlayers: () => void
+  initPlayersFromServer: (serverPlayers: Array<{ name: string; player_type: string }>) => void
   setScreen: (screen: ScreenState) => void
+  wsSend: (data: Record<string, unknown>) => void
+  setWsSend: (fn: (data: Record<string, unknown>) => void) => void
   setNickname: (name: string) => void
   setAvatarIndex: (index: number) => void
   setIsSpectator: (isSpectator: boolean) => void
@@ -164,7 +167,47 @@ export const useGameStore = create<GameStore>((set) => ({
       ),
     }),
 
+  initPlayersFromServer: (serverPlayers) => {
+    const agentMap = new Map(AGENTS.map((a) => [a.name as string, a]))
+    const state = useGameStore.getState()
+    const players: Record<string, Player> = {}
+
+    for (const sp of serverPlayers) {
+      const agent = agentMap.get(sp.name)
+      if (agent) {
+        players[sp.name] = {
+          name: sp.name,
+          color: agent.color,
+          trait: agent.trait,
+          isAlive: true,
+          role: null,
+          playerType: null,
+          isSpeaking: false,
+          avatarIndex: agent.avatarIndex,
+        }
+      } else {
+        // Human player or unknown agent
+        const isMe = sp.name === state.myPlayerName
+        players[sp.name] = {
+          name: sp.name,
+          color: '#10b981',
+          trait: 'human',
+          isAlive: true,
+          role: null,
+          playerType: null,
+          isSpeaking: false,
+          avatarIndex: isMe ? state.avatarIndex : 7,
+        }
+      }
+    }
+
+    set({ players })
+  },
+
   setScreen: (screen) => set({ screen }),
+
+  wsSend: () => {},
+  setWsSend: (fn) => set({ wsSend: fn }),
 
   setNickname: (name) => set({ nickname: name }),
 

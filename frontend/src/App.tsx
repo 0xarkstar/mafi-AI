@@ -21,20 +21,20 @@ interface EliminationData {
   reason: 'killed_at_night' | 'voted_out'
 }
 
-// Wrapper for Lobby Screen with WebSocket
+// Wrapper for Lobby Screen
 function LobbyScreenWrapper() {
-  const { send } = useWebSocket()
+  const wsSend = useGameStore((s) => s.wsSend)
 
   const handleJoin = (name: string) => {
-    send({ type: 'join_lobby', name })
+    wsSend({ type: 'join_lobby', name })
   }
 
   return <LobbyScreen onJoin={handleJoin} />
 }
 
-// Wrapper for Game Screen with WebSocket
+// Wrapper for Game Screen
 function GameScreenWrapper() {
-  const { send } = useWebSocket()
+  const wsSend = useGameStore((s) => s.wsSend)
   const actionRequest = useGameStore((s) => s.actionRequest)
   const [eliminationData, setEliminationData] = useState<EliminationData | null>(null)
 
@@ -48,7 +48,7 @@ function GameScreenWrapper() {
   const handleActionSubmit = (response: string) => {
     if (!actionRequest) return
     const { myPlayerName } = useGameStore.getState()
-    send({
+    wsSend({
       type: 'action_response',
       player_name: myPlayerName,
       response,
@@ -80,6 +80,7 @@ function GameOverScreenWrapper() {
 
 export default function App() {
   const screen = useGameStore((s) => s.screen)
+  useWebSocket()
   usePhaseTheme()
 
   return (

@@ -1,6 +1,5 @@
 import { useGameStore } from '../../stores/gameStore'
 import { PlayerCard } from './PlayerCard'
-import { AGENTS } from '../../lib/constants'
 
 export function GameBoard() {
   const players = useGameStore((s) => s.players)
@@ -10,9 +9,7 @@ export function GameBoard() {
   const showVoteUI = useGameStore((s) => s.showVoteUI)
   const setSelectedVoteTarget = useGameStore((s) => s.setSelectedVoteTarget)
 
-  const playerList = AGENTS.map((agent) => players[agent.name]).filter(
-    (player): player is NonNullable<typeof player> => player !== undefined
-  )
+  const playerList = Object.values(players)
 
   // Split into top (4) and bottom (3) rows for desktop
   const topRow = playerList.slice(0, 4)

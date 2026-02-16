@@ -1,3 +1,4 @@
+import { useState, useEffect } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 import { Moon } from 'lucide-react'
 
@@ -6,14 +7,26 @@ interface NightOverlayProps {
 }
 
 export function NightOverlay({ isVisible }: NightOverlayProps) {
+  const [showIntro, setShowIntro] = useState(false)
+
+  useEffect(() => {
+    if (isVisible) {
+      setShowIntro(true)
+      const timer = setTimeout(() => setShowIntro(false), 3000)
+      return () => clearTimeout(timer)
+    } else {
+      setShowIntro(false)
+    }
+  }, [isVisible])
+
   return (
     <AnimatePresence>
-      {isVisible && (
+      {showIntro && (
         <motion.div
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className="absolute inset-0 z-50 flex items-center justify-center bg-black text-center"
+          className="absolute inset-0 z-40 flex items-center justify-center bg-black/80 text-center pointer-events-none"
         >
           <div className="space-y-6 relative">
             <div className="absolute inset-0 bg-indigo-500/20 blur-[100px] rounded-full" />

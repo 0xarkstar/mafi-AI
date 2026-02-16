@@ -268,7 +268,13 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
         await ws_manager.broadcast(
             WSEvent(
                 event_type="game_starting",
-                data={"player_count": len(players)},
+                data={
+                    "player_count": len(players),
+                    "players": [
+                        {"name": p.name, "player_type": p.player_type.value}
+                        for p in players.values()
+                    ],
+                },
                 game_id=game_id,
                 timestamp=datetime.now().isoformat(),
             )

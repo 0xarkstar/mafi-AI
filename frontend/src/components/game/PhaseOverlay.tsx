@@ -22,7 +22,7 @@ export function PhaseOverlay() {
     if (phase !== 'lobby' && phase !== currentPhase) {
       setCurrentPhase(phase)
       setShowOverlay(true)
-      const timer = setTimeout(() => setShowOverlay(false), 2000)
+      const timer = setTimeout(() => setShowOverlay(false), 1200)
       return () => clearTimeout(timer)
     }
   }, [phase, currentPhase])
@@ -37,7 +37,7 @@ export function PhaseOverlay() {
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={`fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br ${config.gradient}`}
+          className={`fixed inset-0 z-40 flex items-center justify-center pointer-events-none bg-gradient-to-br ${config.gradient}`}
         >
           <motion.div
             initial={{ scale: 0.5, opacity: 0 }}

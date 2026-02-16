@@ -18,9 +18,10 @@ export function useWebSocket() {
   const setIsPlayer = useGameStore((s) => s.setIsPlayer)
   const updateLobby = useGameStore((s) => s.updateLobby)
   const setActionRequest = useGameStore((s) => s.setActionRequest)
+  const initPlayersFromServer = useGameStore((s) => s.initPlayersFromServer)
   const initPlayers = useGameStore((s) => s.initPlayers)
   const setScreen = useGameStore((s) => s.setScreen)
-  const isSpectator = useGameStore((s) => s.isSpectator)
+  const setWsSend = useGameStore((s) => s.setWsSend)
   const setChatBubble = useGameStore((s) => s.setChatBubble)
   const setShowVoteUI = useGameStore((s) => s.setShowVoteUI)
 
@@ -32,8 +33,6 @@ export function useWebSocket() {
   const updateBetStatus = useBettingStore((s) => s.updateBetStatus)
 
   useEffect(() => {
-    initPlayers()
-
     const wsUrl = `${window.location.protocol === 'https:' ? 'wss:' : 'ws:'}//${window.location.host}/ws`
     const ws = new WebSocketClient(wsUrl)
 
@@ -155,13 +154,18 @@ export function useWebSocket() {
         case 'game_starting': {
           addSystemMessage('Game starting!')
           setScreen('game')
-          initPlayers()
+          const serverPlayers = data['players'] as Array<{ name: string; player_type: string }> | undefined
+          if (serverPlayers && serverPlayers.length > 0) {
+            initPlayersFromServer(serverPlayers)
+          } else {
+            initPlayers()
+          }
           break
         }
 
         case 'action_request': {
           // Skip action requests for spectators
-          if (isSpectator) break
+          if (useGameStore.getState().isSpectator) break
 
           const prompt = data['prompt'] as string
           const actionType = data['action_type'] as string
@@ -208,33 +212,13 @@ export function useWebSocket() {
     })
 
     wsRef.current = ws
+    setWsSend((data: Record<string, unknown>) => ws.send(data))
 
     return () => {
       ws.disconnect()
     }
-  }, [
-    initPlayers,
-    setPhase,
-    setPlayerAlive,
-    setPlayerRole,
-    setPlayerSpeaking,
-    setPlayerType,
-    addVote,
-    clearVotes,
-    setWinner,
-    setIsPlayer,
-    updateLobby,
-    setActionRequest,
-    addMessage,
-    addSystemMessage,
-    setOdds,
-    addBet,
-    updateBetStatus,
-    setScreen,
-    isSpectator,
-    setChatBubble,
-    setShowVoteUI,
-  ])
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
 
   const send = (data: Record<string, unknown>) => {
     wsRef.current?.send(data)
