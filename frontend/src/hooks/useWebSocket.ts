@@ -53,8 +53,7 @@ export function useWebSocket() {
             useGameStore.getState().setVoteCounts({})
           }
           // Auto-transition if client missed game_starting event
-          const currentScreen = useGameStore.getState().screen
-          if (currentScreen === 'lobby' || currentScreen === 'landing') {
+          if (useGameStore.getState().screen === 'lobby') {
             setScreen('game')
             if (Object.keys(useGameStore.getState().players).length === 0) {
               initPlayers()
@@ -70,6 +69,13 @@ export function useWebSocket() {
           setPlayerSpeaking(agent, true)
           setTimeout(() => setPlayerSpeaking(agent, false), 3000)
           setChatBubble(agent, message)
+          // Auto-transition if client missed game_starting event
+          if (useGameStore.getState().screen === 'lobby') {
+            setScreen('game')
+            if (Object.keys(useGameStore.getState().players).length === 0) {
+              initPlayers()
+            }
+          }
           break
         }
 
