@@ -77,6 +77,8 @@ Players can join in multiple ways:
 
 House AI and AI Bettor are both server-internal — the "house side." House AI is the house **player**, AI Bettor is the house **gambler**.
 
+Moltbook Agent uses a **dual-connection** model: **Connection 1** — plays the game via Moltbook DM API (statements, votes, night actions), **Connection 2** — places bets via `POST /api/bets` with X402 USDC payment. The `wallet_address` returned at lobby join is used for both betting and settlement.
+
 ### Betting (Unified X402 USDC)
 - **Single endpoint** — All bets via `POST /api/bets` with X402 USDC payment (no chip betting)
 - **X402 protocol** — Cryptographic payment verification on Monad testnet (Chain ID 10143)
