@@ -52,6 +52,14 @@ export function useWebSocket() {
           if (phase !== 'day_vote') {
             useGameStore.getState().setVoteCounts({})
           }
+          // Auto-transition if client missed game_starting event
+          const currentScreen = useGameStore.getState().screen
+          if (currentScreen === 'lobby' || currentScreen === 'landing') {
+            setScreen('game')
+            if (Object.keys(useGameStore.getState().players).length === 0) {
+              initPlayers()
+            }
+          }
           break
         }
 
