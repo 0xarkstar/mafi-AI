@@ -94,6 +94,19 @@ body.phase-game_over {
   background: linear-gradient(to bottom right, var(--color-phase-gameover-from), var(--color-phase-gameover-to));
 }
 
+/* Phase tint overlay utilities */
+.phase-tint-night {
+  background-color: rgba(10, 14, 31, 0.6);
+}
+
+.phase-tint-vote {
+  background-color: rgba(26, 5, 5, 0.7);
+}
+
+.phase-tint-default {
+  background-color: rgba(10, 10, 5, 0.5);
+}
+
 /* Scrollbar customization */
 ::-webkit-scrollbar {
   width: 8px;

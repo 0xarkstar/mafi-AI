@@ -16,11 +16,40 @@ export function GameLayout() {
   const phase = useGameStore((s) => s.phase)
 
   return (
-    <div className="h-full flex flex-col relative">
+    <div className="h-full flex flex-col relative overflow-hidden">
+      {/* Day/Night background crossfade */}
+      <img
+        src="/images/game-bg.png"
+        alt=""
+        className={`absolute inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-[2000ms] ${
+          phase === 'night' ? 'opacity-0' : 'opacity-100'
+        }`}
+      />
+      <img
+        src="/images/game-bg-night.png"
+        alt=""
+        className={`absolute inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-[2000ms] ${
+          phase === 'night' ? 'opacity-100' : 'opacity-0'
+        }`}
+      />
+
+      {/* Phase-tinted overlay */}
+      <div
+        className={`absolute inset-0 transition-all duration-[2000ms] z-[1] pointer-events-none ${
+          phase === 'night'
+            ? 'bg-[#0a0e1f]/60'
+            : phase === 'day_vote'
+              ? 'bg-[#1a0505]/70'
+              : 'bg-[#0a0a05]/50'
+        }`}
+      />
+
       {/* Night overlay (full screen) */}
       <NightOverlay isVisible={phase === 'night'} />
 
-      <Header />
+      {/* Everything below needs relative z-10 to appear above backgrounds */}
+      <div className="relative z-10 flex flex-col flex-1 overflow-hidden">
+        <Header />
 
       {/* Desktop Layout (3 columns) */}
       <div className="hidden lg:grid lg:grid-cols-[280px_1fr_320px] gap-4 p-4 flex-1 overflow-hidden relative">
@@ -87,6 +116,7 @@ export function GameLayout() {
 
         <MobileTabBar activeTab={activeTab} onTabChange={setActiveTab} />
       </div>
+    </div>
     </div>
   )
 }

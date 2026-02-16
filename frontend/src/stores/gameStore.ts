@@ -2,6 +2,9 @@ import { create } from 'zustand'
 import type { Phase, Player, Vote, Role, PlayerType, ActionRequest, ScreenState } from '../lib/types'
 import { AGENTS } from '../lib/constants'
 
+// Module-level timer storage for chat bubbles (not in zustand state)
+const chatBubbleTimers = new Map<string, ReturnType<typeof setTimeout>>()
+
 interface GameStore {
   // State
   phase: Phase
@@ -20,6 +23,10 @@ interface GameStore {
   avatarIndex: number
   isSpectator: boolean
   activeEmotes: Record<string, { emoji: string; timeout: ReturnType<typeof setTimeout> }>
+  chatBubbles: Record<string, string>
+  voteCounts: Record<string, number>
+  showVoteUI: boolean
+  selectedVoteTarget: string | null
 
   // Actions
   setPhase: (phase: Phase, round: number) => void
@@ -39,6 +46,11 @@ interface GameStore {
   setAvatarIndex: (index: number) => void
   setIsSpectator: (isSpectator: boolean) => void
   triggerEmote: (playerId: string, emoji: string) => void
+  setChatBubble: (agent: string, message: string) => void
+  clearChatBubble: (agent: string) => void
+  setVoteCounts: (counts: Record<string, number>) => void
+  setShowVoteUI: (show: boolean) => void
+  setSelectedVoteTarget: (target: string | null) => void
   resetGame: () => void
 }
 
@@ -60,6 +72,10 @@ export const useGameStore = create<GameStore>((set) => ({
   avatarIndex: 0,
   isSpectator: false,
   activeEmotes: {},
+  chatBubbles: {},
+  voteCounts: {},
+  showVoteUI: false,
+  selectedVoteTarget: null,
 
   // Actions
   setPhase: (phase, round) => set({ phase, round }),
@@ -180,7 +196,54 @@ export const useGameStore = create<GameStore>((set) => ({
       }
     }),
 
-  resetGame: () =>
+  setChatBubble: (agent, message) => {
+    // Clear existing timer for this agent
+    const existing = chatBubbleTimers.get(agent)
+    if (existing) clearTimeout(existing)
+
+    // Set new timer for auto-clear after 5 seconds
+    const timer = setTimeout(() => {
+      chatBubbleTimers.delete(agent)
+      set((state) => {
+        const { [agent]: _, ...rest } = state.chatBubbles
+        return { chatBubbles: rest }
+      })
+    }, 5000)
+
+    chatBubbleTimers.set(agent, timer)
+
+    set((state) => ({
+      chatBubbles: { ...state.chatBubbles, [agent]: message },
+    }))
+  },
+
+  clearChatBubble: (agent) => {
+    const existing = chatBubbleTimers.get(agent)
+    if (existing) {
+      clearTimeout(existing)
+      chatBubbleTimers.delete(agent)
+    }
+    set((state) => {
+      const { [agent]: _, ...rest } = state.chatBubbles
+      return { chatBubbles: rest }
+    })
+  },
+
+  setVoteCounts: (counts) => set({ voteCounts: counts }),
+
+  setShowVoteUI: (show) => set({ showVoteUI: show }),
+
+  setSelectedVoteTarget: (target) => set({ selectedVoteTarget: target }),
+
+  resetGame: () => {
+    // Clear all bubble timers
+    chatBubbleTimers.forEach((timer) => clearTimeout(timer))
+    chatBubbleTimers.clear()
+
+    // Clear all emote timeouts
+    const current = useGameStore.getState()
+    Object.values(current.activeEmotes).forEach(({ timeout }) => clearTimeout(timeout))
+
     set({
       screen: 'landing',
       phase: 'lobby',
@@ -195,5 +258,10 @@ export const useGameStore = create<GameStore>((set) => ({
       lobbyReady: false,
       actionRequest: null,
       activeEmotes: {},
-    }),
+      chatBubbles: {},
+      voteCounts: {},
+      showVoteUI: false,
+      selectedVoteTarget: null,
+    })
+  },
 }))

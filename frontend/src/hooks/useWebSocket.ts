@@ -21,6 +21,8 @@ export function useWebSocket() {
   const initPlayers = useGameStore((s) => s.initPlayers)
   const setScreen = useGameStore((s) => s.setScreen)
   const isSpectator = useGameStore((s) => s.isSpectator)
+  const setChatBubble = useGameStore((s) => s.setChatBubble)
+  const setShowVoteUI = useGameStore((s) => s.setShowVoteUI)
 
   const addMessage = useChatStore((s) => s.addMessage)
   const addSystemMessage = useChatStore((s) => s.addSystemMessage)
@@ -47,6 +49,10 @@ export function useWebSocket() {
           if (phase !== 'day_vote') {
             clearVotes()
           }
+          setShowVoteUI(phase === 'day_vote')
+          if (phase !== 'day_vote') {
+            useGameStore.getState().setVoteCounts({})
+          }
           break
         }
 
@@ -56,6 +62,7 @@ export function useWebSocket() {
           addMessage({ agent, message, type: 'agent' })
           setPlayerSpeaking(agent, true)
           setTimeout(() => setPlayerSpeaking(agent, false), 3000)
+          setChatBubble(agent, message)
           break
         }
 
@@ -64,6 +71,14 @@ export function useWebSocket() {
           const target = data['target'] as string
           addVote(voter, target)
           addSystemMessage(`${voter} voted for ${target}`)
+
+          // Compute running vote counts
+          const currentVotes = useGameStore.getState().votes
+          const counts: Record<string, number> = {}
+          for (const v of currentVotes) {
+            counts[v.target] = (counts[v.target] ?? 0) + 1
+          }
+          useGameStore.getState().setVoteCounts(counts)
           break
         }
 
@@ -217,6 +232,8 @@ export function useWebSocket() {
     updateBetStatus,
     setScreen,
     isSpectator,
+    setChatBubble,
+    setShowVoteUI,
   ])
 
   const send = (data: Record<string, unknown>) => {
