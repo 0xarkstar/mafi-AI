@@ -519,18 +519,16 @@ src/
 │   └── win_checker.py           # Win condition evaluation
 ├── agents/
 │   ├── __init__.py
-│   ├── base.py                  # Legacy BaseAgent ABC
 │   ├── personalities.py         # 7 personality definitions
 │   ├── prompts.py               # Prompt templates
 │   ├── memory.py                # Immutable memory manager
 │   └── llm_client.py            # OpenAI client wrapper
-├── players/                     # NEW: Mixed-player arena support
+├── players/
 │   ├── __init__.py
 │   ├── protocol.py              # PlayerProtocol, TurnContext
 │   ├── house_ai.py              # HouseAIPlayer implementation
 │   ├── moltbook_agent.py        # MoltbookAgent implementation
-│   ├── agent_human.py           # AgentHuman (human with agent account)
-│   └── human.py                 # Human (regular player via WebSocket)
+│   └── human.py                 # HumanPlayer + AgentHumanPlayer
 ├── lobby/                       # NEW: Lobby management
 │   ├── __init__.py
 │   └── manager.py               # LobbyManager for game setup
@@ -542,7 +540,8 @@ src/
 │   ├── pool.py                  # Pari-mutuel logic
 │   ├── odds.py                  # Odds calculation
 │   ├── manager.py               # Betting manager
-│   └── oddsmaker.py             # AI odds analysis
+│   ├── oddsmaker.py             # AI odds analysis
+│   └── settlement.py            # USDCSettlement (legacy direct USDC push)
 ├── blockchain/
 │   ├── __init__.py
 │   ├── provider.py              # AsyncWeb3 + POA middleware
@@ -582,27 +581,28 @@ src/
 tests/
 ├── __init__.py
 ├── conftest.py                  # pytest fixtures
-├── test_engine.py               # Game engine tests
+├── test_engine.py               # Game engine + V2 lifecycle tests
 ├── test_agents.py               # Agent tests
 ├── test_betting.py              # Betting tests
 ├── test_api.py                  # API tests
 ├── test_lobby.py                # Lobby manager tests
-├── test_players.py              # Player protocol tests
-├── test_blockchain.py           # Blockchain tests
+├── test_players.py              # Player protocol + wallet_address tests
+├── test_blockchain.py           # Blockchain provider + contract tests
+├── test_gateway.py              # BlockchainGateway + helper function tests
+├── test_settlement.py           # USDCSettlement tests
+├── test_moltbook.py             # Moltbook client tests
 ├── test_x402.py                 # X402 middleware and payment tests
 ├── test_x402_betting.py         # X402 betting integration tests
 └── test_ai_bettor.py            # AI Bettor client, analyzer, strategy tests
 
-static/
-├── index.html                   # Dashboard with identity betting UI
-├── style.css                    # Styling
-├── app.js                       # WebSocket client
-└── blockchain.js                # MetaMask + ethers.js v6 integration
+frontend/                        # React + TypeScript frontend (Vite)
+├── src/                         # App.tsx, components/, screens/, store, websocket
+└── static/                      # Compiled: index.html, assets/, images/
 
 contracts/
 ├── MafiaBetting.sol             # V1 smart contract (legacy)
 ├── MafiaBettingV2.sol           # V2: commit-reveal, 4 bet types, pull-payment, refund deadline
-└── abi/                         # Contract ABIs (generated)
+└── MockERC20.sol                # Test token for Hardhat tests
 
 scripts/
 ├── deploy.js                    # V1 Hardhat deployment script
