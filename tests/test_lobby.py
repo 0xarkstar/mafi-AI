@@ -303,3 +303,88 @@ class TestLobbyManager:
         assert PlayerType.HUMAN in player_types
         assert PlayerType.AGENT_HUMAN in player_types
         assert PlayerType.HOUSE_AI in player_types
+
+    def test_player_metadata(self):
+        """Test player metadata storage."""
+        lobby = LobbyManager(max_players=3)
+        player = MockPlayer("Alice", PlayerType.HUMAN)
+
+        lobby.join(player, metadata={"avatar_index": 3})
+
+        assert "Alice" in lobby.player_metadata
+        assert lobby.player_metadata["Alice"]["avatar_index"] == 3
+
+    def test_player_metadata_none(self):
+        """Test join without metadata."""
+        lobby = LobbyManager(max_players=3)
+        player = MockPlayer("Alice", PlayerType.HUMAN)
+
+        lobby.join(player)
+
+        assert "Alice" not in lobby.player_metadata
+
+    def test_first_join_time(self):
+        """Test first_join_time is set on first join."""
+        lobby = LobbyManager(max_players=3)
+        player = MockPlayer("Alice", PlayerType.HUMAN)
+
+        assert lobby.first_join_time is None
+        lobby.join(player)
+        assert lobby.first_join_time is not None
+
+    def test_first_join_time_only_set_once(self):
+        """Test first_join_time doesn't change on subsequent joins."""
+        lobby = LobbyManager(max_players=3)
+        p1 = MockPlayer("Alice", PlayerType.HUMAN)
+        p2 = MockPlayer("Bob", PlayerType.HUMAN)
+
+        lobby.join(p1)
+        first_time = lobby.first_join_time
+
+        import time
+        time.sleep(0.01)
+        lobby.join(p2)
+
+        assert lobby.first_join_time == first_time
+
+    def test_reset(self):
+        """Test reset clears all state."""
+        lobby = LobbyManager(max_players=3)
+        p1 = MockPlayer("Alice", PlayerType.HUMAN)
+        lobby.join(p1, metadata={"avatar_index": 2})
+
+        assert len(lobby.players) == 1
+        assert len(lobby.player_metadata) == 1
+        assert lobby.first_join_time is not None
+
+        lobby.reset()
+
+        assert len(lobby.players) == 0
+        assert len(lobby.player_metadata) == 0
+        assert lobby.first_join_time is None
+
+    def test_get_lobby_status(self):
+        """Test get_lobby_status returns structured data."""
+        lobby = LobbyManager(max_players=3)
+        p1 = MockPlayer("Alice", PlayerType.HUMAN)
+        lobby.join(p1, metadata={"avatar_index": 5})
+
+        status = lobby.get_lobby_status()
+
+        assert status["count"] == 1
+        assert status["max_players"] == 3
+        assert status["ready"] is False
+        assert len(status["players"]) == 1
+        assert status["players"][0]["name"] == "Alice"
+        assert status["players"][0]["player_type"] == "human"
+        assert status["players"][0]["avatar_index"] == 5
+
+    def test_get_lobby_status_no_metadata(self):
+        """Test get_lobby_status when player has no metadata."""
+        lobby = LobbyManager(max_players=3)
+        p1 = MockPlayer("Alice", PlayerType.HUMAN)
+        lobby.join(p1)
+
+        status = lobby.get_lobby_status()
+
+        assert status["players"][0]["avatar_index"] is None

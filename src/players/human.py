@@ -21,6 +21,7 @@ class HumanPlayer:
         name: str,
         send_to_player: Callable[[dict], Awaitable[None]],
         timeout: int = 60,
+        wallet_address: str | None = None,
     ):
         """Initialize human player.
 
@@ -28,11 +29,13 @@ class HumanPlayer:
             name: Player name.
             send_to_player: Async callback to send messages to player's WebSocket.
             timeout: Response timeout in seconds.
+            wallet_address: Optional wallet address for on-chain operations.
         """
         self.name = name
         self.player_type = PlayerType.HUMAN
         self.send_to_player = send_to_player
         self.timeout = timeout
+        self.wallet_address = wallet_address
         self._response_future: asyncio.Future[str] | None = None
 
     def set_response(self, response: str) -> None:
@@ -179,6 +182,7 @@ class AgentHumanPlayer(HumanPlayer):
         name: str,
         send_to_player: Callable[[dict], Awaitable[None]],
         timeout: int = 60,
+        wallet_address: str | None = None,
     ):
         """Initialize agent-human player.
 
@@ -186,6 +190,7 @@ class AgentHumanPlayer(HumanPlayer):
             name: Player name.
             send_to_player: Async callback to send messages to player's WebSocket.
             timeout: Response timeout in seconds.
+            wallet_address: Optional wallet address for on-chain operations.
         """
-        super().__init__(name, send_to_player, timeout)
+        super().__init__(name, send_to_player, timeout, wallet_address)
         self.player_type = PlayerType.AGENT_HUMAN

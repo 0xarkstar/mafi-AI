@@ -5,7 +5,7 @@ import { GlassCard, Button } from '../components/UIComponents';
 import { Trophy, Shield, Skull, RotateCcw, Home } from 'lucide-react';
 
 export const GameOverScreen = () => {
-  const { winner, balance, usdcBets, players, resetGame } = useGameStore();
+  const { winner, usdcBets, players, resetGame, playAgain } = useGameStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const isMafiaWin = winner === 'Mafia';
@@ -110,16 +110,12 @@ export const GameOverScreen = () => {
                 {isMafiaWin ? 'The underworld takes control' : 'Justice has been served'}
             </p>
 
-            <div className="grid grid-cols-2 gap-4 mb-8">
-                <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <div className="text-xs text-white/40 uppercase mb-1">Chip Balance</div>
-                    <div className="text-2xl font-bold text-gold flex items-center justify-center gap-2">
-                        <Trophy className="w-5 h-5" /> {balance.toLocaleString()}
-                    </div>
-                </div>
-                <div className="bg-white/5 p-4 rounded-xl border border-white/10">
+            <div className="mb-8">
+                <div className="bg-white/5 p-4 rounded-xl border border-white/10 text-center">
                     <div className="text-xs text-white/40 uppercase mb-1">Bets Placed</div>
-                    <div className="text-2xl font-bold text-white">{usdcBets.length}</div>
+                    <div className="text-2xl font-bold text-gold flex items-center justify-center gap-2">
+                        <Trophy className="w-5 h-5" /> {usdcBets.length}
+                    </div>
                 </div>
             </div>
 
@@ -138,11 +134,11 @@ export const GameOverScreen = () => {
             </div>
 
             <div className="space-y-3">
-                <Button onClick={resetGame} variant="primary" className="w-full" icon={<RotateCcw className="w-4 h-4" />}>
+                <Button onClick={playAgain} variant="primary" className="w-full" icon={<RotateCcw className="w-4 h-4" />}>
                     Play Again
                 </Button>
                 <Button onClick={resetGame} variant="ghost" className="w-full" icon={<Home className="w-4 h-4" />}>
-                    Back to Lobby
+                    Back to Home
                 </Button>
             </div>
         </GlassCard>

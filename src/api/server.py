@@ -216,6 +216,7 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                 moltbook_client=moltbook_client,
                 agent_id=agent_id,
                 api_key="",  # No longer needed (verified via Identity)
+                wallet_address=wallet_address,
             )
 
             success = await app.state.lobby_manager.join(player)
@@ -227,11 +228,7 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                 await ws_manager.broadcast(
                     WSEvent(
                         event_type="lobby_status",
-                        data={
-                            "players": list(app.state.lobby_manager.players.keys()),
-                            "count": len(app.state.lobby_manager.players),
-                            "ready": app.state.lobby_manager.is_ready(),
-                        },
+                        data=app.state.lobby_manager.get_lobby_status(),
                         game_id="",
                         timestamp=datetime.now().isoformat(),
                     )
@@ -300,6 +297,7 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                 # Join lobby as human player
                 if data.get("type") == "join_lobby":
                     player_name = data.get("name", f"Human-{session_id[:6]}")
+                    avatar_index = data.get("avatar_index")
 
                     # Validate player name
                     error = validate_player_name(player_name)
@@ -321,17 +319,18 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                             await ws_manager.send_to_player(_name, msg)
 
                         player = HumanPlayer(name=player_name, send_to_player=_send)
-                        success = app.state.lobby_manager.join(player)
+                        success = app.state.lobby_manager.join(
+                            player, metadata={"avatar_index": avatar_index}
+                        )
 
+                        lobby_status = app.state.lobby_manager.get_lobby_status()
                         await ws.send_json(
                             {
                                 "type": "lobby_joined",
                                 "data": {
                                     "name": player_name,
                                     "success": success,
-                                    "players": list(
-                                        app.state.lobby_manager.players.keys()
-                                    ),
+                                    "players": [p["name"] for p in lobby_status["players"]],
                                 },
                             }
                         )
@@ -340,13 +339,7 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                         await ws_manager.broadcast(
                             WSEvent(
                                 event_type="lobby_status",
-                                data={
-                                    "players": list(
-                                        app.state.lobby_manager.players.keys()
-                                    ),
-                                    "count": len(app.state.lobby_manager.players),
-                                    "ready": app.state.lobby_manager.is_ready(),
-                                },
+                                data=lobby_status,
                                 game_id="",
                                 timestamp=datetime.now().isoformat(),
                             )
@@ -362,6 +355,57 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                                 },
                             }
                         )
+
+                # Rejoin lobby after game reset
+                elif data.get("type") == "rejoin_lobby":
+                    player_name = data.get("name", "")
+                    avatar_index = data.get("avatar_index")
+
+                    error = validate_player_name(player_name)
+                    if error:
+                        await ws.send_json({
+                            "type": "error",
+                            "message": f"Invalid player name: {error}"
+                        })
+                        continue
+
+                    await ws_manager.register_player(player_name, ws)
+
+                    if hasattr(app.state, "lobby_manager") and app.state.lobby_manager:
+                        from src.players.human import HumanPlayer
+
+                        async def _send(msg: dict, _name: str = player_name) -> None:
+                            await ws_manager.send_to_player(_name, msg)
+
+                        player = HumanPlayer(name=player_name, send_to_player=_send)
+                        success = app.state.lobby_manager.join(
+                            player, metadata={"avatar_index": avatar_index}
+                        )
+
+                        lobby_status = app.state.lobby_manager.get_lobby_status()
+                        await ws.send_json({
+                            "type": "lobby_joined",
+                            "data": {
+                                "name": player_name,
+                                "success": success,
+                                "players": [p["name"] for p in lobby_status["players"]],
+                            },
+                        })
+
+                        if success:
+                            await ws_manager.broadcast(
+                                WSEvent(
+                                    event_type="lobby_status",
+                                    data=lobby_status,
+                                    game_id="",
+                                    timestamp=datetime.now().isoformat(),
+                                )
+                            )
+                    else:
+                        await ws.send_json({
+                            "type": "lobby_joined",
+                            "data": {"name": player_name, "success": False, "players": []},
+                        })
 
                 # Human action response
                 elif data.get("type") == "action_response":

@@ -379,3 +379,73 @@ class TestTurnContext:
         )
 
         assert context.personality == sample_personality
+
+
+class TestWalletAddress:
+    """Tests for wallet_address attribute on all player types."""
+
+    def test_house_ai_wallet_address_default_none(self, sample_personality, mock_llm_client):
+        """Test HouseAIPlayer.wallet_address defaults to None."""
+        player = HouseAIPlayer(
+            name="TestAI",
+            personality=sample_personality,
+            llm_client=mock_llm_client,
+        )
+        assert player.wallet_address is None
+
+    def test_human_wallet_address_default_none(self):
+        """Test HumanPlayer.wallet_address defaults to None."""
+        player = HumanPlayer(
+            name="TestHuman",
+            send_to_player=AsyncMock(),
+        )
+        assert player.wallet_address is None
+
+    def test_human_wallet_address_set(self):
+        """Test HumanPlayer.wallet_address can be set."""
+        player = HumanPlayer(
+            name="TestHuman",
+            send_to_player=AsyncMock(),
+            wallet_address="0xABCD1234",
+        )
+        assert player.wallet_address == "0xABCD1234"
+
+    def test_agent_human_wallet_address_default_none(self):
+        """Test AgentHumanPlayer.wallet_address defaults to None."""
+        player = AgentHumanPlayer(
+            name="TestAgent",
+            send_to_player=AsyncMock(),
+        )
+        assert player.wallet_address is None
+
+    def test_agent_human_wallet_address_set(self):
+        """Test AgentHumanPlayer.wallet_address can be set."""
+        player = AgentHumanPlayer(
+            name="TestAgent",
+            send_to_player=AsyncMock(),
+            wallet_address="0xDEADBEEF",
+        )
+        assert player.wallet_address == "0xDEADBEEF"
+
+    def test_moltbook_wallet_address_default_none(self):
+        """Test MoltbookAgentPlayer.wallet_address defaults to None."""
+        mock_client = MagicMock()
+        player = MoltbookAgentPlayer(
+            name="TestMolt",
+            agent_id="agent-123",
+            api_key="key-abc",
+            moltbook_client=mock_client,
+        )
+        assert player.wallet_address is None
+
+    def test_moltbook_wallet_address_set(self):
+        """Test MoltbookAgentPlayer.wallet_address can be set."""
+        mock_client = MagicMock()
+        player = MoltbookAgentPlayer(
+            name="TestMolt",
+            agent_id="agent-123",
+            api_key="key-abc",
+            moltbook_client=mock_client,
+            wallet_address="0x1111AAAA",
+        )
+        assert player.wallet_address == "0x1111AAAA"

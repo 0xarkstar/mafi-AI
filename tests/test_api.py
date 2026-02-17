@@ -402,6 +402,65 @@ class TestLobbyWebSocket:
             response = websocket.receive_json()
             assert response["type"] == "pong"
 
+    def test_join_lobby_with_avatar_index(self, mock_settings, ws_manager):
+        """Test join_lobby with avatar_index."""
+        from src.lobby.manager import LobbyManager
+
+        app = create_app(mock_settings, ws_manager, betting_manager=None)
+        lobby = LobbyManager()
+        app.state.lobby_manager = lobby
+        test_client = TestClient(app)
+
+        with test_client.websocket_connect("/ws") as websocket:
+            websocket.send_json({
+                "type": "join_lobby",
+                "name": "TestHuman",
+                "avatar_index": 3,
+            })
+            response = websocket.receive_json()
+
+            assert response["type"] == "lobby_joined"
+            assert response["data"]["success"] is True
+
+            # Avatar index should be stored in metadata
+            assert "TestHuman" in lobby.player_metadata
+            assert lobby.player_metadata["TestHuman"]["avatar_index"] == 3
+
+    def test_rejoin_lobby(self, mock_settings, ws_manager):
+        """Test rejoin_lobby handler."""
+        from src.lobby.manager import LobbyManager
+
+        app = create_app(mock_settings, ws_manager, betting_manager=None)
+        lobby = LobbyManager()
+        app.state.lobby_manager = lobby
+        test_client = TestClient(app)
+
+        with test_client.websocket_connect("/ws") as websocket:
+            websocket.send_json({
+                "type": "rejoin_lobby",
+                "name": "TestHuman",
+                "avatar_index": 5,
+            })
+            response = websocket.receive_json()
+
+            assert response["type"] == "lobby_joined"
+            assert response["data"]["success"] is True
+            assert "TestHuman" in lobby.players
+
+
+class TestWSManagerClearSessions:
+    """Tests for WSManager.clear_sessions."""
+
+    def test_clear_sessions(self):
+        """Test clearing all sessions."""
+        ws_manager = WSManager()
+        ws_manager.player_sessions["player1"] = MagicMock()
+        ws_manager.player_sessions["player2"] = MagicMock()
+
+        ws_manager.clear_sessions()
+
+        assert len(ws_manager.player_sessions) == 0
+
 
 class TestMoltbookJoin:
     """Tests for Moltbook agent join endpoint."""

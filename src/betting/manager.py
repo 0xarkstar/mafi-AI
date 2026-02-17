@@ -41,6 +41,26 @@ class BettingManager:
         }
         self.odds_board: OddsBoard | None = None
 
+    def reset(self, new_game_id: str) -> None:
+        """Reset all pools and odds for a new game.
+
+        Args:
+            new_game_id: Game ID for the new betting session.
+        """
+        self.game_id = new_game_id
+        self.pools = {
+            BetType.SIDE_WIN: BettingPool(game_id=new_game_id, bet_type=BetType.SIDE_WIN),
+            BetType.NEXT_ELIMINATION: BettingPool(
+                game_id=new_game_id, bet_type=BetType.NEXT_ELIMINATION
+            ),
+            BetType.IS_MAFIA: BettingPool(game_id=new_game_id, bet_type=BetType.IS_MAFIA),
+            BetType.IS_AI_OR_HUMAN: BettingPool(
+                game_id=new_game_id, bet_type=BetType.IS_AI_OR_HUMAN
+            ),
+        }
+        self.odds_board = None
+        log.info("betting_manager_reset", new_game_id=new_game_id)
+
     def place_bet(
         self,
         bettor_address: str,
@@ -48,7 +68,7 @@ class BettingManager:
         target: str,
         amount_usdc: Decimal,
         round_number: int,
-        tx_hash: str,
+        tx_hash: str | None = None,
     ) -> Bet | None:
         """Place a USDC bet (unified method for all bets).
 

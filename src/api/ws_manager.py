@@ -117,6 +117,10 @@ class WSManager:
         self.player_response_futures[name] = future
         log.debug("response_future_set", name=name)
 
+    def clear_sessions(self) -> None:
+        """Remove all player sessions (between games)."""
+        self.player_sessions.clear()
+
     def resolve_response(self, name: str, response: str) -> None:
         """Resolve player's response future.
 

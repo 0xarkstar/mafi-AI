@@ -4,7 +4,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from src.blockchain.contract import MafiaBettingContract
-from src.blockchain.provider import BlockchainProvider
+from src.blockchain.provider import BlockchainProvider, create_web3_provider
 
 
 class TestBlockchainProvider:
@@ -118,25 +118,102 @@ class TestMafiaBettingContract:
         mock_contract.functions.settle.assert_called_once_with(12345, True)
 
 
-class TestGameEngineBlockchain:
-    """Tests for GameEngine blockchain integration."""
+class TestCreateWeb3Provider:
+    """Tests for create_web3_provider factory function."""
 
-    def test_uuid_to_uint256(self):
-        """Test UUID to uint256 conversion."""
-        from src.engine.game_engine import GameEngine
+    @pytest.mark.asyncio
+    async def test_create_web3_provider_success(self):
+        """Test successful provider creation with POA middleware injected."""
+        with patch("src.blockchain.provider.AsyncWeb3") as mock_web3_cls, \
+             patch("src.blockchain.provider.AsyncHTTPProvider") as mock_provider_cls, \
+             patch("src.blockchain.provider.ExtraDataToPOAMiddleware"):
+            mock_instance = MagicMock()
+            mock_instance.middleware_onion = MagicMock()
+            mock_instance.is_connected = AsyncMock(return_value=True)
+            mock_web3_cls.return_value = mock_instance
 
-        engine = object.__new__(GameEngine)
-        result = engine._uuid_to_uint256("550e8400-e29b-41d4-a716-446655440000")
-        assert isinstance(result, int)
-        assert result < 2**64
+            result = await create_web3_provider("https://testnet-rpc.monad.xyz", 10143)
 
-    def test_uuid_to_uint256_deterministic(self):
-        """Test same UUID always produces same uint256."""
-        from src.engine.game_engine import GameEngine
+            assert result is mock_instance
+            mock_instance.middleware_onion.inject.assert_called_once()
+            mock_instance.is_connected.assert_called_once()
 
-        engine = object.__new__(GameEngine)
-        uuid = "12345678-1234-1234-1234-123456789abc"
-        assert engine._uuid_to_uint256(uuid) == engine._uuid_to_uint256(uuid)
+    @pytest.mark.asyncio
+    async def test_create_web3_provider_connection_failure(self):
+        """Test ConnectionError raised when RPC not reachable."""
+        with patch("src.blockchain.provider.AsyncWeb3") as mock_web3_cls, \
+             patch("src.blockchain.provider.AsyncHTTPProvider"), \
+             patch("src.blockchain.provider.ExtraDataToPOAMiddleware"):
+            mock_instance = MagicMock()
+            mock_instance.middleware_onion = MagicMock()
+            mock_instance.is_connected = AsyncMock(return_value=False)
+            mock_web3_cls.return_value = mock_instance
+
+            with pytest.raises(ConnectionError, match="Cannot connect"):
+                await create_web3_provider("https://bad-rpc.example.com", 10143)
+
+
+class TestBlockchainProviderGetContract:
+    """Tests for BlockchainProvider.get_contract versioning."""
+
+    def _make_provider(self):
+        with patch("src.blockchain.provider.AsyncWeb3") as mock_web3_cls, \
+             patch("src.blockchain.provider.ExtraDataToPOAMiddleware"):
+            instance = MagicMock()
+            instance.middleware_onion = MagicMock()
+            instance.eth = MagicMock()
+            instance.eth.account = MagicMock()
+            instance.eth.account.from_key = MagicMock(return_value=MagicMock())
+            instance.eth.contract = MagicMock(return_value=MagicMock())
+            instance.to_checksum_address = MagicMock(return_value="0x" + "b" * 40)
+            mock_web3_cls.return_value = instance
+            return BlockchainProvider(
+                rpc_url="https://rpc",
+                private_key="0x" + "a" * 64,
+                contract_address="0x" + "b" * 40,
+            ), instance
+
+    @pytest.mark.asyncio
+    async def test_get_contract_v1_default(self):
+        """Test default version loads V1 ABI path."""
+        import json
+        provider, w3_instance = self._make_provider()
+
+        v1_abi = {"abi": []}
+        with patch("builtins.open", MagicMock()) as mock_open, \
+             patch("json.load", return_value=v1_abi):
+            contract = await provider.get_contract()
+
+        w3_instance.eth.contract.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_contract_v2(self):
+        """Test version='v2' loads V2 ABI path."""
+        import json
+        provider, w3_instance = self._make_provider()
+
+        v2_abi = {"abi": []}
+        with patch("builtins.open", MagicMock()), \
+             patch("json.load", return_value=v2_abi):
+            contract_v2 = await provider.get_contract(version="v2")
+
+        w3_instance.eth.contract.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_get_contract_caching(self):
+        """Test that same version returns cached contract."""
+        import json
+        provider, w3_instance = self._make_provider()
+
+        v1_abi = {"abi": []}
+        with patch("builtins.open", MagicMock()), \
+             patch("json.load", return_value=v1_abi):
+            contract1 = await provider.get_contract(version="v1")
+            contract2 = await provider.get_contract(version="v1")
+
+        # open() should only be called once (caching)
+        assert contract1 is contract2
+        assert w3_instance.eth.contract.call_count == 1
 
 
 class TestBlockchainConfigEndpoint:

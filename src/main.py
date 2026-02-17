@@ -2,6 +2,7 @@
 
 import argparse
 import asyncio
+import time
 
 import uvicorn
 
@@ -177,9 +178,9 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     set_betting_manager(betting_manager)
 
     # Initialize blockchain if enabled
-    blockchain_contract = None
+    blockchain_gateway = None
     if settings.blockchain_enabled:
-        from src.blockchain.contract import MafiaBettingContract
+        from src.blockchain.gateway import BlockchainGateway
         from src.blockchain.provider import BlockchainProvider
 
         provider = BlockchainProvider(
@@ -188,7 +189,7 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
             contract_address=settings.blockchain_contract_address,
         )
         if await provider.is_connected():
-            blockchain_contract = MafiaBettingContract(provider)
+            blockchain_gateway = BlockchainGateway(provider)
             log.info("blockchain_connected", rpc=settings.blockchain_rpc_url)
         else:
             log.warning("blockchain_connection_failed")
@@ -235,84 +236,104 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     print(f"WebSocket: ws://localhost:{settings.port}/ws")
     print("="*60 + "\n")
 
-    # Start game with lobby logic
-    async def start_game_when_ready():
-        """Wait for lobby to fill, then start game."""
-        lobby_timeout_seconds = getattr(settings, "lobby_timeout_seconds", 30)
-        log.info("lobby_waiting", timeout=lobby_timeout_seconds)
-        print(f"[...] Lobby waiting for players ({lobby_timeout_seconds}s timeout)...")
+    # Continuous game loop
+    async def game_loop():
+        """Continuous game loop: lobby → game → reset → lobby."""
+        while True:
+            lobby_timeout_seconds = getattr(settings, "lobby_timeout_seconds", 30)
+            log.info("lobby_waiting", timeout=lobby_timeout_seconds)
+            print(f"[...] Lobby waiting for players ({lobby_timeout_seconds}s timeout)...")
 
-        # Wait for lobby timeout
-        await asyncio.sleep(lobby_timeout_seconds)
+            # Wait for first player to join
+            while lobby_manager.first_join_time is None:
+                await asyncio.sleep(1)
 
-        # Fill remaining slots with House AI
-        log.info("filling_with_house_ai")
-        lobby_manager.fill_with_house_ai(llm_client, ALL_PERSONALITIES)
-        players = lobby_manager.get_players()
+            # Wait for remaining lobby timeout from first join
+            elapsed = time.time() - lobby_manager.first_join_time
+            remaining = max(0, lobby_timeout_seconds - elapsed)
+            if remaining > 0:
+                await asyncio.sleep(remaining)
 
-        # Broadcast updated lobby status so clients see all players
-        from datetime import datetime
+            # Fill remaining slots with House AI
+            log.info("filling_with_house_ai")
+            lobby_manager.fill_with_house_ai(llm_client, ALL_PERSONALITIES)
+            players = lobby_manager.get_players()
 
-        await ws_manager.broadcast(
-            WSEvent(
-                event_type="lobby_status",
-                data={
-                    "players": list(players.keys()),
-                    "count": len(players),
-                    "ready": True,
-                },
-                game_id=game_id,
-                timestamp=datetime.now().isoformat(),
+            # Generate new game_id for this round
+            import uuid
+            round_game_id = str(uuid.uuid4())
+
+            # Broadcast updated lobby status
+            from datetime import datetime
+            await ws_manager.broadcast(
+                WSEvent(
+                    event_type="lobby_status",
+                    data=lobby_manager.get_lobby_status(),
+                    game_id=round_game_id,
+                    timestamp=datetime.now().isoformat(),
+                )
             )
-        )
 
-        log.info("game_starting", player_count=len(players))
-        print(f"\n[>] Starting game with {len(players)} players...")
+            log.info("game_starting", player_count=len(players))
+            print(f"\n[>] Starting game with {len(players)} players...")
 
-        # Create engine with players
-        engine = GameEngine(
-            players,
-            ws_manager.broadcast,
-            betting_manager,
-            game_id,
-            blockchain_contract,
-        )
-
-        # Broadcast game starting event
-        await ws_manager.broadcast(
-            WSEvent(
-                event_type="game_starting",
-                data={
-                    "player_count": len(players),
-                    "players": [
-                        {"name": p.name, "player_type": p.player_type.value}
-                        for p in players.values()
-                    ],
-                },
-                game_id=game_id,
-                timestamp=datetime.now().isoformat(),
+            # Create engine
+            engine = GameEngine(
+                players,
+                ws_manager.broadcast,
+                betting_manager,
+                round_game_id,
+                blockchain_gateway,
             )
-        )
 
-        set_game_active(True)
+            # Broadcast game starting
+            await ws_manager.broadcast(
+                WSEvent(
+                    event_type="game_starting",
+                    data={
+                        "player_count": len(players),
+                        "players": [
+                            {"name": p.name, "player_type": p.player_type.value}
+                            for p in players.values()
+                        ],
+                    },
+                    game_id=round_game_id,
+                    timestamp=datetime.now().isoformat(),
+                )
+            )
 
-        try:
-            final_state = await engine.run_game()
+            set_game_active(True)
 
-            # Update routes module with final state
-            set_game_state(final_state)
+            try:
+                final_state = await engine.run_game()
+                set_game_state(final_state)
+                log.info("game_completed", winner=final_state.winner)
+                print(f"\n[OK] Game completed! Winner: {final_state.winner}")
+            except Exception as exc:
+                log.exception("game_error", error=str(exc))
+            finally:
+                set_game_active(False)
 
-            log.info("game_completed", winner=final_state.winner)
-            print(f"\n[OK] Game completed! Winner: {final_state.winner}")
+            # Cooldown before new lobby
+            print("[...] New lobby opening in 10 seconds...")
+            await asyncio.sleep(10)
 
-        except Exception as exc:
-            log.exception("game_error", error=str(exc))
-            set_game_active(False)
-            raise
-        finally:
-            set_game_active(False)
+            # Reset for next game
+            lobby_manager.reset()
+            ws_manager.clear_sessions()
+            betting_manager.reset(str(uuid.uuid4()))
 
-    game_task = asyncio.create_task(start_game_when_ready())
+            # Broadcast new_lobby event
+            await ws_manager.broadcast(
+                WSEvent(
+                    event_type="new_lobby",
+                    data={"message": "New game lobby is open!"},
+                    game_id="",
+                    timestamp=datetime.now().isoformat(),
+                )
+            )
+
+    game_task = asyncio.create_task(game_loop())
 
     try:
         # Run server (blocks until shutdown)

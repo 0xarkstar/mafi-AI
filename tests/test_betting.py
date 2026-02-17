@@ -741,3 +741,82 @@ class TestIdentityBetting:
         payouts = manager.settle_identity_bets(players)
 
         assert payouts == {}
+
+    def test_reset_clears_pools(self):
+        """Test reset empties all betting pools."""
+        mock_claude = MagicMock()
+        manager = BettingManager(mock_claude, "game-1")
+
+        # Place a bet in the pool
+        manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="side_win",
+            target="mafia",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            tx_hash="0xtx1",
+        )
+
+        # Verify bet was placed
+        assert len(manager.pools[BetType.SIDE_WIN].bets) == 1
+
+        # Reset with a new game id
+        manager.reset("game-2")
+
+        # All pools should be empty after reset
+        for pool in manager.pools.values():
+            assert len(pool.bets) == 0
+            assert pool.total_amount == Decimal("0")
+
+    def test_reset_updates_game_id(self):
+        """Test reset updates game_id to the new value."""
+        mock_claude = MagicMock()
+        manager = BettingManager(mock_claude, "game-1")
+        assert manager.game_id == "game-1"
+
+        manager.reset("game-2")
+
+        assert manager.game_id == "game-2"
+
+    def test_reset_clears_odds(self):
+        """Test reset sets odds_board to None."""
+        from unittest.mock import AsyncMock
+        mock_claude = MagicMock()
+        manager = BettingManager(mock_claude, "game-1")
+        # Manually set odds_board to something non-None
+        manager.odds_board = MagicMock()
+
+        manager.reset("game-2")
+
+        assert manager.odds_board is None
+
+    def test_place_bet_without_tx_hash(self):
+        """Test placing a bet works when tx_hash is None."""
+        mock_claude = MagicMock()
+        manager = BettingManager(mock_claude, "test-game")
+
+        bet = manager.place_bet(
+            bettor_address="0xuser1",
+            bet_type="side_win",
+            target="mafia",
+            amount_usdc=Decimal("10.00"),
+            round_number=0,
+            # tx_hash intentionally omitted (defaults to None)
+        )
+
+        assert bet is not None
+        assert bet.tx_hash is None
+
+    def test_bet_model_tx_hash_optional(self):
+        """Test Bet model can be created without tx_hash."""
+        bet = Bet(
+            bet_id="bet1",
+            game_id="game1",
+            bettor_id="0xuser1",
+            bet_type=BetType.SIDE_WIN,
+            target="mafia",
+            amount=Decimal("10.00"),
+            round_placed=0,
+        )
+
+        assert bet.tx_hash is None

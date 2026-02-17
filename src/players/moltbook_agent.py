@@ -22,6 +22,7 @@ class MoltbookAgentPlayer:
         api_key: str,
         moltbook_client: MoltbookClient,
         timeout: float = 30.0,
+        wallet_address: str | None = None,
     ):
         """Initialize Moltbook agent player.
 
@@ -31,6 +32,7 @@ class MoltbookAgentPlayer:
             api_key: API key for authentication.
             moltbook_client: Moltbook API client.
             timeout: Response timeout in seconds.
+            wallet_address: Optional wallet address for on-chain operations.
         """
         self.name = name
         self.agent_id = agent_id
@@ -38,6 +40,7 @@ class MoltbookAgentPlayer:
         self.player_type = PlayerType.MOLTBOOK_AGENT
         self.moltbook_client = moltbook_client
         self.timeout = timeout
+        self.wallet_address = wallet_address
         self._last_message_id: str | None = None
 
     async def _request_and_poll(

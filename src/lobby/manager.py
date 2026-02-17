@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import time
+
 from src.agents.llm_client import LLMClient
 from src.agents.personalities import ALL_PERSONALITIES
 from src.config.constants import TOTAL_PLAYERS
@@ -24,12 +26,15 @@ class LobbyManager:
         """
         self.max_players = max_players
         self.players: dict[str, PlayerProtocol] = {}
+        self.player_metadata: dict[str, dict] = {}
+        self.first_join_time: float | None = None
 
-    def join(self, player: PlayerProtocol) -> bool:
+    def join(self, player: PlayerProtocol, metadata: dict | None = None) -> bool:
         """Add player to lobby.
 
         Args:
             player: Player to add.
+            metadata: Optional metadata dict (e.g. {"avatar_index": 3}).
 
         Returns:
             True if added successfully, False if lobby is full.
@@ -38,13 +43,20 @@ class LobbyManager:
             log.warning("lobby_full", max_players=self.max_players)
             return False
 
+        if self.first_join_time is None:
+            self.first_join_time = time.time()
+
         if player.name in self.players:
             # Allow re-join (e.g. WebSocket reconnect) — replace player instance
             log.info("player_rejoined", name=player.name)
             self.players[player.name] = player
+            if metadata:
+                self.player_metadata[player.name] = metadata
             return True
 
         self.players[player.name] = player
+        if metadata:
+            self.player_metadata[player.name] = metadata
         log.info(
             "player_joined",
             name=player.name,
@@ -53,6 +65,29 @@ class LobbyManager:
         )
 
         return True
+
+    def reset(self) -> None:
+        """Clear all players and metadata for next game."""
+        self.players.clear()
+        self.player_metadata.clear()
+        self.first_join_time = None
+
+    def get_lobby_status(self) -> dict:
+        """Return structured lobby status with metadata."""
+        return {
+            "players": [
+                {
+                    "name": name,
+                    "player_type": p.player_type.value,
+                    "avatar_index": self.player_metadata.get(name, {}).get("avatar_index"),
+                    "wallet_address": getattr(p, "wallet_address", None),
+                }
+                for name, p in self.players.items()
+            ],
+            "count": len(self.players),
+            "max_players": self.max_players,
+            "ready": self.is_ready(),
+        }
 
     def fill_with_house_ai(
         self, llm_client: LLMClient, personalities: tuple[Personality, ...] | None = None

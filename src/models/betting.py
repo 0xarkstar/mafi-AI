@@ -18,7 +18,7 @@ class Bet(BaseModel, frozen=True):
     amount: Decimal
     round_placed: int
     weight: Decimal = Decimal("1.0")  # early bet bonus weight
-    tx_hash: str  # x402 payment transaction hash (always required)
+    tx_hash: str | None = None  # x402 payment transaction hash (optional)
 
 
 class BettingPool(BaseModel, frozen=True):

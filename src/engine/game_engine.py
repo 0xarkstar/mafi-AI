@@ -29,7 +29,7 @@ class GameEngine:
         event_callback: Callable[[WSEvent], Awaitable[None]],
         betting_manager=None,
         game_id: str | None = None,
-        blockchain_contract=None,
+        blockchain_gateway=None,
     ):
         """Initialize game engine.
 
@@ -38,7 +38,7 @@ class GameEngine:
             event_callback: Async callback for broadcasting events.
             betting_manager: Optional betting manager for spectator betting.
             game_id: Optional pre-generated game ID (for server mode with betting).
-            blockchain_contract: Optional blockchain contract wrapper for on-chain operations.
+            blockchain_gateway: Optional blockchain gateway for V2 on-chain operations.
         """
         self.players = players
         self.event_callback = event_callback
@@ -46,7 +46,7 @@ class GameEngine:
         self.agents: dict[str, AgentState] = {}
         self.betting_manager = betting_manager
         self.game_id = game_id
-        self.blockchain_contract = blockchain_contract
+        self.blockchain_gateway = blockchain_gateway
 
     async def run_game(self) -> GameState:
         """Run a complete game from start to finish.
@@ -292,12 +292,11 @@ class GameEngine:
 
         self.state = GameState(**state_kwargs)
 
-        # Create game on-chain if blockchain is enabled
-        if self.blockchain_contract:
+        # Create game on-chain with commit-reveal if blockchain is enabled
+        if self.blockchain_gateway:
             try:
-                numeric_game_id = self._uuid_to_uint256(self.state.game_id)
-                await self.blockchain_contract.create_game(numeric_game_id)
-                log.info("blockchain_game_created", game_id=numeric_game_id)
+                await self.blockchain_gateway.commit_roles(self.state.game_id, role_map)
+                log.info("blockchain_game_created", game_id=self.state.game_id)
             except Exception as exc:
                 log.warning(
                     "blockchain_create_failed",

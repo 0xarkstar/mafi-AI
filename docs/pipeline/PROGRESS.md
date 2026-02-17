@@ -244,7 +244,7 @@ Merge MAFI_AI_FRONT branch visual design into main's real WebSocket architecture
 - 3 JS chunks + 1 CSS: index.js (273KB), ethers.js (269KB), framer-motion.js (125KB), index.css (71KB)
 - 236 Python backend tests pass, 0 failures
 
-## Pipeline Complete
+## Pipeline Complete — USDC Betting Unification
 
 ### Final Summary — USDC Betting Unification
 - **275 total tests** (236 Python + 39 Solidity), all passing
@@ -303,5 +303,142 @@ Replace vanilla HTML/CSS/JS SPA with modern React 19 + TypeScript + Vite + Tailw
 - **7 CSS-art character avatars** (no external images)
 - **Mobile-first** with 3-tab bottom navigation
 - **Desktop** 3-column layout (players | chat | betting)
+
+## Pipeline Complete — Frontend Redesign
+
+---
+
+## JS Frontend Docs Update — 2026-02-18
+
+### Task #1 — Update English Docs (p-docs-en)
+
+**Files Modified:**
+- `docs/USERFLOW.md` — Full rewrite reflecting JS branch frontend rewrite
+- `README.md` — Targeted updates
+
+**Changes:**
+1. Module Responsibility Map: replaced 37-file modular layout with flat structure (screens/, components/, store.ts, websocket.ts, types.ts, mappers.ts, constants.ts)
+2. Player Interaction Flow: wallet → nickname → avatar selection → "Enter Lobby" flow; `join_lobby` has no player_type field
+3. Human Player Actions: NIGHT = Moon overlay + text; DAY_VOTE = click player cards; DAY_DISCUSSION = ChatBoard with "Your Turn to Speak"
+4. Role Reveal Modal: new section documenting fullscreen modal at game start
+5. WebSocket: `join_lobby {type, name}` (no type field), ping at 25s
+6. Screen State Machine: updated LANDING sub-states, ScreenState.SPECTATE as distinct state
+7. UI Component Tree: completely rewritten for flat architecture; BettingPanel is null stub; SpectatorScreen has inline Betting Terminal (380px)
+8. State Management: 4 separate stores → 1 unified GameState interface; State Transitions table added
+9. Phase Transitions: CSS transition-opacity not framer-motion; NightOverlay = Moon icon + text
+10. Desktop layout: 3-column → 2-section (board + 340px ChatPanel); Spectator = board + 380px BettingTerminal
+11. Mobile layout: MobileTabBar removed; FAB + slide-in ChatBoard drawer
+
+**README.md targeted edits:**
+- Features: "Responsive Design" updated (2-section + FAB drawer); "Modern React Frontend" updated (flat, 1 store)
+- Architecture: frontend directory tree replaced with flat structure
+- Key Files: hooks/useWebSocket.ts + stores/gameStore.ts → store.ts, websocket.ts, GameScreen.tsx etc.
+- Zustand "4 stores" → "1 unified store"
+- Client→Server WS events updated
+
+## Handoff (Task #1)
+- **Attempted**: Full USERFLOW.md rewrite + targeted README.md edits
+- **Worked**: All sections verified against actual source (store.ts, App.tsx, all screens, GameComponents.tsx, websocket.ts, types.ts, constants.ts, mappers.ts)
+- **Failed**: Nothing
+- **Remaining**: Task #2 — Korean docs (USERFLOW.ko.md + README.ko.md) need same updates in Korean
+
+### Task #2 — Update Korean Docs (p-docs-ko)
+
+**Files Modified:**
+- `docs/USERFLOW.ko.md` — Full rewrite matching updated English USERFLOW.md
+- `README.ko.md` — Targeted updates matching updated English README.md
+
+**Changes (USERFLOW.ko.md):**
+1. Module Responsibility Map: replaced old modular layout (37 files, multiple stores, hooks) with flat structure (screens/, components/, store.ts, websocket.ts, types.ts, mappers.ts, constants.ts) — translated to Korean
+2. Player Interaction Flow (sequence diagram): updated to wallet connect → nickname → avatar selection → "Enter Lobby" flow; `join_lobby` has no player_type field
+3. Human Player Actions table: updated NIGHT (Moon overlay), DAY_VOTE (click player cards), DAY_DISCUSSION (ChatBoard "Your Turn to Speak") with full detail
+4. Role Reveal Modal: new section added and translated
+5. Spectator Screen Layout: replaced simple list with full ASCII art layout (Korean labels)
+6. WebSocket events: updated to 15 server→client events with UI effects; 3 client→server events (ping at 25s)
+7. Screen State Machine: updated LANDING sub-states (wallet→nickname→avatar), ScreenState.SPECTATE as distinct state
+8. UI Component Tree: completely rewritten for flat architecture with Korean labels
+9. State Management: 4 separate stores → 1 unified GameState TypeScript interface with Korean comments
+10. Phase Transitions: CSS transition-opacity (not framer-motion); NightOverlay = Moon icon + NIGHT PHASE text
+11. Desktop layout: 3-column → 2-section (board + 340px ChatPanel); Spectator = board + 380px BettingTerminal
+12. Mobile layout: MobileTabBar removed; FAB + slide-in ChatBoard drawer
+13. Troubleshooting: added 2 new entries (auto-transition, chat not sending)
+
+**Changes (README.ko.md):**
+- Features: "모던 React 프론트엔드" updated (flat, 1 unified store); "반응형 디자인" updated (2-section + FAB drawer); "비주얼 폴리시" updated (Role Reveal modal, Night Phase overlay)
+- Lobby System: updated to include wallet connect → nickname → avatar flow
+- Architecture: frontend directory tree replaced with flat structure (6 screens, 2 component files, 1 store)
+- Key Design Patterns: updated to mention single Zustand store
+- Key Files: updated frontend files (store.ts, websocket.ts, screens/, GameComponents.tsx)
+
+## Handoff (Task #2)
+- **Attempted**: Full Korean translation of updated English docs
+- **Worked**: Both files fully updated; natural Korean prose throughout; code blocks, file paths, URLs kept in English; Mermaid diagrams preserved with Korean node labels where appropriate
+- **Failed**: Nothing
+- **Remaining**: None — Korean docs now match English versions
+
+---
+
+## Blockchain V2 Foundation — 2026-02-18
+
+### Goal
+Fix broken blockchain layer: V2 contract (commit-reveal, 4 bet types), Python gateway, player wallets, betting manager cleanup.
+
+### P1 Implementation — COMPLETE
+- Started: 2026-02-18
+- Team: p-impl-solidity (sonnet), p-impl-python (sonnet), p-test-writer (sonnet)
+
+| Agent | Files | Status |
+|-------|-------|--------|
+| p-impl-solidity | MafiaBettingV2.sol, test/MafiaBettingV2.test.js, scripts/deploy-v2.js | ✅ 51 Hardhat tests |
+| p-impl-python | 13 source files (provider, gateway, players, betting, engine, main) | ✅ 246 existing tests pass |
+| p-test-writer | 5 test files (test_gateway new, 4 updated) | ✅ 281 total Python tests |
+
+### Results
+- **281 Python tests + 90 Hardhat tests (51 V2 + 39 V1) = 371 total**, ALL PASSING
+- **73% Python coverage** (up from 72%)
+- ImportError fixed: `create_web3_provider()` exists
+- `Bet.tx_hash` now optional (str | None = None)
+- All 4 player types have `wallet_address: str | None`
+- `BettingManager.reset(new_game_id)` clears pools between games
+- `BlockchainGateway` replaces direct `MafiaBettingContract` usage
+- V2 contract: commit-reveal, 4 BetType enum, oracle-attested settlement, 7-day refunds
+- V1 contract untouched, V1 tests still pass
+
+## Pipeline Complete
+
+---
+
+## Game Flow Redesign — 2026-02-18
+
+### Goal
+Remove wallet connection, simplify onboarding to single step, add server game loop.
+
+### P1 Implementation — COMPLETE
+- Started: 2026-02-18
+- Team: p-impl-backend (sonnet), p-impl-frontend (sonnet)
+
+### Backend Changes (p-impl-backend)
+| File | Changes |
+|------|---------|
+| `src/lobby/manager.py` | +player_metadata, +first_join_time, +reset(), +get_lobby_status(), join() accepts metadata |
+| `src/api/ws_manager.py` | +clear_sessions() |
+| `src/api/server.py` | Parse avatar_index in join_lobby, structured lobby_status broadcast, +rejoin_lobby handler |
+| `src/main.py` | Replaced single-shot start_game_when_ready() with continuous game_loop() (while True) |
+| `tests/test_lobby.py` | +8 tests: metadata, reset, first_join_time, get_lobby_status |
+| `tests/test_api.py` | +3 tests: avatar_index parsing, rejoin_lobby, clear_sessions |
+
+### Frontend Changes (p-impl-frontend + lead fixes)
+| File | Changes |
+|------|---------|
+| `frontend/src/store.ts` | Removed wallet state/actions, +avatar_index in join_lobby, +playAgain(), structured lobby_status parser, +new_lobby handler |
+| `frontend/src/mappers.ts` | buildPlayerFromName() accepts optional avatarIndex param |
+| `frontend/src/screens/LandingScreen.tsx` | Single-step onboarding (nickname + avatar on same screen), removed wallet gate |
+| `frontend/src/screens/GameOverScreen.tsx` | "Play Again" → playAgain(), "Back to Home" → resetGame(), removed chip balance |
+
+### Results
+- **246 Python tests**, all passing (10 new tests)
+- **0 TypeScript errors**, frontend build succeeds
+- Server game loop: IDLE → LOBBY_WAITING → GAME → COOLDOWN → repeat
+- Frontend flow: LANDING → LOBBY → GAME → GAME_OVER → (Play Again → LOBBY | Back to Home → LANDING)
 
 ## Pipeline Complete

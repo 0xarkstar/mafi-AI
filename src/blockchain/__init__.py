@@ -1,6 +1,7 @@
 """Blockchain integration for Monad testnet."""
 
 from src.blockchain.contract import MafiaBettingContract
-from src.blockchain.provider import BlockchainProvider
+from src.blockchain.gateway import BlockchainGateway
+from src.blockchain.provider import BlockchainProvider, create_web3_provider
 
-__all__ = ["BlockchainProvider", "MafiaBettingContract"]
+__all__ = ["BlockchainGateway", "BlockchainProvider", "MafiaBettingContract", "create_web3_provider"]

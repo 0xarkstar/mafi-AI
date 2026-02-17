@@ -31,7 +31,7 @@ export function mapWinner(backend: string): 'Mafia' | 'Citizens' {
  * Tries to match against AGENTS_DATA for color/trait/icon.
  * Falls back to generic defaults for unknown names (human players).
  */
-export function buildPlayerFromName(name: string, index: number): Player {
+export function buildPlayerFromName(name: string, index: number, avatarIndex?: number | null): Player {
   const agentData = AGENTS_DATA.find((a) => a.name === name);
 
   if (agentData) {
@@ -42,7 +42,7 @@ export function buildPlayerFromName(name: string, index: number): Player {
       isAi: true,
       isDead: false,
       avatarIcon: agentData.avatarIcon,
-      avatarIndex: index % 8,
+      avatarIndex: avatarIndex ?? index % 8,
       trait: agentData.trait,
     };
   }
@@ -55,6 +55,7 @@ export function buildPlayerFromName(name: string, index: number): Player {
     isAi: false,
     isDead: false,
     avatarIcon: 'User',
+    avatarIndex: avatarIndex ?? undefined,
     trait: 'Player',
   };
 }

@@ -7,9 +7,6 @@ import { mapPhase, mapRole, mapWinner, buildPlayerFromName } from './mappers';
 interface GameState {
   screen: ScreenState;
   phase: GamePhase;
-  walletConnected: boolean;
-  walletAddress: string | null;
-  balance: number;
   nickname: string;
   players: Player[];
   messages: Message[];
@@ -30,7 +27,6 @@ interface GameState {
   avatarIndex: number | null;
 
   // Actions
-  connectWallet: () => Promise<void>;
   connectAndJoin: (nickname: string, avatarIndex: number) => void;
   joinAsSpectator: () => void;
   addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void;
@@ -39,6 +35,7 @@ interface GameState {
   submitActionResponse: (response: string) => void;
   setPhase: (phase: GamePhase) => void;
   resetGame: () => void;
+  playAgain: () => void;
   triggerReveal: () => void;
   endGame: () => void;
   triggerEmote: (playerId: string, emote: string) => void;
@@ -48,9 +45,6 @@ interface GameState {
 export const useGameStore = create<GameState>((set, get) => ({
   screen: ScreenState.LANDING,
   phase: GamePhase.DAY_DISCUSSION,
-  walletConnected: false,
-  walletAddress: null,
-  balance: 1000,
   nickname: '',
   players: [],
   messages: [],
@@ -70,27 +64,6 @@ export const useGameStore = create<GameState>((set, get) => ({
   odds: null,
   avatarIndex: null,
 
-  connectWallet: async () => {
-    if (typeof window !== 'undefined' && (window as any).ethereum) {
-      try {
-        const { ethers } = await import('ethers');
-        const provider = new ethers.BrowserProvider((window as any).ethereum);
-        const accounts = await provider.send('eth_requestAccounts', []);
-        const address = accounts[0] as string;
-        set({
-          walletConnected: true,
-          walletAddress: `${address.slice(0, 6)}...${address.slice(-4)}`,
-        });
-      } catch {
-        await new Promise((resolve) => setTimeout(resolve, 800));
-        set({ walletConnected: true, walletAddress: '0x71C...9A21' });
-      }
-    } else {
-      await new Promise((resolve) => setTimeout(resolve, 800));
-      set({ walletConnected: true, walletAddress: '0x71C...9A21' });
-    }
-  },
-
   connectAndJoin: (nickname, avatarIndex) => {
     set({
       connectionStatus: 'connecting',
@@ -98,15 +71,11 @@ export const useGameStore = create<GameState>((set, get) => ({
       nickname,
       avatarIndex,
     });
-
     connectWS(
-      // onMessage
       (data) => get().handleWSEvent(data),
-      // onStatus
       (status) => set({ connectionStatus: status }),
-      // onOpen — send join_lobby when connected
       () => {
-        sendWS({ type: 'join_lobby', name: nickname });
+        sendWS({ type: 'join_lobby', name: nickname, avatar_index: avatarIndex });
       },
     );
   },
@@ -145,15 +114,17 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     switch (eventType) {
       case 'lobby_status': {
-        const names: string[] = data.players || [];
+        // Support both structured (new) and flat (legacy) formats
+        const rawPlayers = data.players || [];
         const existingPlayers = state.players;
 
-        // Build player list, preserving existing player objects when possible
-        const players: Player[] = names.map((name, idx) => {
+        const players: Player[] = rawPlayers.map((entry: any, idx: number) => {
+          const name = typeof entry === 'string' ? entry : entry.name;
+          const avatarIdx = typeof entry === 'object' ? entry.avatar_index : undefined;
+
           const existing = existingPlayers.find((p) => p.name === name);
           if (existing) return existing;
 
-          // Check if this is the human player
           if (name === state.playerName) {
             return {
               id: 'human-1',
@@ -167,7 +138,7 @@ export const useGameStore = create<GameState>((set, get) => ({
             };
           }
 
-          return buildPlayerFromName(name, idx);
+          return buildPlayerFromName(name, idx, avatarIdx);
         });
 
         set({ players });
@@ -433,6 +404,16 @@ export const useGameStore = create<GameState>((set, get) => ({
         break;
       }
 
+      case 'new_lobby': {
+        get().addMessage({
+          senderId: 'system',
+          senderName: 'System',
+          text: 'A new game lobby is open! Click Play Again to join.',
+          type: 'system',
+        });
+        break;
+      }
+
       case 'error': {
         get().addMessage({
           senderId: 'system',
@@ -473,7 +454,6 @@ export const useGameStore = create<GameState>((set, get) => ({
     };
     set((state) => ({
       bets: [...state.bets, newBet],
-      balance: state.balance - amount,
     }));
   },
 
@@ -528,6 +508,23 @@ export const useGameStore = create<GameState>((set, get) => ({
       odds: null,
       avatarIndex: null,
     });
+  },
+
+  playAgain: () => {
+    const state = get();
+    set({
+      screen: ScreenState.LOBBY,
+      phase: GamePhase.DAY_DISCUSSION,
+      players: [],
+      messages: [],
+      bets: [],
+      usdcBets: [],
+      round: 1,
+      winner: null,
+      currentAction: null,
+      odds: null,
+    });
+    sendWS({ type: 'rejoin_lobby', name: state.playerName, avatar_index: state.avatarIndex });
   },
 
   triggerEmote: (playerId, emote) => {

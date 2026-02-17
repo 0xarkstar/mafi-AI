@@ -29,6 +29,7 @@ class PlayerProtocol(Protocol):
 
     name: str
     player_type: PlayerType
+    wallet_address: str | None
 
     async def generate_statement(self, context: TurnContext) -> str:
         """Generate a discussion statement during day phase.

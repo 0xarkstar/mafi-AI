@@ -187,6 +187,7 @@ def mock_players(sample_personalities: tuple) -> dict:
         player.name = personality.name
         player.player_type = PlayerType.HOUSE_AI
         player.personality = personality
+        player.wallet_address = None
         player.generate_statement = AsyncMock(return_value="I think someone is suspicious.")
         player.vote = AsyncMock(return_value="TestAgent4")
         player.night_action = AsyncMock(return_value="TestAgent4")

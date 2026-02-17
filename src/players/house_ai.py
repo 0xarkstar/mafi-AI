@@ -30,6 +30,7 @@ class HouseAIPlayer:
         self.personality = personality
         self.player_type = PlayerType.HOUSE_AI
         self.llm_client = llm_client
+        self.wallet_address = None
 
     async def generate_statement(self, context: TurnContext) -> str:
         """Generate discussion statement using LLM.
