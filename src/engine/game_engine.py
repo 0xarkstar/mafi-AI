@@ -2,6 +2,7 @@
 
 from collections.abc import Awaitable, Callable
 from datetime import datetime
+from decimal import Decimal
 from typing import TYPE_CHECKING
 
 from src.agents.memory import AgentMemory
@@ -70,6 +71,14 @@ class GameEngine:
                     update={"phase": Phase.GAME_OVER, "winner": winner}
                 )
 
+                # Lock betting on-chain before settlement
+                if self.blockchain_gateway:
+                    try:
+                        await self.blockchain_gateway.lock_betting(self.state.game_id)
+                        log.info("blockchain_betting_locked", game_id=self.state.game_id)
+                    except Exception as exc:
+                        log.warning("blockchain_lock_failed", error=str(exc))
+
                 # Settle bets if betting is enabled (calculate payouts only)
                 payouts = {}
                 if self.betting_manager:
@@ -131,59 +140,96 @@ class GameEngine:
                         else:
                             combined_payouts[address] = amount
 
-                    # Transfer USDC to winners if settlement is enabled
+                    # Settle payouts on-chain or via direct USDC transfer
                     if combined_payouts:
-                        from src.config.settings import load_settings
-
-                        settings = load_settings()
-
-                        if settings.settlement_enabled:
+                        if self.blockchain_gateway:
+                            # V2 on-chain settlement (pull-payment via claimPayout)
                             try:
-                                from src.betting.settlement import USDCSettlement
-                                from src.blockchain.provider import create_web3_provider
-
-                                # Initialize web3 provider
-                                w3 = await create_web3_provider(
-                                    settings.blockchain_rpc_url, settings.blockchain_chain_id
+                                winners = list(combined_payouts.keys())
+                                amounts = [
+                                    Decimal(str(amt))
+                                    for amt in combined_payouts.values()
+                                ]
+                                tx_hash = await self.blockchain_gateway.settle_game(
+                                    self.state.game_id,
+                                    self.state.role_map,
+                                    winners,
+                                    amounts,
                                 )
-
-                                # Initialize USDC settlement
-                                settlement = USDCSettlement(
-                                    w3=w3,
-                                    usdc_address=settings.x402_usdc_address,
-                                    private_key=settings.settlement_private_key.get_secret_value(),
-                                )
-
-                                # Transfer USDC to winners
-                                transfer_results = await settlement.settle_payouts(combined_payouts)
-
                                 log.info(
-                                    "usdc_settlement_complete",
-                                    num_transfers=len(transfer_results),
+                                    "v2_settlement_complete",
+                                    tx_hash=tx_hash,
+                                    num_winners=len(winners),
                                 )
-
-                                # Broadcast settlement results
                                 await self.event_callback(
                                     WSEvent(
-                                        event_type="usdc_settlement",
+                                        event_type="blockchain_settlement",
                                         data={
-                                            "transfers": transfer_results,
+                                            "tx_hash": tx_hash,
+                                            "winners": winners,
                                         },
                                         game_id=self.state.game_id,
                                         timestamp=datetime.now().isoformat(),
                                     )
                                 )
-
                             except Exception as exc:
                                 log.error(
-                                    "usdc_settlement_failed",
+                                    "v2_settlement_failed",
                                     error=str(exc),
                                 )
                         else:
-                            log.info(
-                                "usdc_settlement_disabled",
-                                total_payouts=float(sum(combined_payouts.values())),
-                            )
+                            # Legacy direct USDC push (no V2 contract)
+                            from src.config.settings import load_settings
+
+                            settings = load_settings()
+
+                            if settings.settlement_enabled:
+                                try:
+                                    from src.betting.settlement import USDCSettlement
+                                    from src.blockchain.provider import (
+                                        create_web3_provider,
+                                    )
+
+                                    w3 = await create_web3_provider(
+                                        settings.blockchain_rpc_url,
+                                        settings.blockchain_chain_id,
+                                    )
+                                    settlement = USDCSettlement(
+                                        w3=w3,
+                                        usdc_address=settings.x402_usdc_address,
+                                        private_key=settings.settlement_private_key.get_secret_value(),
+                                    )
+                                    transfer_results = (
+                                        await settlement.settle_payouts(
+                                            combined_payouts
+                                        )
+                                    )
+                                    log.info(
+                                        "usdc_settlement_complete",
+                                        num_transfers=len(transfer_results),
+                                    )
+                                    await self.event_callback(
+                                        WSEvent(
+                                            event_type="usdc_settlement",
+                                            data={
+                                                "transfers": transfer_results,
+                                            },
+                                            game_id=self.state.game_id,
+                                            timestamp=datetime.now().isoformat(),
+                                        )
+                                    )
+                                except Exception as exc:
+                                    log.error(
+                                        "usdc_settlement_failed",
+                                        error=str(exc),
+                                    )
+                            else:
+                                log.info(
+                                    "usdc_settlement_disabled",
+                                    total_payouts=float(
+                                        sum(combined_payouts.values())
+                                    ),
+                                )
 
                 log.info("reveal_phase_complete", player_count=len(self.players))
                 break
@@ -364,14 +410,3 @@ class GameEngine:
 
             self.agents[name] = agent.model_copy(update=updates)
 
-    def _uuid_to_uint256(self, uuid_str: str) -> int:
-        """Convert UUID game_id to uint256 for smart contract.
-
-        Args:
-            uuid_str: UUID string (e.g., "550e8400-e29b-41d4-a716-446655440000").
-
-        Returns:
-            Integer representation suitable for uint256.
-        """
-        # Remove hyphens and convert to int, then mod to keep manageable
-        return int(uuid_str.replace("-", ""), 16) % (2**64)

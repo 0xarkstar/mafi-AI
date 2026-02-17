@@ -1,11 +1,13 @@
 """Tests for game engine modules."""
 
 import random
-from unittest.mock import AsyncMock, MagicMock
+from decimal import Decimal
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from src.config.constants import Phase, Role
+from src.config.constants import Phase, PlayerType, Role
+from src.engine.game_engine import GameEngine
 from src.engine.phase_handlers import handle_day_discussion, handle_day_vote, handle_night
 from src.engine.role_assigner import assign_roles
 from src.engine.win_checker import check_winner
@@ -385,3 +387,227 @@ class TestPhaseHandlers:
         assert new_state is not state
         assert state.phase == Phase.DAY_VOTE  # Original unchanged
         assert new_state.phase == Phase.NIGHT  # New state changed
+
+
+class TestGameEngineV2Lifecycle:
+    """Tests for V2 blockchain lifecycle integration in GameEngine."""
+
+    def _make_engine(self, mock_players, blockchain_gateway=None, betting_manager=None,
+                     event_callback=None):
+        """Helper to create a GameEngine with mocked dependencies."""
+        return GameEngine(
+            players=mock_players,
+            event_callback=event_callback or AsyncMock(),
+            betting_manager=betting_manager,
+            game_id="test-game-v2",
+            blockchain_gateway=blockchain_gateway,
+        )
+
+    def _setup_citizens_win(self, engine):
+        """Set engine.state so citizens have already won (no mafia alive)."""
+        role_map = engine.state.role_map
+        alive = tuple(n for n in engine.state.alive_agents if role_map[n] != Role.MAFIA)
+        dead = tuple(n for n in engine.state.alive_agents if role_map[n] == Role.MAFIA)
+        engine.state = engine.state.model_copy(
+            update={"alive_agents": alive, "dead_agents": dead}
+        )
+
+    async def _init_engine(self, engine, mock_players):
+        """Initialize engine with patched role assignment, skip re-init in run_game."""
+        with patch("src.engine.game_engine.assign_roles") as mock_assign:
+            role_map = {name: Role.CITIZEN for name in mock_players}
+            names = list(mock_players.keys())
+            role_map[names[0]] = Role.MAFIA
+            role_map[names[1]] = Role.MAFIA
+            role_map[names[2]] = Role.DETECTIVE
+            mock_assign.return_value = role_map
+            await engine._initialize_game()
+
+    @pytest.mark.asyncio
+    async def test_initialize_calls_commit_roles(self, mock_players):
+        """Test that _initialize_game calls blockchain_gateway.commit_roles."""
+        gateway = AsyncMock()
+        gateway.commit_roles = AsyncMock(return_value="0xabc")
+        engine = self._make_engine(mock_players, blockchain_gateway=gateway)
+
+        await self._init_engine(engine, mock_players)
+
+        gateway.commit_roles.assert_called_once()
+        call_args = gateway.commit_roles.call_args
+        assert call_args[0][0] == "test-game-v2"
+        assert isinstance(call_args[0][1], dict)
+
+    @pytest.mark.asyncio
+    async def test_initialize_continues_on_blockchain_failure(self, mock_players):
+        """Test that game continues if blockchain_gateway.commit_roles fails."""
+        gateway = AsyncMock()
+        gateway.commit_roles = AsyncMock(side_effect=Exception("RPC down"))
+        engine = self._make_engine(mock_players, blockchain_gateway=gateway)
+
+        await self._init_engine(engine, mock_players)
+
+        assert engine.state is not None
+        assert engine.state.phase == Phase.NIGHT
+
+    @pytest.mark.asyncio
+    async def test_lock_betting_called_on_game_over(self, mock_players):
+        """Test that lock_betting is called when a winner is found."""
+        gateway = AsyncMock()
+        gateway.commit_roles = AsyncMock(return_value="0xabc")
+        gateway.lock_betting = AsyncMock(return_value="0xdef")
+        gateway.settle_game = AsyncMock(return_value="0x123")
+
+        engine = self._make_engine(mock_players, blockchain_gateway=gateway)
+        await self._init_engine(engine, mock_players)
+        self._setup_citizens_win(engine)
+
+        # Patch _initialize_game so run_game doesn't re-init
+        engine._initialize_game = AsyncMock()
+
+        await engine.run_game()
+
+        gateway.lock_betting.assert_called_once_with("test-game-v2")
+
+    @pytest.mark.asyncio
+    async def test_lock_betting_failure_does_not_crash(self, mock_players):
+        """Test that lock_betting failure doesn't prevent game completion."""
+        gateway = AsyncMock()
+        gateway.commit_roles = AsyncMock(return_value="0xabc")
+        gateway.lock_betting = AsyncMock(side_effect=Exception("lock failed"))
+
+        engine = self._make_engine(mock_players, blockchain_gateway=gateway)
+        await self._init_engine(engine, mock_players)
+        self._setup_citizens_win(engine)
+        engine._initialize_game = AsyncMock()
+
+        result = await engine.run_game()
+        assert result.winner == "citizens"
+
+    @pytest.mark.asyncio
+    async def test_settle_game_called_with_combined_payouts(self, mock_players):
+        """Test that settle_game is called with winner addresses and amounts."""
+        gateway = AsyncMock()
+        gateway.commit_roles = AsyncMock(return_value="0xabc")
+        gateway.lock_betting = AsyncMock(return_value="0xdef")
+        gateway.settle_game = AsyncMock(return_value="0x456")
+
+        betting_mgr = MagicMock()
+        betting_mgr.settle = MagicMock(return_value={"0xWinner1": Decimal("10.5")})
+        betting_mgr.settle_identity_bets = MagicMock(
+            return_value={"0xWinner1": Decimal("2.0"), "0xWinner2": Decimal("5.0")}
+        )
+        betting_mgr.update_odds = AsyncMock()
+
+        engine = self._make_engine(
+            mock_players, blockchain_gateway=gateway, betting_manager=betting_mgr
+        )
+        await self._init_engine(engine, mock_players)
+        self._setup_citizens_win(engine)
+        engine._initialize_game = AsyncMock()
+
+        await engine.run_game()
+
+        gateway.settle_game.assert_called_once()
+        call_args = gateway.settle_game.call_args
+        assert call_args[0][0] == "test-game-v2"
+        winners = call_args[0][2]
+        amounts = call_args[0][3]
+        assert "0xWinner1" in winners
+        assert "0xWinner2" in winners
+        assert len(winners) == 2
+        assert len(amounts) == 2
+
+    @pytest.mark.asyncio
+    async def test_settle_game_failure_does_not_crash(self, mock_players):
+        """Test that settle_game failure doesn't crash the game."""
+        gateway = AsyncMock()
+        gateway.commit_roles = AsyncMock(return_value="0xabc")
+        gateway.lock_betting = AsyncMock(return_value="0xdef")
+        gateway.settle_game = AsyncMock(side_effect=Exception("settle failed"))
+
+        betting_mgr = MagicMock()
+        betting_mgr.settle = MagicMock(return_value={"0xA": Decimal("5.0")})
+        betting_mgr.settle_identity_bets = MagicMock(return_value={})
+        betting_mgr.update_odds = AsyncMock()
+
+        engine = self._make_engine(
+            mock_players, blockchain_gateway=gateway, betting_manager=betting_mgr
+        )
+        await self._init_engine(engine, mock_players)
+        self._setup_citizens_win(engine)
+        engine._initialize_game = AsyncMock()
+
+        result = await engine.run_game()
+        assert result.winner == "citizens"
+
+    @pytest.mark.asyncio
+    async def test_no_blockchain_uses_legacy_settlement(self, mock_players):
+        """Test that without gateway, legacy USDCSettlement path is used."""
+        betting_mgr = MagicMock()
+        betting_mgr.settle = MagicMock(return_value={"0xA": Decimal("5.0")})
+        betting_mgr.settle_identity_bets = MagicMock(
+            return_value={"0xB": Decimal("3.0")}
+        )
+        betting_mgr.update_odds = AsyncMock()
+
+        engine = self._make_engine(
+            mock_players, blockchain_gateway=None, betting_manager=betting_mgr
+        )
+        await self._init_engine(engine, mock_players)
+        self._setup_citizens_win(engine)
+        engine._initialize_game = AsyncMock()
+
+        with patch("src.config.settings.load_settings") as mock_settings:
+            mock_settings.return_value = MagicMock(settlement_enabled=False)
+            result = await engine.run_game()
+
+        assert result.winner == "citizens"
+
+    @pytest.mark.asyncio
+    async def test_blockchain_settlement_event_broadcast(self, mock_players):
+        """Test that blockchain_settlement event is broadcast after V2 settle."""
+        gateway = AsyncMock()
+        gateway.commit_roles = AsyncMock(return_value="0xabc")
+        gateway.lock_betting = AsyncMock(return_value="0xdef")
+        gateway.settle_game = AsyncMock(return_value="0x789")
+
+        events = []
+
+        async def collect_event(event):
+            events.append(event)
+
+        betting_mgr = MagicMock()
+        betting_mgr.settle = MagicMock(return_value={"0xA": Decimal("5.0")})
+        betting_mgr.settle_identity_bets = MagicMock(return_value={})
+        betting_mgr.update_odds = AsyncMock()
+
+        engine = self._make_engine(
+            mock_players,
+            blockchain_gateway=gateway,
+            betting_manager=betting_mgr,
+            event_callback=collect_event,
+        )
+        await self._init_engine(engine, mock_players)
+        self._setup_citizens_win(engine)
+        engine._initialize_game = AsyncMock()
+
+        await engine.run_game()
+
+        settlement_events = [
+            e for e in events if e.event_type == "blockchain_settlement"
+        ]
+        assert len(settlement_events) == 1
+        assert settlement_events[0].data["tx_hash"] == "0x789"
+        assert settlement_events[0].data["winners"] == ["0xA"]
+
+    @pytest.mark.asyncio
+    async def test_no_gateway_no_lock_no_settle(self, mock_players):
+        """Test that without gateway, lock_betting and settle_game are not called."""
+        engine = self._make_engine(mock_players, blockchain_gateway=None)
+        await self._init_engine(engine, mock_players)
+        self._setup_citizens_win(engine)
+        engine._initialize_game = AsyncMock()
+
+        result = await engine.run_game()
+        assert result.winner == "citizens"
+        # No gateway means no blockchain calls — just verify no exception

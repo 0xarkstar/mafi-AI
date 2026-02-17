@@ -119,37 +119,6 @@ async def run_terminal_mode(settings) -> None:
         raise
 
 
-async def run_game_with_delay(engine: GameEngine) -> None:
-    """Run game after a delay to allow WebSocket clients to connect.
-
-    Args:
-        engine: Game engine instance.
-    """
-    log.info("game_starting_in_3_seconds")
-    print("\n[...] Game will start in 3 seconds... Connect WebSocket clients now!")
-    print(f"   WebSocket endpoint: ws://localhost:{engine.settings.port}/ws\n")
-
-    await asyncio.sleep(3)
-
-    set_game_active(True)
-
-    try:
-        final_state = await engine.run_game()
-
-        # Update routes module with final state
-        set_game_state(final_state)
-
-        log.info("game_completed", winner=final_state.winner)
-        print(f"\n[OK] Game completed! Winner: {final_state.winner}")
-
-    except Exception as exc:
-        log.exception("game_error", error=str(exc))
-        set_game_active(False)
-        raise
-    finally:
-        set_game_active(False)
-
-
 async def run_server_mode(settings, ws_manager: WSManager) -> None:
     """Run game in server mode with FastAPI and WebSocket broadcasting.
 

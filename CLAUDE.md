@@ -93,7 +93,7 @@ AI Bettor variables (optional - for autonomous betting):
 | `src/lobby/` | LobbyManager for game setup and player registration |
 | `src/moltbook/` | Moltbook API client for external agent integration |
 | `src/betting/` | Pari-mutuel pool, odds calculation, AI oddsmaker, identity betting |
-| `src/blockchain/` | Web3 provider, contract oracle (create, settle, lock games on-chain) |
+| `src/blockchain/` | Web3 provider, V2 gateway (commit-reveal, lock, settle), contract ABIs |
 | `src/x402/` | X402 payment middleware, USDC bet models, payment verification |
 | `src/ai_bettor/` | AI Bettor client, game analyzer, betting strategy, immutable state |
 | `src/api/` | FastAPI server, WebSocket manager, REST routes, blockchain config endpoint |
@@ -105,17 +105,19 @@ AI Bettor variables (optional - for autonomous betting):
 ```
 1. LOBBY: Players join (humans via WebSocket, external agents via Moltbook, house AI auto-fills)
    - Wait for 7 players or timeout, then auto-fill with House AI
-2. (Optional) Create game on-chain if blockchain_enabled=True
+2. (Optional) V2: `commit_roles()` — commit role hash on-chain with secret
 3. NIGHT: Mafia kills, Detective investigates (OpenAI or human/agent input)
 4. DAY_DISCUSSION: Each player makes 2 statements (OpenAI/Moltbook/human input)
 5. DAY_VOTE: Each player votes (OpenAI/Moltbook/human input)
-6. REVEAL: Optional phase to reveal player types (AI vs Human) for identity bets
-7. Check winner:
+6. Check winner:
    - Citizens win if all mafia dead
    - Mafia wins if mafia >= citizens
    - Otherwise repeat from NIGHT
-8. GAME_OVER: Announce winner, settle bets
-9. (Optional) Settle result on-chain if blockchain_enabled=True
+7. GAME_OVER: Announce winner
+   - (Optional) V2: `lock_betting()` → `settle_game()` (commit-reveal on-chain)
+   - (Legacy) Direct USDC push via `USDCSettlement` if no V2 gateway
+8. REVEAL: Show player identities, settle identity bets
+9. BettingManager.reset() between games in continuous game loop
 ```
 
 ### Key Classes
@@ -137,6 +139,7 @@ winner: str | None  # "citizens" or "mafia"
 ```python
 name: str
 player_type: PlayerType
+wallet_address: str | None
 
 async def generate_statement(context: TurnContext) -> str: ...
 async def vote(context: TurnContext, candidates: list[str]) -> str: ...
@@ -486,9 +489,10 @@ except ValueError:
 ### 7. Blockchain Integration (Optional)
 
 - **Provider**: AsyncWeb3 with POA middleware for Monad testnet
-- **Oracle**: Python backend creates/settles games on-chain via web3.py
+- **Gateway**: `BlockchainGateway` handles V2 commit-reveal lifecycle (commit_roles → lock_betting → settle_game)
+- **V2 Contract**: `MafiaBettingV2.sol` — bytes32 gameId, 4 bet types, oracle settlement, pull-payment (`claimPayout`)
+- **V1 Contract**: `MafiaBetting.sol` (legacy, untouched)
 - **Frontend**: MetaMask + ethers.js v6 for direct contract betting
-- **Contract**: MafiaBetting.sol manages games, bets, payouts on Monad testnet (Chain ID 10143)
 - **Fallback**: Blockchain disabled by default, chip betting always available
 
 ## File Structure
@@ -542,7 +546,8 @@ src/
 ├── blockchain/
 │   ├── __init__.py
 │   ├── provider.py              # AsyncWeb3 + POA middleware
-│   └── contract.py              # Oracle operations (create, settle, lock)
+│   ├── contract.py              # V1 contract (legacy)
+│   └── gateway.py               # V2 BlockchainGateway (commit-reveal, lock, settle)
 ├── x402/
 │   ├── __init__.py
 │   ├── middleware.py            # X402 payment middleware (402 Payment Required)
@@ -595,14 +600,17 @@ static/
 └── blockchain.js                # MetaMask + ethers.js v6 integration
 
 contracts/
-├── MafiaBetting.sol             # Smart contract for on-chain betting
-└── abi/                         # Contract ABI (generated)
+├── MafiaBetting.sol             # V1 smart contract (legacy)
+├── MafiaBettingV2.sol           # V2: commit-reveal, 4 bet types, pull-payment, refund deadline
+└── abi/                         # Contract ABIs (generated)
 
 scripts/
-└── deploy.js                    # Hardhat deployment script
+├── deploy.js                    # V1 Hardhat deployment script
+└── deploy-v2.js                 # V2 Hardhat deployment script
 
 test/
-└── MafiaBetting.test.js         # 34 Solidity tests (Hardhat + ethers.js)
+├── MafiaBetting.test.js         # 34 V1 Solidity tests (Hardhat + ethers.js)
+└── MafiaBettingV2.test.js       # 56 V2 Solidity tests (commit-reveal, 4 bet types)
 
 hardhat.config.js                # Hardhat config (Monad testnet)
 pyproject.toml                   # Dependencies, pytest config
@@ -618,9 +626,9 @@ pyproject.toml                   # Dependencies, pytest config
 - **Async Support** — pytest-asyncio for all async code
 
 ### Test Counts
-- **Python**: 214 tests passing (78% coverage)
-- **Solidity**: 34 tests passing (Hardhat)
-- **Total**: 248 tests
+- **Python**: 290 tests passing
+- **Solidity**: 90 tests passing (Hardhat — 34 V1 + 56 V2)
+- **Total**: 380 tests
 
 ### Running Tests
 ```bash
