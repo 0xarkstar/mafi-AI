@@ -611,3 +611,89 @@ class TestGameEngineV2Lifecycle:
         result = await engine.run_game()
         assert result.winner == "citizens"
         # No gateway means no blockchain calls — just verify no exception
+
+    @pytest.mark.asyncio
+    async def test_legacy_settlement_enabled_path(self, mock_players):
+        """Test legacy USDC settlement when settlement_enabled=True, no gateway."""
+        events = []
+
+        async def collect_event(event):
+            events.append(event)
+
+        betting_mgr = MagicMock()
+        betting_mgr.settle = MagicMock(return_value={"0xA": Decimal("5.0")})
+        betting_mgr.settle_identity_bets = MagicMock(
+            return_value={"0xB": Decimal("3.0")}
+        )
+        betting_mgr.update_odds = AsyncMock()
+
+        engine = self._make_engine(
+            mock_players,
+            blockchain_gateway=None,
+            betting_manager=betting_mgr,
+            event_callback=collect_event,
+        )
+        await self._init_engine(engine, mock_players)
+        self._setup_citizens_win(engine)
+        engine._initialize_game = AsyncMock()
+
+        mock_settlement = AsyncMock(return_value=[
+            {"address": "0xA", "amount": 5.0, "tx_hash": "0xaaa"},
+            {"address": "0xB", "amount": 3.0, "tx_hash": "0xbbb"},
+        ])
+
+        with patch("src.config.settings.load_settings") as mock_settings, \
+             patch("src.betting.settlement.USDCSettlement") as mock_usdc_cls, \
+             patch("src.blockchain.provider.create_web3_provider", new_callable=AsyncMock):
+            mock_settings.return_value = MagicMock(
+                settlement_enabled=True,
+                blockchain_rpc_url="https://rpc",
+                blockchain_chain_id=10143,
+                x402_usdc_address="0xUSDC",
+                settlement_private_key=MagicMock(get_secret_value=MagicMock(return_value="0x" + "a" * 64)),
+            )
+            mock_usdc_cls.return_value = MagicMock(
+                settle_payouts=mock_settlement,
+            )
+
+            result = await engine.run_game()
+
+        assert result.winner == "citizens"
+        # Verify USDC settlement was called
+        mock_settlement.assert_called_once()
+        # Verify usdc_settlement event was broadcast
+        settlement_events = [e for e in events if e.event_type == "usdc_settlement"]
+        assert len(settlement_events) == 1
+
+    @pytest.mark.asyncio
+    async def test_legacy_settlement_failure_handled(self, mock_players):
+        """Test legacy USDC settlement catches exceptions gracefully."""
+        betting_mgr = MagicMock()
+        betting_mgr.settle = MagicMock(return_value={"0xA": Decimal("5.0")})
+        betting_mgr.settle_identity_bets = MagicMock(
+            return_value={"0xA": Decimal("2.0")}
+        )
+        betting_mgr.update_odds = AsyncMock()
+
+        engine = self._make_engine(
+            mock_players, blockchain_gateway=None, betting_manager=betting_mgr
+        )
+        await self._init_engine(engine, mock_players)
+        self._setup_citizens_win(engine)
+        engine._initialize_game = AsyncMock()
+
+        with patch("src.config.settings.load_settings") as mock_settings, \
+             patch("src.betting.settlement.USDCSettlement", side_effect=Exception("USDC init failed")), \
+             patch("src.blockchain.provider.create_web3_provider", new_callable=AsyncMock):
+            mock_settings.return_value = MagicMock(
+                settlement_enabled=True,
+                blockchain_rpc_url="https://rpc",
+                blockchain_chain_id=10143,
+                x402_usdc_address="0xUSDC",
+                settlement_private_key=MagicMock(get_secret_value=MagicMock(return_value="0x" + "a" * 64)),
+            )
+
+            # Should not raise — errors are caught
+            result = await engine.run_game()
+
+        assert result.winner == "citizens"
