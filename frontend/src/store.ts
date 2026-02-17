@@ -189,7 +189,31 @@ export const useGameStore = create<GameState>((set, get) => ({
         const screen = state.screen === ScreenState.LOBBY || state.screen === ScreenState.LANDING
           ? (state.isSpectator ? ScreenState.SPECTATE : ScreenState.GAME)
           : state.screen;
-        set({ gameId, screen });
+
+        // Build player list from game_starting data if players array is incomplete
+        let players = state.players;
+        const startingPlayers: { name: string; player_type: string }[] = data.players || [];
+        if (startingPlayers.length > 0 && players.length < startingPlayers.length) {
+          players = startingPlayers.map((sp, idx) => {
+            const existing = state.players.find((p) => p.name === sp.name);
+            if (existing) return existing;
+            if (sp.name === state.playerName) {
+              return {
+                id: 'human-1',
+                name: sp.name,
+                color: '#ffffff',
+                isAi: false,
+                isDead: false,
+                avatarIcon: 'User',
+                avatarIndex: state.avatarIndex ?? undefined,
+                trait: 'You',
+              };
+            }
+            return buildPlayerFromName(sp.name, idx);
+          });
+        }
+
+        set({ gameId, screen, players });
         get().addMessage({
           senderId: 'system',
           senderName: 'System',
@@ -337,7 +361,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       case 'action_request': {
         if (state.isSpectator) break;
-        set({
+        const updates: Partial<GameState> = {
           currentAction: {
             actionType: data.action_type,
             prompt: data.prompt,
@@ -345,7 +369,18 @@ export const useGameStore = create<GameState>((set, get) => ({
             timeout: data.timeout || 60,
             context: data.context || {},
           },
-        });
+        };
+
+        // Set human player's role from context (first action_request reveals role)
+        const contextRole = data.context?.role;
+        if (contextRole) {
+          const mapped = mapRole(contextRole);
+          updates.players = state.players.map((p) =>
+            !p.isAi && !p.role ? { ...p, role: mapped } : p,
+          );
+        }
+
+        set(updates);
         break;
       }
 

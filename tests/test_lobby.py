@@ -75,16 +75,17 @@ class TestLobbyManager:
 
         assert len(lobby.players) == 2
 
-    def test_join_duplicate_name(self):
-        """Test joining with duplicate name."""
+    def test_join_duplicate_name_allows_rejoin(self):
+        """Test joining with duplicate name replaces player (re-join)."""
         lobby = LobbyManager(max_players=3)
         player1 = MockPlayer("Alice", PlayerType.HUMAN)
         player2 = MockPlayer("Alice", PlayerType.HOUSE_AI)
 
         assert lobby.join(player1) is True
-        assert lobby.join(player2) is False
+        assert lobby.join(player2) is True  # re-join allowed
 
         assert len(lobby.players) == 1
+        assert lobby.players["Alice"] is player2  # replaced with new instance
 
     def test_is_ready_empty(self):
         """Test is_ready when lobby is empty."""

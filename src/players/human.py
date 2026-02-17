@@ -88,6 +88,7 @@ class HumanPlayer:
                 "options": [],
                 "timeout": self.timeout,
                 "context": {
+                    "role": context.role.value,
                     "alive_agents": list(context.alive_agents),
                     "round_number": context.round_number,
                     "memory": list(context.memory),
@@ -124,6 +125,7 @@ class HumanPlayer:
                 "options": candidates,
                 "timeout": self.timeout,
                 "context": {
+                    "role": context.role.value,
                     "alive_agents": list(context.alive_agents),
                     "round_number": context.round_number,
                     "memory": list(context.memory),
@@ -158,6 +160,7 @@ class HumanPlayer:
                 "options": targets,
                 "timeout": self.timeout,
                 "context": {
+                    "role": context.role.value,
                     "alive_agents": list(context.alive_agents),
                     "known_roles": context.known_roles,
                     "memory": list(context.memory),

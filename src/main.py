@@ -250,6 +250,22 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
         lobby_manager.fill_with_house_ai(llm_client, ALL_PERSONALITIES)
         players = lobby_manager.get_players()
 
+        # Broadcast updated lobby status so clients see all players
+        from datetime import datetime
+
+        await ws_manager.broadcast(
+            WSEvent(
+                event_type="lobby_status",
+                data={
+                    "players": list(players.keys()),
+                    "count": len(players),
+                    "ready": True,
+                },
+                game_id=game_id,
+                timestamp=datetime.now().isoformat(),
+            )
+        )
+
         log.info("game_starting", player_count=len(players))
         print(f"\n[>] Starting game with {len(players)} players...")
 
@@ -263,8 +279,6 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
         )
 
         # Broadcast game starting event
-        from datetime import datetime
-
         await ws_manager.broadcast(
             WSEvent(
                 event_type="game_starting",

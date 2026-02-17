@@ -39,8 +39,10 @@ class LobbyManager:
             return False
 
         if player.name in self.players:
-            log.warning("player_already_joined", name=player.name)
-            return False
+            # Allow re-join (e.g. WebSocket reconnect) — replace player instance
+            log.info("player_rejoined", name=player.name)
+            self.players[player.name] = player
+            return True
 
         self.players[player.name] = player
         log.info(
