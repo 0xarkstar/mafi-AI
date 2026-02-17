@@ -1,35 +1,33 @@
-import { useState, useMemo } from 'react'
-import { motion } from 'framer-motion'
-import { useGameStore } from '../stores/gameStore'
-import { useWallet } from '../hooks/useWallet'
-import { AVATAR_IMAGES } from '../lib/constants'
-import { Button } from '../components/ui/Button'
-import { Input } from '../components/ui/Input'
-import { Wallet, Gamepad2, Eye, HelpCircle, ChevronLeft } from 'lucide-react'
+import { useState, useMemo } from 'react';
+import { motion } from 'framer-motion';
+import { useGameStore } from '../store';
+import { AVATAR_IMAGES } from '../types';
+import { Button, Input } from '../components/UIComponents';
+import { Wallet, Gamepad2, Eye, HelpCircle, ChevronLeft } from 'lucide-react';
 
 // Floating fragment particles for the seam area
 interface FloatingPiece {
-  top: number       // % position
-  left: number      // px from seam center
-  w: number         // px
-  h: number         // px
-  opacity: number
-  driftX: number    // px drift range
-  driftY: number    // px drift range
-  duration: number  // seconds for one cycle
-  delay: number     // initial delay
-  rotate: number    // base rotation
-  rotateRange: number // rotation drift
+  top: number;       // % position
+  left: number;      // px from seam center
+  w: number;         // px
+  h: number;         // px
+  opacity: number;
+  driftX: number;    // px drift range
+  driftY: number;    // px drift range
+  duration: number;  // seconds for one cycle
+  delay: number;     // initial delay
+  rotate: number;    // base rotation
+  rotateRange: number; // rotation drift
 }
 
 const generateFloatingPieces = (): FloatingPiece[] => {
-  let seed = 99
+  let seed = 99;
   const rand = () => {
-    seed = (seed * 16807) % 2147483647
-    return (seed - 1) / 2147483646
-  }
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
 
-  const pieces: FloatingPiece[] = []
+  const pieces: FloatingPiece[] = [];
 
   for (let i = 0; i < 20; i++) {
     pieces.push({
@@ -44,91 +42,76 @@ const generateFloatingPieces = (): FloatingPiece[] => {
       delay: rand() * 3,
       rotate: (rand() - 0.5) * 20,
       rotateRange: 3 + rand() * 8,
-    })
+    });
   }
-  return pieces
-}
+  return pieces;
+};
 
 // SVG mask applied to the right-half image container
+// x=0 is the LEFT edge of the image panel, x=1000 is the RIGHT edge
+// Shattered fragments on the left edge, solid on the right
 const buildShatteredMask = (): string => {
-  let seed = 77
+  let seed = 77;
   const rand = () => {
-    seed = (seed * 16807) % 2147483647
-    return (seed - 1) / 2147483646
-  }
+    seed = (seed * 16807) % 2147483647;
+    return (seed - 1) / 2147483646;
+  };
 
-  const W = 1000
-  const H = 1000
-  let rects = ''
+  const W = 1000;
+  const H = 1000;
+  let rects = '';
 
-  // Solid: fully visible from x=350 to x=1000
-  rects += `<rect x="350" y="0" width="650" height="${H}" fill="white"/>`
+  // Solid: fully visible from x=350 to x=1000 (right ~65% of the image panel)
+  rects += `<rect x="350" y="0" width="650" height="${H}" fill="white"/>`;
 
   // Shattered edge zone: x=0 to x=400
-  const rowCount = 70
-  const rowH = H / rowCount
+  const rowCount = 70;
+  const rowH = H / rowCount;
 
   for (let i = 0; i < rowCount; i++) {
-    const y = i * rowH
+    const y = i * rowH;
 
-    // Main jagged block
-    const startX = 80 + rand() * 270
-    const blockW = 400 - startX
-    const opacity = 0.35 + (1 - (startX - 80) / 270) * 0.65
-    rects += `<rect x="${startX}" y="${y}" width="${blockW}" height="${rowH + 1}" fill="white" opacity="${opacity.toFixed(2)}"/>`
+    // Main jagged block: random start between x=80 and x=350
+    const startX = 80 + rand() * 270;
+    const blockW = 400 - startX;
+    const opacity = 0.35 + (1 - (startX - 80) / 270) * 0.65;
+    rects += `<rect x="${startX}" y="${y}" width="${blockW}" height="${rowH + 1}" fill="white" opacity="${opacity.toFixed(2)}"/>`;
 
-    // Medium fragments
+    // Medium fragments scattering further left
     if (rand() > 0.3) {
-      const fragX = 20 + rand() * (startX - 30)
-      const fragW = 8 + rand() * 45
-      const fragH = rowH * (0.35 + rand() * 0.65)
-      const fragOpacity = 0.08 + rand() * 0.3
-      rects += `<rect x="${fragX}" y="${y + rand() * rowH * 0.3}" width="${fragW}" height="${fragH}" fill="white" opacity="${fragOpacity.toFixed(2)}"/>`
+      const fragX = 20 + rand() * (startX - 30);
+      const fragW = 8 + rand() * 45;
+      const fragH = rowH * (0.35 + rand() * 0.65);
+      const fragOpacity = 0.08 + rand() * 0.3;
+      rects += `<rect x="${fragX}" y="${y + rand() * rowH * 0.3}" width="${fragW}" height="${fragH}" fill="white" opacity="${fragOpacity.toFixed(2)}"/>`;
     }
 
-    // Tiny specks
+    // Tiny specks at the far left
     if (rand() > 0.5) {
-      const spX = rand() * 60
-      const spW = 3 + rand() * 15
-      const spH = 2 + rand() * (rowH * 0.5)
-      rects += `<rect x="${spX}" y="${y + rand() * rowH}" width="${spW}" height="${spH}" fill="white" opacity="${(0.04 + rand() * 0.15).toFixed(2)}"/>`
+      const spX = rand() * 60;
+      const spW = 3 + rand() * 15;
+      const spH = 2 + rand() * (rowH * 0.5);
+      rects += `<rect x="${spX}" y="${y + rand() * rowH}" width="${spW}" height="${spH}" fill="white" opacity="${(0.04 + rand() * 0.15).toFixed(2)}"/>`;
     }
   }
 
-  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${rects}</svg>`
-  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`
-}
+  const svg = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 ${W} ${H}">${rects}</svg>`;
+  return `url("data:image/svg+xml,${encodeURIComponent(svg)}")`;
+};
 
-export function LandingScreen() {
-  const { connect: connectWalletFn, connected, address } = useWallet()
-  const setScreen = useGameStore((s) => s.setScreen)
-  const setNickname = useGameStore((s) => s.setNickname)
-  const setAvatarIndex = useGameStore((s) => s.setAvatarIndex)
-  const setIsSpectator = useGameStore((s) => s.setIsSpectator)
+export const LandingScreen = () => {
+  const { connectWallet, walletConnected, connectAndJoin, joinAsSpectator, walletAddress } = useGameStore();
+  const [nick, setNick] = useState('');
+  const [step, setStep] = useState<'nickname' | 'avatar'>('nickname');
+  const [selectedAvatar, setSelectedAvatar] = useState<number | null>(null);
 
-  const [nick, setNick] = useState('')
-  const [step, setStep] = useState<'nickname' | 'avatar'>('nickname')
-  const [selectedAvatar, setSelectedAvatar] = useState<number | null>(null)
-
-  const shatteredMask = useMemo(() => buildShatteredMask(), [])
-  const floatingPieces = useMemo(() => generateFloatingPieces(), [])
-
-  const handleJoinGame = () => {
-    if (selectedAvatar === null || !nick) return
-    setNickname(nick)
-    setAvatarIndex(selectedAvatar)
-    setIsSpectator(false)
-    setScreen('lobby')
-  }
-
-  const handleJoinAsSpectator = () => {
-    setIsSpectator(true)
-    setScreen('spectate')
-  }
+  const shatteredMask = useMemo(() => buildShatteredMask(), []);
+  const floatingPieces = useMemo(() => generateFloatingPieces(), []);
 
   return (
     <div className="h-screen w-full flex overflow-hidden relative bg-[#030712]">
-      {/* Right Half: Image with shattered left edge */}
+
+      {/* ===== Right Half: Image with shattered left edge ===== */}
       <div
         className="hidden lg:block absolute top-0 right-0 w-1/2 h-full z-0"
         style={{
@@ -146,7 +129,7 @@ export function LandingScreen() {
         />
       </div>
 
-      {/* Floating shattered pieces at the seam */}
+      {/* ===== Floating shattered pieces at the seam ===== */}
       <div className="hidden lg:block absolute top-0 h-full z-[1] pointer-events-none" style={{ left: '42%', width: '16%' }}>
         {floatingPieces.map((p, i) => (
           <motion.div
@@ -181,7 +164,7 @@ export function LandingScreen() {
         ))}
       </div>
 
-      {/* Mobile fallback */}
+      {/* ===== Mobile fallback ===== */}
       <div className="lg:hidden absolute inset-0 z-0">
         <img
           src="/images/landing-bg.png"
@@ -191,8 +174,9 @@ export function LandingScreen() {
         <div className="absolute inset-0 bg-[#030712]/80" />
       </div>
 
-      {/* Left Half: Content */}
+      {/* ===== Left Half: Content ===== */}
       <div className="w-full lg:w-1/2 h-full flex flex-col justify-center px-8 lg:pl-24 relative z-10">
+
         {/* Ambient glow */}
         <div className="absolute inset-0 pointer-events-none overflow-hidden">
           <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-purple-900/5 rounded-full blur-[150px]" />
@@ -234,10 +218,10 @@ export function LandingScreen() {
           transition={{ delay: 0.5, duration: 0.8 }}
           className="w-full max-w-[400px] relative z-10"
         >
-          {!connected ? (
+          {!walletConnected ? (
             <div className="mt-4">
               <Button
-                onClick={connectWalletFn}
+                onClick={connectWallet}
                 size="xl"
                 className="w-full border-gold/40 hover:bg-gold/5"
                 icon={<Wallet className="w-5 h-5 text-gold" />}
@@ -281,16 +265,14 @@ export function LandingScreen() {
                   size="lg"
                   className="w-full"
                   icon={<Eye className="w-4 h-4" />}
-                  onClick={handleJoinAsSpectator}
+                  onClick={joinAsSpectator}
                 >
                   Spectate Match
                 </Button>
               </div>
 
               <div className="text-center pt-2">
-                <span className="text-[9px] font-mono text-white/20 tracking-widest">
-                  {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ''}
-                </span>
+                <span className="text-[9px] font-mono text-white/20 tracking-widest">{walletAddress}</span>
               </div>
             </div>
           ) : (
@@ -319,7 +301,7 @@ export function LandingScreen() {
 
               <div className="grid grid-cols-4 gap-2">
                 {AVATAR_IMAGES.map((src, i) => {
-                  const isSelected = selectedAvatar === i
+                  const isSelected = selectedAvatar === i;
                   return (
                     <motion.button
                       key={i}
@@ -338,13 +320,13 @@ export function LandingScreen() {
                         className="w-full h-full object-cover"
                       />
                     </motion.button>
-                  )
+                  );
                 })}
               </div>
 
               <div className="space-y-3 pt-1">
                 <Button
-                  onClick={handleJoinGame}
+                  onClick={() => selectedAvatar !== null && connectAndJoin(nick, selectedAvatar)}
                   disabled={selectedAvatar === null}
                   size="xl"
                   className="w-full"
@@ -355,14 +337,12 @@ export function LandingScreen() {
               </div>
 
               <div className="text-center">
-                <span className="text-[9px] font-mono text-white/20 tracking-widest">
-                  {address ? `${address.slice(0, 6)}...${address.slice(-4)}` : ''}
-                </span>
+                <span className="text-[9px] font-mono text-white/20 tracking-widest">{walletAddress}</span>
               </div>
             </motion.div>
           )}
         </motion.div>
       </div>
     </div>
-  )
-}
+  );
+};
