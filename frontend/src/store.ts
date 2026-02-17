@@ -175,10 +175,26 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
 
       case 'lobby_joined': {
+        if (data.success === false) break; // server rejected join
         set({
           gameId: data.game_id || null,
           screen: ScreenState.LOBBY,
           connectionStatus: 'connected',
+        });
+        break;
+      }
+
+      case 'game_starting': {
+        const gameId = data.game_id || state.gameId;
+        const screen = state.screen === ScreenState.LOBBY || state.screen === ScreenState.LANDING
+          ? (state.isSpectator ? ScreenState.SPECTATE : ScreenState.GAME)
+          : state.screen;
+        set({ gameId, screen });
+        get().addMessage({
+          senderId: 'system',
+          senderName: 'System',
+          text: 'Game is starting!',
+          type: 'system',
         });
         break;
       }
@@ -308,6 +324,14 @@ export const useGameStore = create<GameState>((set, get) => ({
           text: `Game Over! ${winner} win!`,
           type: 'game_over',
         });
+
+        // Safety: if no identity_reveal transitions to REVEAL within 15s, go to GAME_OVER directly
+        setTimeout(() => {
+          const s = get();
+          if (s.winner && s.screen !== ScreenState.REVEAL && s.screen !== ScreenState.GAME_OVER) {
+            set({ screen: ScreenState.GAME_OVER });
+          }
+        }, 15000);
         break;
       }
 
@@ -321,6 +345,55 @@ export const useGameStore = create<GameState>((set, get) => ({
             timeout: data.timeout || 60,
             context: data.context || {},
           },
+        });
+        break;
+      }
+
+      case 'bet_confirmed': {
+        // Update the matching bet status to confirmed
+        const betId: string = data.bet_id;
+        set((s) => ({
+          usdcBets: s.usdcBets.map((b) =>
+            b.id === betId ? { ...b, status: 'pending' as const } : b,
+          ),
+        }));
+        get().addMessage({
+          senderId: 'system',
+          senderName: 'System',
+          text: `Bet confirmed: $${data.amount_usdc || ''} USDC on ${data.target || 'unknown'}`,
+          type: 'system',
+        });
+        break;
+      }
+
+      case 'bet_rejected': {
+        get().addMessage({
+          senderId: 'system',
+          senderName: 'System',
+          text: `Bet rejected: ${data.reason || 'Unknown error'}`,
+          type: 'system',
+        });
+        break;
+      }
+
+      case 'usdc_settlement': {
+        // Update bet status based on settlement
+        const settledBetId: string = data.bet_id;
+        const won: boolean = data.won ?? false;
+        const payout: number = data.payout ?? 0;
+        set((s) => ({
+          usdcBets: s.usdcBets.map((b) =>
+            b.id === settledBetId
+              ? { ...b, status: won ? ('won' as const) : ('lost' as const), payout }
+              : b,
+          ),
+          usdcBalance: won ? s.usdcBalance + payout : s.usdcBalance,
+        }));
+        get().addMessage({
+          senderId: 'system',
+          senderName: 'System',
+          text: won ? `You won $${payout.toFixed(2)} USDC!` : 'Bet lost. Better luck next time!',
+          type: 'system',
         });
         break;
       }

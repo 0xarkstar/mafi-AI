@@ -7,45 +7,6 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap" rel="stylesheet">
-    <script src="https://cdn.tailwindcss.com"></script>
-    <script>
-      tailwind.config = {
-        theme: {
-          extend: {
-            fontFamily: {
-              sans: ['Outfit', 'sans-serif'],
-            },
-            colors: {
-              background: '#030712',
-              gold: {
-                light: '#f0d78c',
-                DEFAULT: '#d4a853',
-                dark: '#9a7a3a',
-              },
-              glass: {
-                surface: 'rgba(255, 255, 255, 0.03)',
-                border: 'rgba(255, 255, 255, 0.08)',
-              },
-              role: {
-                mafia: '#ef4444',
-                citizen: '#22c55e',
-                detective: '#3b82f6',
-              }
-            },
-            animation: {
-              'pulse-slow': 'pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite',
-              'float': 'float 6s ease-in-out infinite',
-            },
-            keyframes: {
-              float: {
-                '0%, 100%': { transform: 'translateY(0)' },
-                '50%': { transform: 'translateY(-20px)' },
-              }
-            }
-          },
-        },
-      }
-    </script>
     <style>
       body {
         background-color: #030712;

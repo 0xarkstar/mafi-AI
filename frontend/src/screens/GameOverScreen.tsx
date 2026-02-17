@@ -5,7 +5,7 @@ import { GlassCard, Button } from '../components/UIComponents';
 import { Trophy, Shield, Skull, RotateCcw, Home } from 'lucide-react';
 
 export const GameOverScreen = () => {
-  const { winner, balance, resetGame } = useGameStore();
+  const { winner, balance, usdcBets, players, resetGame } = useGameStore();
   const canvasRef = useRef<HTMLCanvasElement>(null);
 
   const isMafiaWin = winner === 'Mafia';
@@ -112,14 +112,28 @@ export const GameOverScreen = () => {
 
             <div className="grid grid-cols-2 gap-4 mb-8">
                 <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <div className="text-xs text-white/40 uppercase mb-1">Total Winnings</div>
+                    <div className="text-xs text-white/40 uppercase mb-1">Chip Balance</div>
                     <div className="text-2xl font-bold text-gold flex items-center justify-center gap-2">
-                        <Trophy className="w-5 h-5" /> ${Math.floor(balance * 1.5)}
+                        <Trophy className="w-5 h-5" /> {balance.toLocaleString()}
                     </div>
                 </div>
                 <div className="bg-white/5 p-4 rounded-xl border border-white/10">
-                    <div className="text-xs text-white/40 uppercase mb-1">XP Gained</div>
-                    <div className="text-2xl font-bold text-white">+250 XP</div>
+                    <div className="text-xs text-white/40 uppercase mb-1">Bets Placed</div>
+                    <div className="text-2xl font-bold text-white">{usdcBets.length}</div>
+                </div>
+            </div>
+
+            {/* Player Roster */}
+            <div className="mb-6 text-left">
+                <div className="text-[10px] text-white/40 uppercase tracking-widest font-bold mb-2 text-center">Players</div>
+                <div className="grid grid-cols-2 gap-1.5">
+                  {players.map((p) => (
+                    <div key={p.id} className={`flex items-center gap-2 px-2 py-1 rounded text-xs ${p.isDead ? 'opacity-40' : ''}`}>
+                      <span className={`w-2 h-2 rounded-full ${p.isDead ? 'bg-red-500' : 'bg-green-500'}`} />
+                      <span className="text-white/80 truncate">{p.name}</span>
+                      {p.role && <span className={`text-[9px] font-bold ${p.role === 'Mafia' ? 'text-red-400' : p.role === 'Detective' ? 'text-blue-400' : 'text-green-400'}`}>{p.role}</span>}
+                    </div>
+                  ))}
                 </div>
             </div>
 

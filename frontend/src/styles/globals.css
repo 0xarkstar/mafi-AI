@@ -1,4 +1,30 @@
 @import url('https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800;900&display=swap');
+@import "tailwindcss";
+
+@theme {
+  --font-sans: 'Outfit', system-ui, -apple-system, sans-serif;
+
+  --color-background: #030712;
+
+  --color-gold-light: #f0d78c;
+  --color-gold: #d4a853;
+  --color-gold-dark: #9a7a3a;
+
+  --color-glass-surface: rgba(255, 255, 255, 0.03);
+  --color-glass-border: rgba(255, 255, 255, 0.08);
+
+  --color-role-mafia: #ef4444;
+  --color-role-citizen: #22c55e;
+  --color-role-detective: #3b82f6;
+
+  --animate-pulse-slow: pulse 3s cubic-bezier(0.4, 0, 0.6, 1) infinite;
+  --animate-float: float 6s ease-in-out infinite;
+
+  @keyframes float {
+    0%, 100% { transform: translateY(0); }
+    50% { transform: translateY(-20px); }
+  }
+}
 
 * {
   margin: 0;
