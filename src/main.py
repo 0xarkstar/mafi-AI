@@ -49,11 +49,11 @@ async def print_event(event: WSEvent) -> None:
         role = data.get("role")
 
         if reason == "killed_at_night":
-            print(f"\n💀 {agent} was eliminated by the mafia during the night!")
+            print(f"\n[X] {agent} was eliminated by the mafia during the night!")
         elif reason == "voted_out":
             votes = data.get("votes", "?")
             role_str = f" (was {role})" if role else ""
-            print(f"\n💀 {agent} was voted out with {votes} votes{role_str}!")
+            print(f"\n[X] {agent} was voted out with {votes} votes{role_str}!")
 
     elif event_type == "game_over":
         winner = data.get("winner", "unknown")
@@ -104,17 +104,17 @@ async def run_terminal_mode(settings) -> None:
         print(f"Total Rounds: {final_state.round_number}")
         print("\nRole Assignments:")
         for agent_name, role in sorted(final_state.role_map.items()):
-            status = "✅" if agent_name in final_state.alive_agents else "💀"
+            status = "[O]" if agent_name in final_state.alive_agents else "[X]"
             print(f"  {status} {agent_name}: {role.value}")
         print("="*60 + "\n")
 
     except KeyboardInterrupt:
         log.info("game_interrupted")
-        print("\n\n⚠️  Game interrupted by user\n")
+        print("\n\n[!] Game interrupted by user\n")
 
     except Exception as exc:
         log.exception("game_error", error=str(exc))
-        print(f"\n\n❌ Error: {exc}\n")
+        print(f"\n\n[ERR] Error: {exc}\n")
         raise
 
 
@@ -125,7 +125,7 @@ async def run_game_with_delay(engine: GameEngine) -> None:
         engine: Game engine instance.
     """
     log.info("game_starting_in_3_seconds")
-    print("\n⏳ Game will start in 3 seconds... Connect WebSocket clients now!")
+    print("\n[...] Game will start in 3 seconds... Connect WebSocket clients now!")
     print(f"   WebSocket endpoint: ws://localhost:{engine.settings.port}/ws\n")
 
     await asyncio.sleep(3)
@@ -139,7 +139,7 @@ async def run_game_with_delay(engine: GameEngine) -> None:
         set_game_state(final_state)
 
         log.info("game_completed", winner=final_state.winner)
-        print(f"\n✅ Game completed! Winner: {final_state.winner}")
+        print(f"\n[OK] Game completed! Winner: {final_state.winner}")
 
     except Exception as exc:
         log.exception("game_error", error=str(exc))
@@ -240,7 +240,7 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
         """Wait for lobby to fill, then start game."""
         lobby_timeout_seconds = getattr(settings, "lobby_timeout_seconds", 30)
         log.info("lobby_waiting", timeout=lobby_timeout_seconds)
-        print(f"⏳ Lobby waiting for players ({lobby_timeout_seconds}s timeout)...")
+        print(f"[...] Lobby waiting for players ({lobby_timeout_seconds}s timeout)...")
 
         # Wait for lobby timeout
         await asyncio.sleep(lobby_timeout_seconds)
@@ -251,7 +251,7 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
         players = lobby_manager.get_players()
 
         log.info("game_starting", player_count=len(players))
-        print(f"\n🎮 Starting game with {len(players)} players...")
+        print(f"\n[>] Starting game with {len(players)} players...")
 
         # Create engine with players
         engine = GameEngine(
@@ -289,7 +289,7 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
             set_game_state(final_state)
 
             log.info("game_completed", winner=final_state.winner)
-            print(f"\n✅ Game completed! Winner: {final_state.winner}")
+            print(f"\n[OK] Game completed! Winner: {final_state.winner}")
 
         except Exception as exc:
             log.exception("game_error", error=str(exc))
@@ -346,7 +346,7 @@ async def main() -> None:
     # Verify API key
     if not settings.openai_api_key.get_secret_value():
         log.error("openai_api_key_missing")
-        print("\n❌ Error: OPENAI_API_KEY not set in environment or .env file")
+        print("\n[ERR] Error: OPENAI_API_KEY not set in environment or .env file")
         print("Please set your API key and try again.\n")
         return
 

@@ -1,459 +1,611 @@
-import { useState, useEffect } from 'react'
-import { motion, AnimatePresence } from 'framer-motion'
-import { useGameStore } from '../stores/gameStore'
-import { useChatStore } from '../stores/chatStore'
-import { useBettingStore } from '../stores/bettingStore'
-import { useWebSocket } from '../hooks/useWebSocket'
-import { GlassCard } from '../components/ui/GlassCard'
-import { Button } from '../components/ui/Button'
-import { MessageSquare, TrendingUp, X } from 'lucide-react'
-import { AVATAR_IMAGES } from '../lib/constants'
-import type { BetType, Bet } from '../lib/types'
+import { useEffect, useRef, useState } from 'react';
+import { motion, AnimatePresence } from 'framer-motion';
+import { useGameStore } from '../store';
+import { GamePhase, AVATAR_IMAGES, BetType } from '../types';
+import { GamePlayerCard, BettingStatusBar } from '../components/GameComponents';
+import { GlassCard, Button, Input } from '../components/UIComponents';
+import {
+  Sun, Moon, TrendingUp, Eye, Users, Target, ChevronDown,
+  DollarSign, ArrowRight, Clock, Zap, BarChart3,
+  MessageSquare, Skull, LogOut, Send, X,
+} from 'lucide-react';
 
-export function SpectatorScreen() {
-  useWebSocket() // Connect to real game events
+const BET_TYPES: { value: BetType; label: string; desc: string; icon: React.ReactNode }[] = [
+  { value: 'side_win', label: 'Side Win', desc: 'Who wins the game?', icon: <Users className="w-4 h-4" /> },
+  { value: 'next_elimination', label: 'Next Out', desc: 'Who gets eliminated next?', icon: <Target className="w-4 h-4" /> },
+  { value: 'is_mafia', label: 'Is Mafia?', desc: 'Is this player Mafia?', icon: <Eye className="w-4 h-4" /> },
+  { value: 'is_ai_or_human', label: 'AI or Human?', desc: 'Is this player AI or Human?', icon: <Zap className="w-4 h-4" /> },
+];
 
-  const players = useGameStore((s) => s.players)
-  const phase = useGameStore((s) => s.phase)
-  const round = useGameStore((s) => s.round)
-  const messages = useChatStore((s) => s.messages)
-  const odds = useBettingStore((s) => s.odds)
-  const bets = useBettingStore((s) => s.bets)
-  const balance = useBettingStore((s) => s.balance)
-  const addBet = useBettingStore((s) => s.addBet)
-  const setBalance = useBettingStore((s) => s.setBalance)
+export const SpectatorScreen = () => {
+  const {
+    players, phase, round, messages,
+    activeEmotes, usdcBets, usdcBalance,
+    placeBetUSDC, resetGame, odds,
+  } = useGameStore();
 
-  const [showChat, setShowChat] = useState(false)
-  const [unreadCount, setUnreadCount] = useState(0)
-  const [lastReadCount, setLastReadCount] = useState(0)
+  const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
+  const [timeLeft, setTimeLeft] = useState(0);
+  const [chatBubbles, setChatBubbles] = useState<Record<string, string>>({});
+  const bubbleTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
 
-  // Betting terminal state
-  const [betType, setBetType] = useState<BetType>('side_win')
-  const [target, setTarget] = useState<string>('Mafia')
-  const [amount, setAmount] = useState<number>(10)
+  // Betting panel state
+  const [selectedBetType, setSelectedBetType] = useState<BetType>('side_win');
+  const [betTarget, setBetTarget] = useState('');
+  const [betAmount, setBetAmount] = useState('');
+  const [showBetTypeDropdown, setShowBetTypeDropdown] = useState(false);
+  const [showTargetDropdown, setShowTargetDropdown] = useState(false);
+  const [betSuccess, setBetSuccess] = useState(false);
 
-  const playerList = Object.values(players)
+  // Spectator chat
+  const [isSpecChatOpen, setIsSpecChatOpen] = useState(false);
+  const [specChatInput, setSpecChatInput] = useState('');
+  const [specMessages, setSpecMessages] = useState<{ id: string; name: string; text: string; time: number; isMe: boolean }[]>([]);
+  const specChatScrollRef = useRef<HTMLDivElement>(null);
+  const [unreadCount, setUnreadCount] = useState(0);
 
-  // Track unread when chat is closed
+  // Simulated spectator chat from other viewers
   useEffect(() => {
-    if (!showChat) {
-      setUnreadCount(messages.length - lastReadCount)
+    const specNames = ['Whale_0x', 'CryptoNerd', 'MonadFan', 'BetKing', 'DeFiDegen', 'MafiaWatcher', 'LurkMaster'];
+    const specLines = [
+      'Viktor is definitely sus',
+      'lol Nova is playing it cool',
+      'anyone else think Iris is mafia?',
+      'just went all in on Citizens',
+      'this round is crazy',
+      'mafia is so obvious rn',
+      'no way they vote out Luna',
+      'GG ez citizens win',
+      'that elimination was huge',
+      'I think it\'s Rex tbh',
+      'who else is betting?',
+      'odds just shifted hard',
+      'night phase incoming...',
+      'calling it now, Blaze is mafia',
+      'Sage is playing 4D chess',
+    ];
+    const interval = setInterval(() => {
+      if (Math.random() > 0.55) {
+        const name = specNames[Math.floor(Math.random() * specNames.length)]!;
+        const text = specLines[Math.floor(Math.random() * specLines.length)]!;
+        const msg = { id: Math.random().toString(36).substr(2, 9), name, text, time: Date.now(), isMe: false };
+        setSpecMessages(prev => [...prev, msg].slice(-50));
+        if (!isSpecChatOpen) setUnreadCount(prev => prev + 1);
+      }
+    }, 4000 + Math.random() * 3000);
+    return () => clearInterval(interval);
+  }, [isSpecChatOpen]);
+
+  // Auto-scroll spectator chat
+  useEffect(() => {
+    if (specChatScrollRef.current) {
+      specChatScrollRef.current.scrollTop = specChatScrollRef.current.scrollHeight;
     }
-  }, [messages.length, showChat, lastReadCount])
+  }, [specMessages]);
 
-  // Mark as read when chat opens
+  const handleSpecChatSend = (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!specChatInput.trim()) return;
+    const msg = {
+      id: Math.random().toString(36).substr(2, 9),
+      name: 'You',
+      text: specChatInput.trim(),
+      time: Date.now(),
+      isMe: true,
+    };
+    setSpecMessages(prev => [...prev, msg].slice(-50));
+    setSpecChatInput('');
+  };
+
+  // Chat bubbles from real WebSocket messages
   useEffect(() => {
-    if (showChat) {
-      setUnreadCount(0)
-      setLastReadCount(messages.length)
-    }
-  }, [showChat, messages.length])
+    if (messages.length > 0) {
+      const lastMsg = messages[messages.length - 1]!;
+      if (lastMsg.type === 'chat') {
+        const senderId = lastMsg.senderId;
 
-  // Calculate targets based on bet type
-  const targets =
-    betType === 'side_win'
-      ? ['Mafia', 'Citizens']
-      : playerList
-          .filter((p) => betType !== 'next_elimination' || p.isAlive)
-          .map((p) => p.name)
+        setActiveSpeakerId(senderId);
+        setTimeout(() => setActiveSpeakerId(null), 3000);
 
-  // Reset target when bet type changes
-  useEffect(() => {
-    if (targets.length > 0 && !targets.includes(target)) {
-      const firstTarget = targets[0]
-      if (firstTarget) {
-        setTarget(firstTarget)
+        setChatBubbles(prev => ({ ...prev, [senderId]: lastMsg.text }));
+        if (bubbleTimers.current[senderId]) clearTimeout(bubbleTimers.current[senderId]);
+        bubbleTimers.current[senderId] = setTimeout(() => {
+          setChatBubbles(prev => {
+            const newState = { ...prev };
+            delete newState[senderId];
+            return newState;
+          });
+          delete bubbleTimers.current[senderId];
+        }, 5000);
       }
     }
-  }, [betType, targets, target])
+  }, [messages]);
 
-  // Calculate probability based on bet type and target
-  const probability =
-    betType === 'side_win'
-      ? target === 'Mafia'
-        ? odds.mafiaWinProb
-        : odds.citizenWinProb
-      : odds.mafiaSuspects[target] || 0.5
-
-  // Calculate potential payout
-  const potentialPayout = probability > 0 ? amount * (1 / probability) : 0
-
-  // Handle place bet
-  const handlePlaceBet = async () => {
-    if (!amount || amount > balance) return
-
-    const newBet: Bet = {
-      id: `bet-${Date.now()}`,
-      betType,
-      target,
-      amount,
-      status: 'pending',
-      weight: round === 0 ? 1.5 : round === 1 ? 1.2 : 1.0,
+  // Countdown
+  useEffect(() => {
+    if (timeLeft > 0) {
+      const timerId = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
+      return () => clearTimeout(timerId);
     }
+  }, [timeLeft]);
 
-    addBet(newBet)
-    setBalance(balance - amount)
+  // Derive live odds from store
+  const mafiaOdds = odds ? (1 / odds.mafiaWinProb).toFixed(2) : '—';
+  const citizenOdds = odds ? (1 / odds.citizenWinProb).toFixed(2) : '—';
 
-    // Send to server
-    try {
-      await fetch('/api/bets', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          game_id: 'current',
-          bet_type: betType,
-          target,
-          amount,
-          round_number: round,
-        }),
-      })
-    } catch {
-      // Bet is tracked locally regardless
+  const getTargetOptions = () => {
+    if (selectedBetType === 'side_win') return ['Mafia', 'Citizens'];
+    if (selectedBetType === 'is_ai_or_human') {
+      return players.filter(p => !p.isDead).map(p => p.name);
     }
-  }
+    return players.filter(p => !p.isDead).map(p => p.name);
+  };
+
+  const handlePlaceBet = () => {
+    const amt = parseFloat(betAmount);
+    if (!betTarget || isNaN(amt) || amt < 1.0 || amt > usdcBalance) return;
+    placeBetUSDC(selectedBetType, betTarget, amt);
+    setBetSuccess(true);
+    setBetAmount('');
+    setBetTarget('');
+    setTimeout(() => setBetSuccess(false), 2000);
+  };
+
+  const scrollRef = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
+  }, [messages]);
 
   return (
-    <div className="h-screen w-full flex flex-col bg-gradient-to-br from-zinc-950 to-zinc-900 relative overflow-hidden">
-      {/* Background glow */}
-      <div className="absolute inset-0 pointer-events-none overflow-hidden">
-        <div className="absolute top-[-20%] left-[-10%] w-[60%] h-[60%] bg-purple-900/5 rounded-full blur-[150px]" />
-        <div className="absolute bottom-[-15%] right-[-10%] w-[50%] h-[50%] bg-gold/5 rounded-full blur-[100px]" />
-      </div>
+    <div className="h-screen w-full flex flex-col overflow-hidden relative bg-[#050505]">
+      {/* Background Images */}
+      <img src="/images/game-bg.png" alt="" className={`absolute inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-[2000ms] ${phase === GamePhase.NIGHT ? 'opacity-0' : 'opacity-100'}`} />
+      <img src="/images/game-bg-night.png" alt="" className={`absolute inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-[2000ms] ${phase === GamePhase.NIGHT ? 'opacity-100' : 'opacity-0'}`} />
+      <div className={`absolute inset-0 transition-all duration-[2000ms] z-[1] pointer-events-none
+        ${phase === GamePhase.NIGHT ? 'bg-[#0a0e1f]/60' :
+          phase === GamePhase.DAY_VOTE ? 'bg-[#1a0505]/70' :
+          'bg-[#0a0a05]/50'}`}
+      />
 
       {/* Header */}
-      <div className="relative z-10 p-6 border-b border-white/10 bg-black/20 backdrop-blur-sm">
-        <div className="max-w-7xl mx-auto flex items-center justify-between">
-          <div>
-            <h1
-              className="text-3xl font-black tracking-tight text-transparent bg-clip-text text-glow"
-              style={{
-                backgroundImage: 'linear-gradient(180deg, #FFF2CC 0%, #D4A853 50%, #805F1F 100%)',
-              }}
-            >
-              MAFI-AI
-            </h1>
-            <p className="text-sm text-white/40 uppercase tracking-widest mt-1">
-              Spectator Mode
-            </p>
-          </div>
-          <div className="flex items-center gap-4">
-            <div className="text-right">
-              <div className="text-xs text-white/40 uppercase tracking-wider">Phase</div>
-              <div className="text-sm font-bold text-white">
-                {phase.replace('_', ' ')} - Round {round}
-              </div>
-            </div>
-            <Button
-              variant="secondary"
-              size="sm"
-              onClick={() => setShowChat(!showChat)}
-              icon={showChat ? <X className="w-4 h-4" /> : <MessageSquare className="w-4 h-4" />}
-            >
-              {showChat ? 'Hide Chat' : 'Show Chat'}
-              {!showChat && unreadCount > 0 && (
-                <span className="ml-1 bg-purple-500 text-white text-[10px] font-bold px-1.5 py-0.5 rounded-full">
-                  {unreadCount}
-                </span>
-              )}
-            </Button>
+      <header className="h-16 px-6 flex items-center justify-between bg-[#030712]/80 backdrop-blur-md border-b border-white/5 z-[10] shrink-0 relative">
+        <div className="flex items-center gap-3">
+          <span
+            className="text-xl font-black tracking-tight text-transparent bg-clip-text"
+            style={{
+              backgroundImage: 'linear-gradient(180deg, #FFF2CC 0%, #D4A853 50%, #805F1F 100%)',
+              filter: 'drop-shadow(0 0 10px rgba(212,168,83,0.3))',
+            }}
+          >MAFI-AI</span>
+          <div className="px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1">
+            <Eye className="w-3 h-3" /> Spectator
           </div>
         </div>
-      </div>
 
-      {/* Main Content */}
-      <div className="flex-1 relative z-10 overflow-hidden">
-        <div className="max-w-7xl mx-auto h-full flex gap-6 p-6">
-          {/* Left: Game Board */}
-          <div className="flex-1 flex flex-col gap-6">
-            {/* Player Grid */}
-            <GlassCard className="flex-1 p-6">
-              <h2 className="text-lg font-bold text-white mb-4 flex items-center gap-2">
-                <span>Players</span>
-                <span className="text-sm text-white/40">
-                  ({playerList.filter((p) => p.isAlive).length} alive)
-                </span>
-              </h2>
-              <div className="grid grid-cols-4 gap-4">
-                {playerList.map((player) => (
-                  <motion.div
-                    key={player.name}
-                    initial={{ opacity: 0, scale: 0.9 }}
-                    animate={{ opacity: 1, scale: 1 }}
-                    className={`relative aspect-[3/4] rounded-lg overflow-hidden border-2 ${
-                      player.isAlive
-                        ? 'border-white/10'
-                        : 'border-red-900/30 grayscale opacity-50'
-                    }`}
-                  >
-                    {/* Avatar */}
-                    <img
-                      src={AVATAR_IMAGES[player.avatarIndex]}
-                      alt={player.name}
-                      className="w-full h-full object-cover"
-                    />
+        {/* Center: Phase Indicator */}
+        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-3 bg-white/5 px-4 py-1.5 rounded-full border border-white/5 shadow-inner">
+          {phase === GamePhase.NIGHT ? <Moon className="w-4 h-4 text-indigo-400" /> : <Sun className="w-4 h-4 text-orange-400" />}
+          <span className="text-xs font-bold uppercase w-20 text-center text-white/80">{phase.replace('_', ' ')}</span>
+          <div className="w-px h-3 bg-white/10" />
+          <div className="text-xs font-mono text-white/40">ROUND {round}</div>
+          <div className="w-px h-3 bg-white/10" />
+          <div className={`text-xs font-mono font-bold w-12 text-center ${timeLeft <= 5 ? 'text-red-500 animate-pulse' : 'text-white/60'}`}>
+            00:{timeLeft.toString().padStart(2, '0')}
+          </div>
+        </div>
 
-                    {/* Bottom info */}
-                    <div className="absolute inset-x-0 bottom-0 bg-gradient-to-t from-black/90 via-black/60 to-transparent p-3">
-                      <div className="text-center">
-                        <div className="text-sm font-bold text-white truncate">
-                          {player.name}
+        {/* Right: Balance + Exit */}
+        <div className="flex items-center gap-4">
+          <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-full">
+            <DollarSign className="w-3.5 h-3.5 text-green-400" />
+            <span className="text-sm font-mono font-bold text-green-400">{usdcBalance.toFixed(2)}</span>
+            <span className="text-[9px] text-green-400/60 font-bold">USDC</span>
+          </div>
+          <button onClick={resetGame} className="p-2 hover:bg-white/5 rounded-full text-white/30 hover:text-white transition-colors">
+            <LogOut className="w-4 h-4" />
+          </button>
+        </div>
+      </header>
+
+      {/* Main Layout */}
+      <main className="flex-1 flex overflow-hidden relative z-[2]">
+
+        {/* Left: Game View */}
+        <div className="flex-1 h-full relative p-4 lg:p-8 flex flex-col items-center justify-center z-40 pointer-events-none overflow-visible">
+          <BettingStatusBar />
+
+          <div className="w-full max-w-5xl flex flex-col gap-8 md:gap-12 relative z-10 overflow-visible">
+            {/* Top Row */}
+            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 justify-items-center overflow-visible">
+              {players.slice(0, 4).map(p => (
+                <GamePlayerCard
+                  key={p.id}
+                  player={p}
+                  isSpeaking={activeSpeakerId === p.id}
+                  currentMessage={chatBubbles[p.id]}
+                  activeEmote={activeEmotes[p.id]}
+                />
+              ))}
+            </div>
+            {/* Bottom Row */}
+            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-8 justify-items-center w-full md:w-4/5 mx-auto overflow-visible">
+              {players.slice(4, 7).map(p => (
+                <GamePlayerCard
+                  key={p.id}
+                  player={p}
+                  isSpeaking={activeSpeakerId === p.id}
+                  currentMessage={chatBubbles[p.id]}
+                  activeEmote={activeEmotes[p.id]}
+                />
+              ))}
+            </div>
+          </div>
+        </div>
+
+        {/* Spectator Chat Toggle Button */}
+        <div className="absolute bottom-6 left-6 z-[60] pointer-events-auto">
+          <motion.button
+            whileHover={{ scale: 1.05 }}
+            whileTap={{ scale: 0.95 }}
+            onClick={() => { setIsSpecChatOpen(!isSpecChatOpen); setUnreadCount(0); }}
+            className={`w-14 h-14 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(0,0,0,0.5)] border transition-all duration-300 relative ${
+              isSpecChatOpen
+                ? 'bg-purple-500 border-purple-300 text-white'
+                : 'bg-[#1e293b] border-white/20 text-white hover:border-purple-400/50 hover:text-purple-300'
+            }`}
+          >
+            {isSpecChatOpen ? <X className="w-6 h-6" /> : <MessageSquare className="w-6 h-6" />}
+            {unreadCount > 0 && !isSpecChatOpen && (
+              <motion.div
+                initial={{ scale: 0 }}
+                animate={{ scale: 1 }}
+                className="absolute -top-1 -right-1 w-5 h-5 rounded-full bg-red-500 text-white text-[10px] font-bold flex items-center justify-center border-2 border-[#1e293b]"
+              >
+                {unreadCount > 9 ? '9+' : unreadCount}
+              </motion.div>
+            )}
+          </motion.button>
+        </div>
+
+        {/* Spectator Chat Panel */}
+        <AnimatePresence>
+          {isSpecChatOpen && (
+            <motion.div
+              initial={{ opacity: 0, y: 20, scale: 0.95 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, y: 20, scale: 0.95 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 25 }}
+              className="absolute bottom-24 left-6 z-[60] w-[340px] h-[420px] flex flex-col bg-[#0f172a]/95 backdrop-blur-xl border border-purple-500/30 rounded-2xl shadow-[0_0_40px_rgba(168,85,247,0.15)] overflow-hidden"
+            >
+              {/* Chat Header */}
+              <div className="h-12 bg-purple-500/10 border-b border-purple-500/20 flex items-center justify-between px-4 shrink-0">
+                <div className="flex items-center gap-2 text-purple-300 text-xs uppercase tracking-[0.15em] font-bold">
+                  <Users className="w-4 h-4" />
+                  <span>Spectator Chat</span>
+                </div>
+                <div className="flex items-center gap-1.5">
+                  <div className="w-2 h-2 rounded-full bg-green-400 animate-pulse" />
+                  <span className="text-[9px] text-white/30 font-mono">online</span>
+                </div>
+              </div>
+
+              {/* Messages */}
+              <div className="flex-1 overflow-y-auto p-3 space-y-2" ref={specChatScrollRef}>
+                {specMessages.length === 0 ? (
+                  <div className="h-full flex flex-col items-center justify-center text-white/20 gap-2">
+                    <MessageSquare className="w-8 h-8 opacity-20" />
+                    <p className="text-[10px] uppercase tracking-widest">No messages yet...</p>
+                  </div>
+                ) : (
+                  specMessages.map(msg => (
+                    <motion.div
+                      key={msg.id}
+                      initial={{ opacity: 0, x: msg.isMe ? 10 : -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className={`flex flex-col ${msg.isMe ? 'items-end' : 'items-start'}`}
+                    >
+                      <div className={`max-w-[85%] ${msg.isMe ? 'items-end' : 'items-start'}`}>
+                        <div className="flex items-center gap-2 px-1 mb-0.5">
+                          <span className={`text-[10px] font-bold ${msg.isMe ? 'text-purple-300' : 'text-white/60'}`}>{msg.name}</span>
+                          <span className="text-[9px] text-white/20">
+                            {new Date(msg.time).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                          </span>
                         </div>
-                        <div className="text-xs text-white/40 uppercase tracking-widest">
-                          {player.isAlive ? player.trait : 'Eliminated'}
+                        <div className={`px-3 py-1.5 rounded-lg text-sm leading-relaxed border ${
+                          msg.isMe
+                            ? 'bg-purple-500/20 text-white border-purple-500/30 rounded-tr-none'
+                            : 'bg-white/5 text-white/80 border-white/5 rounded-tl-none'
+                        }`}>
+                          {msg.text}
                         </div>
                       </div>
-                    </div>
-
-                    {/* Speaking indicator */}
-                    {player.isSpeaking && player.isAlive && (
-                      <div className="absolute inset-0 border-2 border-gold shadow-[0_0_20px_rgba(212,168,83,0.4)]" />
-                    )}
-                  </motion.div>
-                ))}
+                    </motion.div>
+                  ))
+                )}
               </div>
-            </GlassCard>
 
-            {/* Game Log */}
-            <GlassCard className="p-4 max-h-[200px] overflow-y-auto">
-              <h3 className="text-xs text-white/40 uppercase tracking-wider mb-2">Game Log</h3>
-              <div className="space-y-1">
-                {messages.slice(-15).map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`text-xs py-1 ${
-                      msg.type === 'elimination'
-                        ? 'text-red-400'
-                        : msg.type === 'game-over'
-                          ? 'text-emerald-400'
-                          : msg.type === 'system'
-                            ? 'text-white/40 italic'
-                            : 'text-white/70'
-                    }`}
-                  >
-                    {msg.type === 'agent' && (
-                      <span className="text-gold font-bold">{msg.agent}: </span>
-                    )}
-                    {msg.message}
+              {/* Input */}
+              <div className="p-3 bg-black/40 border-t border-purple-500/20 shrink-0">
+                <form onSubmit={handleSpecChatSend} className="flex items-center gap-2">
+                  <div className="relative flex-1">
+                    <input
+                      value={specChatInput}
+                      onChange={(e) => setSpecChatInput(e.target.value)}
+                      placeholder="Chat with spectators..."
+                      className="w-full bg-white/5 border border-white/10 rounded-lg px-3 py-2.5 text-sm text-white placeholder:text-white/20 focus:outline-none focus:border-purple-500/50 transition-colors"
+                    />
                   </div>
-                ))}
+                  <button
+                    type="submit"
+                    disabled={!specChatInput.trim()}
+                    className="w-10 h-10 rounded-lg bg-purple-500/20 border border-purple-500/30 flex items-center justify-center text-purple-300 hover:bg-purple-500/30 transition-colors disabled:opacity-30"
+                  >
+                    <Send className="w-4 h-4" />
+                  </button>
+                </form>
               </div>
-            </GlassCard>
+            </motion.div>
+          )}
+        </AnimatePresence>
+
+        {/* Right: Betting Panel */}
+        <div className="hidden md:flex w-[380px] shrink-0 h-full border-l border-white/5 z-50 flex-col bg-[#030712]/95 backdrop-blur-xl">
+
+          {/* Panel Header */}
+          <div className="h-14 bg-black/40 border-b border-white/5 flex items-center justify-between px-4">
+            <div className="flex items-center gap-2 text-gold text-xs uppercase tracking-[0.15em] font-bold">
+              <BarChart3 className="w-4 h-4" />
+              <span>Betting Terminal</span>
+            </div>
           </div>
 
-          {/* Right: Betting Terminal */}
-          <div className="w-[400px] flex flex-col">
-            {/* Betting Terminal */}
-            <GlassCard className="flex-1 p-6 space-y-5 overflow-y-auto border-gold/20">
-              <h2 className="text-lg font-bold text-gold tracking-wider flex items-center gap-2">
-                <TrendingUp className="w-5 h-5" />
-                BETTING TERMINAL
-              </h2>
+          {/* Scrollable Content */}
+          <div className="flex-1 overflow-y-auto">
+
+            {/* Live Odds */}
+            <div className="p-4 border-b border-white/5">
+              <div className="flex items-center gap-1.5 text-[9px] text-white/40 uppercase tracking-widest font-bold mb-3">
+                <TrendingUp className="w-3 h-3" /> Live Odds
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <GlassCard className="p-3 text-center bg-red-500/5 border-red-500/20">
+                  <div className="text-[10px] text-red-400 font-bold uppercase tracking-wider mb-1">Mafia</div>
+                  <div className="text-2xl font-mono font-black text-red-400">{mafiaOdds}x</div>
+                </GlassCard>
+                <GlassCard className="p-3 text-center bg-green-500/5 border-green-500/20">
+                  <div className="text-[10px] text-green-400 font-bold uppercase tracking-wider mb-1">Citizens</div>
+                  <div className="text-2xl font-mono font-black text-green-400">{citizenOdds}x</div>
+                </GlassCard>
+              </div>
+            </div>
+
+            {/* Place Bet */}
+            <div className="p-4 border-b border-white/5 space-y-3">
+              <div className="flex items-center gap-1.5 text-[9px] text-white/40 uppercase tracking-widest font-bold">
+                <DollarSign className="w-3 h-3" /> Place Bet (USDC)
+              </div>
 
               {/* Bet Type Selector */}
-              <div className="space-y-2">
-                <label className="text-xs text-white/40 uppercase tracking-wider">Bet Type</label>
-                <select
-                  value={betType}
-                  onChange={(e) => setBetType(e.target.value as BetType)}
-                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-gold/50 outline-none"
+              <div className="relative">
+                <button
+                  onClick={() => setShowBetTypeDropdown(!showBetTypeDropdown)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white hover:border-gold/40 transition-colors"
                 >
-                  <option value="side_win">Side Win</option>
-                  <option value="next_elimination">Next Elimination</option>
-                  <option value="is_mafia">Is Mafia</option>
-                  <option value="is_ai_or_human">AI or Human</option>
-                </select>
+                  <div className="flex items-center gap-2">
+                    {BET_TYPES.find(b => b.value === selectedBetType)?.icon}
+                    <span className="font-medium">{BET_TYPES.find(b => b.value === selectedBetType)?.label}</span>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-white/40 transition-transform ${showBetTypeDropdown ? 'rotate-180' : ''}`} />
+                </button>
+                <AnimatePresence>
+                  {showBetTypeDropdown && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="absolute top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg overflow-hidden z-50 shadow-2xl"
+                    >
+                      {BET_TYPES.map(bt => (
+                        <button
+                          key={bt.value}
+                          onClick={() => { setSelectedBetType(bt.value); setBetTarget(''); setShowBetTypeDropdown(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/10 transition-colors ${
+                            selectedBetType === bt.value ? 'bg-gold/10 text-gold' : 'text-white/80'
+                          }`}
+                        >
+                          {bt.icon}
+                          <div>
+                            <div className="text-sm font-medium">{bt.label}</div>
+                            <div className="text-[10px] text-white/40">{bt.desc}</div>
+                          </div>
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               {/* Target Selector */}
-              <div className="space-y-2">
-                <label className="text-xs text-white/40 uppercase tracking-wider">Target</label>
-                <select
-                  value={target}
-                  onChange={(e) => setTarget(e.target.value)}
-                  className="w-full bg-black/40 border border-white/10 rounded-lg px-3 py-2 text-sm text-white focus:border-gold/50 outline-none"
+              <div className="relative">
+                <button
+                  onClick={() => setShowTargetDropdown(!showTargetDropdown)}
+                  className="w-full flex items-center justify-between px-3 py-2.5 bg-white/5 border border-white/10 rounded-lg text-sm text-white hover:border-gold/40 transition-colors"
                 >
-                  {targets.map((t) => (
-                    <option key={t} value={t}>
-                      {t}
-                    </option>
-                  ))}
-                </select>
+                  <span className={betTarget ? 'font-medium' : 'text-white/30'}>
+                    {betTarget || 'Select target...'}
+                  </span>
+                  <ChevronDown className={`w-4 h-4 text-white/40 transition-transform ${showTargetDropdown ? 'rotate-180' : ''}`} />
+                </button>
+                <AnimatePresence>
+                  {showTargetDropdown && (
+                    <motion.div
+                      initial={{ opacity: 0, y: -5 }}
+                      animate={{ opacity: 1, y: 0 }}
+                      exit={{ opacity: 0, y: -5 }}
+                      className="absolute top-full left-0 right-0 mt-1 bg-[#1e293b] border border-white/10 rounded-lg overflow-hidden z-50 shadow-2xl max-h-[200px] overflow-y-auto"
+                    >
+                      {getTargetOptions().map(opt => (
+                        <button
+                          key={opt}
+                          onClick={() => { setBetTarget(opt); setShowTargetDropdown(false); }}
+                          className={`w-full flex items-center gap-3 px-3 py-2.5 text-left hover:bg-white/10 transition-colors text-sm ${
+                            betTarget === opt ? 'bg-gold/10 text-gold' : 'text-white/80'
+                          }`}
+                        >
+                          {selectedBetType !== 'side_win' && (() => {
+                            const p = players.find(pl => pl.name === opt);
+                            return p?.avatarIndex != null ? (
+                              <img src={AVATAR_IMAGES[p.avatarIndex]} alt="" className="w-6 h-6 rounded-full object-cover border border-white/20" />
+                            ) : null;
+                          })()}
+                          {opt}
+                        </button>
+                      ))}
+                    </motion.div>
+                  )}
+                </AnimatePresence>
               </div>
 
               {/* Amount Input */}
-              <div className="space-y-2">
-                <label className="text-xs text-white/40 uppercase tracking-wider">Amount</label>
+              <div className="space-y-1.5">
                 <div className="relative">
-                  <span className="absolute left-3 top-1/2 -translate-y-1/2 text-gold font-mono">
-                    $
-                  </span>
-                  <input
+                  <Input
                     type="number"
-                    value={amount}
-                    onChange={(e) => {
-                      const val = Number(e.target.value)
-                      if (!isNaN(val) && val >= 0) setAmount(val)
-                    }}
-                    className="w-full bg-black/40 border border-white/10 rounded-lg pl-7 pr-3 py-2 text-sm text-white font-mono focus:border-gold/50 outline-none"
+                    placeholder="1.00"
+                    value={betAmount}
+                    onChange={(e) => setBetAmount(e.target.value)}
+                    className="pl-8 pr-20 py-3 bg-white/5 border-white/10 focus:border-gold/50 rounded-lg text-sm !normal-case !tracking-normal !font-mono"
                   />
+                  <DollarSign className="absolute left-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-white/30" />
+                  <span className="absolute right-3 top-1/2 -translate-y-1/2 text-[10px] text-white/30 font-bold">USDC</span>
                 </div>
-                {/* Quick amounts */}
-                <div className="flex gap-2 flex-wrap">
-                  {[1, 5, 10, 25].map((amt) => (
+                <div className="flex gap-1.5">
+                  {[1, 5, 10, 25].map(amt => (
                     <button
                       key={amt}
-                      onClick={() => setAmount(amt)}
-                      className="px-3 py-1 text-xs font-mono border border-gold/30 rounded-full text-gold hover:bg-gold/10 transition-colors"
+                      onClick={() => setBetAmount(amt.toString())}
+                      className="flex-1 py-1.5 text-[10px] font-bold text-white/50 bg-white/5 hover:bg-white/10 border border-white/5 hover:border-gold/30 rounded transition-colors"
                     >
                       ${amt}
                     </button>
                   ))}
                   <button
-                    onClick={() => setAmount(balance)}
-                    className="px-3 py-1 text-xs font-mono border border-gold/30 rounded-full text-gold hover:bg-gold/10 transition-colors font-bold"
+                    onClick={() => setBetAmount(usdcBalance.toFixed(2))}
+                    className="flex-1 py-1.5 text-[10px] font-bold text-gold/60 bg-gold/5 hover:bg-gold/10 border border-gold/10 hover:border-gold/30 rounded transition-colors"
                   >
                     MAX
                   </button>
                 </div>
               </div>
 
-              {/* Payout Calculator */}
-              <div className="bg-black/30 border border-white/5 rounded-lg p-3 space-y-1">
-                <div className="flex justify-between text-xs text-white/40">
-                  <span>Probability</span>
-                  <span className="font-mono">{(probability * 100).toFixed(1)}%</span>
-                </div>
-                <div className="flex justify-between text-sm text-gold font-bold">
-                  <span>Potential Payout</span>
-                  <span className="font-mono">${potentialPayout.toFixed(2)}</span>
-                </div>
-              </div>
+              {/* Potential Payout */}
+              {betAmount && betTarget && odds && (
+                <motion.div
+                  initial={{ opacity: 0, height: 0 }}
+                  animate={{ opacity: 1, height: 'auto' }}
+                  className="bg-white/5 rounded-lg px-3 py-2 flex justify-between items-center"
+                >
+                  <span className="text-[10px] text-white/40 uppercase tracking-wider font-bold">Potential Payout</span>
+                  <span className="text-sm font-mono font-bold text-green-400">
+                    ${(parseFloat(betAmount || '0') * (betTarget === 'Mafia' ? (1 / odds.mafiaWinProb) : (1 / odds.citizenWinProb))).toFixed(2)} USDC
+                  </span>
+                </motion.div>
+              )}
 
-              {/* Place Bet Button */}
-              <button
+              <Button
                 onClick={handlePlaceBet}
-                disabled={!amount || amount > balance}
-                className="w-full py-3 font-bold text-sm uppercase tracking-wider rounded-lg bg-gradient-to-r from-[#9a7a3a] to-[#D4A853] hover:from-[#D4A853] hover:to-[#f0d78c] text-white disabled:opacity-40 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+                disabled={!betTarget || !betAmount || parseFloat(betAmount) < 1.0 || parseFloat(betAmount) > usdcBalance}
+                size="lg"
+                className="w-full"
+                icon={<ArrowRight className="w-4 h-4" />}
               >
-                Place Bet — ${amount}
-              </button>
+                {betSuccess ? 'BET PLACED!' : 'PLACE BET'}
+              </Button>
 
-              {/* Balance display */}
-              <div className="text-center text-xs text-white/40">
-                Balance: <span className="text-gold font-mono">${balance}</span>
+              {parseFloat(betAmount || '0') < 1.0 && betAmount !== '' && (
+                <p className="text-[10px] text-red-400/80 text-center">Minimum bet: $1.00 USDC</p>
+              )}
+            </div>
+
+            {/* My Bets */}
+            <div className="p-4 border-b border-white/5">
+              <div className="flex items-center justify-between mb-3">
+                <div className="flex items-center gap-1.5 text-[9px] text-white/40 uppercase tracking-widest font-bold">
+                  <Clock className="w-3 h-3" /> My Bets
+                </div>
+                <span className="text-[9px] text-white/20 font-mono">{usdcBets.length} active</span>
               </div>
-
-              {/* My Bets */}
-              <div className="space-y-2 border-t border-white/10 pt-4">
-                <h3 className="text-xs text-white/40 uppercase tracking-wider">My Bets</h3>
-                <div className="space-y-2 max-h-[200px] overflow-y-auto">
-                  {bets.map((bet) => (
-                    <div
+              <div className="space-y-2 max-h-[160px] overflow-y-auto">
+                {usdcBets.length === 0 ? (
+                  <div className="text-center py-4 text-white/20 text-xs">No bets placed yet</div>
+                ) : (
+                  usdcBets.map(bet => (
+                    <motion.div
                       key={bet.id}
-                      className="bg-black/30 border border-white/5 rounded-lg p-3 flex justify-between items-center"
+                      initial={{ opacity: 0, x: -10 }}
+                      animate={{ opacity: 1, x: 0 }}
+                      className="flex items-center justify-between bg-white/5 rounded-lg px-3 py-2 border border-white/5"
                     >
                       <div>
-                        <div className="text-xs text-white">
-                          {bet.betType.replace(/_/g, ' ')} → {bet.target}
+                        <div className="flex items-center gap-2">
+                          <span className="text-[10px] text-gold/60 uppercase font-bold tracking-wider">
+                            {BET_TYPES.find(b => b.value === bet.betType)?.label}
+                          </span>
+                          <ArrowRight className="w-3 h-3 text-white/20" />
+                          <span className="text-xs font-medium text-white">{bet.target}</span>
                         </div>
-                        <div className="text-xs text-white/40 font-mono">${bet.amount}</div>
+                        <span className="text-[9px] text-white/30 font-mono">
+                          {new Date(bet.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                        </span>
                       </div>
-                      <span
-                        className={`text-[10px] font-bold uppercase px-2 py-0.5 rounded-full ${
-                          bet.status === 'pending'
-                            ? 'bg-yellow-900/40 text-yellow-400'
-                            : bet.status === 'won'
-                              ? 'bg-green-900/40 text-green-400'
-                              : 'bg-red-900/40 text-red-400'
-                        }`}
-                      >
-                        {bet.status}
-                      </span>
-                    </div>
-                  ))}
-                  {bets.length === 0 && (
-                    <p className="text-xs text-white/20 italic text-center">
-                      No bets placed yet
-                    </p>
-                  )}
-                </div>
+                      <div className="text-right">
+                        <div className="text-sm font-mono font-bold text-green-400">${bet.amountUSDC.toFixed(2)}</div>
+                        <span className={`text-[9px] uppercase font-bold tracking-wider ${
+                          bet.status === 'pending' ? 'text-yellow-400' :
+                          bet.status === 'won' ? 'text-green-400' : 'text-red-400'
+                        }`}>{bet.status}</span>
+                      </div>
+                    </motion.div>
+                  ))
+                )}
               </div>
-            </GlassCard>
-          </div>
-        </div>
-      </div>
+            </div>
 
-      {/* Spectator Chat (floating) */}
-      <AnimatePresence>
-        {showChat && (
-          <motion.div
-            initial={{ opacity: 0, y: 20, scale: 0.95 }}
-            animate={{ opacity: 1, y: 0, scale: 1 }}
-            exit={{ opacity: 0, y: 20, scale: 0.95 }}
-            transition={{ type: 'spring', stiffness: 300, damping: 25 }}
-            className="absolute bottom-16 right-6 w-[340px] h-[420px] z-50"
-          >
-            <GlassCard className="h-full flex flex-col p-4 border-purple-500/20">
-              <div className="flex items-center justify-between mb-3">
-                <h3 className="text-sm font-bold text-purple-300 flex items-center gap-2">
-                  <MessageSquare className="w-4 h-4" />
-                  Spectator Chat
-                </h3>
-                <span className="text-xs text-white/30">👥 watching</span>
+            {/* Chat Log (read-only) */}
+            <div className="p-4 border-t border-white/5">
+              <div className="flex items-center gap-1.5 text-[9px] text-white/40 uppercase tracking-widest font-bold mb-3">
+                <MessageSquare className="w-3 h-3" /> Game Log
               </div>
-              <div className="flex-1 overflow-y-auto space-y-2 text-sm">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={`p-2 rounded ${
-                      msg.type === 'system'
-                        ? 'bg-white/5 text-white/60 italic'
-                        : msg.type === 'elimination'
-                          ? 'bg-red-900/20 text-red-300'
-                          : msg.type === 'game-over'
-                            ? 'bg-emerald-900/20 text-emerald-300'
-                            : 'bg-zinc-800/50 text-white'
-                    }`}
-                  >
-                    {msg.type === 'agent' && (
-                      <div className="font-bold text-xs text-gold mb-1">{msg.agent}</div>
+              <div className="space-y-2 max-h-[200px] overflow-y-auto" ref={scrollRef}>
+                {messages.slice(-15).map(msg => (
+                  <div key={msg.id} className="text-[11px]">
+                    {msg.type === 'system' ? (
+                      <span className="text-white/30 italic">{msg.text}</span>
+                    ) : msg.type === 'elimination' ? (
+                      <span className="text-red-400 flex items-center gap-1">
+                        <Skull className="w-3 h-3" /> {msg.text}
+                      </span>
+                    ) : (
+                      <span>
+                        <span className="font-bold" style={{ color: msg.color || '#fff' }}>{msg.senderName}: </span>
+                        <span className="text-white/70">{msg.text}</span>
+                      </span>
                     )}
-                    <div className="text-xs">{msg.message}</div>
                   </div>
                 ))}
               </div>
-            </GlassCard>
-          </motion.div>
-        )}
-      </AnimatePresence>
+            </div>
+          </div>
 
-      {/* Market Feed Ticker (bottom) */}
-      <div className="relative z-10 h-8 bg-black/40 border-t border-white/10 overflow-hidden">
-        <div className="flex items-center h-full px-4">
-          <span className="text-xs text-white/40 uppercase tracking-wider mr-4">
-            Live Market Feed
-          </span>
-          <div className="flex-1 overflow-hidden">
-            <motion.div
-              className="flex gap-8 text-xs text-white/60"
-              animate={{ x: [0, -1000] }}
-              transition={{ duration: 20, repeat: Infinity, ease: 'linear' }}
-            >
-              <span>🔥 Betting window open for Round {round}</span>
-              <span>📊 Total pool: Updating...</span>
-              <span>👥 {playerList.filter((p) => p.isAlive).length} players remaining</span>
-              <span>⚡ Phase: {phase.replace('_', ' ')}</span>
-              <span>🎲 Odds updating in real-time</span>
-              {/* Repeat for seamless loop */}
-              <span>🔥 Betting window open for Round {round}</span>
-              <span>📊 Total pool: Updating...</span>
-              <span>👥 {playerList.filter((p) => p.isAlive).length} players remaining</span>
-              <span>⚡ Phase: {phase.replace('_', ' ')}</span>
-              <span>🎲 Odds updating in real-time</span>
-            </motion.div>
+          {/* X402 Branding Footer */}
+          <div className="px-4 py-3 border-t border-white/5 bg-black/40 text-center shrink-0">
+            <div className="flex items-center justify-center gap-2 text-[9px] text-white/20 font-mono tracking-wider">
+              <Zap className="w-3 h-3" />
+              Powered by X402 Protocol on Monad
+            </div>
           </div>
         </div>
-      </div>
+      </main>
     </div>
-  )
-}
+  );
+};
