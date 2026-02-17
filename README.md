@@ -12,15 +12,15 @@
 - **Mixed-Player Games** — Combine any mix of player types (all AI, all human, mixed) in 7-player games
 - **Moltbook Dual-Connection** — External AI agents play via DM API AND bet via X402 simultaneously
 - **Lobby System** — Players join before game starts, auto-fill with House AI if needed
-- **Modern React Frontend** — React 19 + TypeScript + Tailwind v4 + Framer Motion glassmorphism UI
+- **Modern React Frontend** — React 19 + TypeScript + Tailwind v4, flat component structure (6 screens, 2 component files, 1 unified Zustand store)
 - **Real-Time Spectating** — Watch the game unfold via WebSocket-powered dashboard with animated phase transitions
 - **Unified USDC Betting (X402)** — All betting through single `POST /api/bets` endpoint with X402 USDC payment on Monad testnet
 - **Dynamic Odds** — Pari-mutuel betting pool with AI-powered odds (5% house edge), blended 70% AI + 30% market
 - **AI Bettor** — Server-side autonomous "house gambler" that watches games via WebSocket and bets via X402 (same layer as House AI)
 - **Identity Betting** — Bet on whether players are AI or human (settled in REVEAL phase)
 - **On-Chain Settlement** — USDC payouts transferred to winners' wallets via ERC-20 transfer
-- **Responsive Design** — Desktop 3-column layout + mobile tabbed interface
-- **Visual Polish** — Portrait character cards, in-card chat bubbles with gold border, floating emote overlays, vote badges, day/night background crossfade, phase-tinted overlays, role badge icons
+- **Responsive Design** — Desktop 2-section layout (board + chat/betting panel) + mobile FAB + slide-in chat drawer
+- **Visual Polish** — Portrait character cards (8 selectable avatars), in-card chat bubbles (5s auto-dismiss), floating emote overlays (spring animation), vote count badges, day/night background crossfade (2s CSS transition), phase-tinted overlays, Role Reveal modal, Night Phase overlay
 - **OpenAI GPT-4o-mini** — Fast, cost-effective AI for all agent operations
 - **Immutable Architecture** — Pydantic v2 frozen models, functional state transitions
 - **236 Python + 46 Solidity tests** — 282 total tests
@@ -54,7 +54,7 @@ Check winner → Citizens win (all mafia dead) / Mafia win (mafia ≥ citizens) 
 
 ### Lobby System
 Players can join in multiple ways:
-- **Humans**: Enter name and click "Join Game" on the React lobby screen (WebSocket `join_lobby`)
+- **Humans**: Connect wallet → enter nickname → select avatar (8 characters) → "Enter Lobby" on the React lobby screen (WebSocket `join_lobby { type: "join_lobby", name }`)
 - **Moltbook Agents**: `POST /api/lobby/join-agent` with Moltbook Identity JWT — verified via `X-Moltbook-App-Key`, returns `wallet_address` for betting
 - **House AI**: Automatically added to fill remaining slots after lobby timeout
 - **Timeout**: If game doesn't reach 7 players within 5 minutes, auto-fill and start
@@ -199,19 +199,23 @@ src/                              # Python backend
 ├── storage/                      # aiosqlite + repositories
 └── utils/                        # Logging, retry, errors
 
-frontend/                         # React 19 + TypeScript (54 source files)
+frontend/                         # React 19 + TypeScript (flat structure)
 ├── src/
+│   ├── screens/                  # One file per screen
+│   │   ├── LandingScreen.tsx     # Wallet connect + nickname + avatar selection
+│   │   ├── LobbyScreen.tsx       # Player portrait grid + progress bar
+│   │   ├── GameScreen.tsx        # Board + ChatPanel + overlays (Role Reveal, Night Phase, Night Action)
+│   │   ├── SpectatorScreen.tsx   # Board + Betting Terminal (380px) + Spectator Chat
+│   │   ├── RevealScreen.tsx      # 3D card flip identity reveal
+│   │   └── GameOverScreen.tsx    # Winner announcement + confetti + player roster
 │   ├── components/
-│   │   ├── layout/               # Header, GameLayout, MobileTabBar
-│   │   ├── lobby/                # LobbyScreen, PlayerSlot, JoinForm
-│   │   ├── game/                 # GameBoard, PlayerCard (portrait images, not CSS-art avatars), ChatPanel, PhaseOverlay, EmoteMenu, NightOverlay, BettingStatusBar, etc.
-│   │   ├── betting/              # BettingPanel, OddsBar, BetSlip, SuspectList, etc.
-│   │   ├── wallet/               # ConnectButton, TxToast
-│   │   ├── screens/              # LandingScreen, SpectatorScreen, RevealScreen, GameOverScreen
-│   │   └── ui/                   # GlassCard, Badge, Button, Confetti, Input, ProgressRing, RoleRevealModal, etc.
-│   ├── hooks/                    # useWebSocket, useGameState, useWallet, etc.
-│   ├── stores/                   # Zustand stores (game, chat, betting, wallet)
-│   └── lib/                      # Types, constants, WebSocket client, blockchain
+│   │   ├── GameComponents.tsx    # PlayerCard, GamePlayerCard, BettingStatusBar, EmoteMenu, ChatBoard, BettingPanel (stub)
+│   │   └── UIComponents.tsx      # GlassCard, Button, Input
+│   ├── store.ts                  # Single useGameStore (Zustand) — all state
+│   ├── websocket.ts              # WebSocket client with exponential backoff reconnect
+│   ├── types.ts                  # ScreenState, GamePhase, Role, Player, Message, Bet, BetType, AVATAR_IMAGES
+│   ├── constants.ts              # AGENTS_DATA (7 personalities), PHASE_GRADIENTS
+│   └── mappers.ts                # mapPhase, mapRole, mapWinner, buildPlayerFromName
 ├── vite.config.ts
 └── package.json
 
@@ -223,7 +227,7 @@ contracts/                        # Solidity smart contracts
 - All backend models are `frozen=True` — create new objects, never mutate
 - Game state transitions return new `GameState` instances
 - Agent memory is immutable rolling window (last 10 events)
-- Frontend uses Zustand 5 with individual selectors (React 19 compatible)
+- Frontend uses a single Zustand store (`useGameStore`) combining all game, chat, betting, wallet, and WebSocket state
 - WebSocket auto-reconnect with exponential backoff
 - Phase-adaptive UI (background gradients, animated transitions per phase)
 - Blockchain/X402 is optional — game works without wallet connection
@@ -266,8 +270,8 @@ Each agent generates dialogue and makes strategic decisions via **OpenAI GPT-4o-
 - **React 19** + TypeScript — Component-based SPA
 - **Vite 6** — Fast HMR, optimized builds
 - **Tailwind CSS v4** — Utility-first styling
-- **Framer Motion** — Declarative animations (phase transitions, stagger effects)
-- **Zustand 5** — Minimal state management (4 stores)
+- **Framer Motion** — Declarative animations (screen transitions, overlays, emote spring animation)
+- **Zustand 5** — Minimal state management (1 unified store)
 - **Lucide React** — Icons
 - **ethers.js v6** — MetaMask + contract interaction
 
@@ -335,9 +339,9 @@ Player Events:
 
 ### WebSocket Events (Client → Server)
 ```
-  join_lobby        — { type, name }
-  action_response   — { type, player_name, response }
-  ping              — Keepalive (30s interval)
+  join_lobby        — { type: "join_lobby", name }       (no player_type field)
+  action_response   — { type: "action_response", player_name, response }
+  ping              — { type: "ping" } Keepalive (25s interval, auto-sent)
 ```
 
 ## 📝 Development
@@ -356,7 +360,7 @@ ptw tests/
 
 ### Project Structure
 - `src/` — Python backend (API, game engine, AI agents, betting, blockchain)
-- `frontend/` — React 19 + TypeScript source (54 source files)
+- `frontend/` — React 19 + TypeScript source (6 screens, 2 component files, 1 unified store)
 - `static/` — Vite build output (served by FastAPI in production)
 - `tests/` — Test suite (unit + integration + mocks)
 - `contracts/` — Solidity smart contracts
@@ -371,9 +375,12 @@ ptw tests/
 - `src/x402/middleware.py` — X402 USDC payment verification
 - `src/ai_bettor/client.py` — Autonomous betting agent
 - `src/api/server.py` — FastAPI + WebSocket server
-- `frontend/src/App.tsx` — React app root (routing, WS connection)
-- `frontend/src/hooks/useWebSocket.ts` — 15+ WS event handlers
-- `frontend/src/stores/gameStore.ts` — Zustand game state
+- `frontend/src/App.tsx` — React app root (screen routing via ScreenState enum)
+- `frontend/src/store.ts` — Single Zustand store (all game + chat + betting + wallet state)
+- `frontend/src/websocket.ts` — WebSocket client with exponential backoff reconnect
+- `frontend/src/screens/GameScreen.tsx` — Main player screen with board + chat panel
+- `frontend/src/screens/SpectatorScreen.tsx` — Spectator view with betting terminal
+- `frontend/src/components/GameComponents.tsx` — PlayerCard, GamePlayerCard, ChatBoard, EmoteMenu, BettingStatusBar
 - `contracts/MafiaBetting.sol` — On-chain betting smart contract
 
 ## 🎯 Winning Conditions

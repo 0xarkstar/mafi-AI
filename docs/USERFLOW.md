@@ -166,9 +166,13 @@ graph TB
 | **src/api/** | FastAPI server | `server.py`, `routes.py`, `ws_manager.py` |
 | **src/storage/** | Database layer | `database.py` (aiosqlite), `repositories/` |
 | **src/utils/** | Utilities | `logger.py` (structlog), `retry.py`, `errors.py` |
-| **frontend/src/components/** | React UI components | `layout/`, `lobby/`, `game/`, `betting/`, `wallet/`, `screens/`, `ui/` (37 .tsx files) |
-| **frontend/src/stores/** | Zustand state management | `gameStore.ts`, `chatStore.ts`, `bettingStore.ts`, `walletStore.ts` |
-| **frontend/src/hooks/** | React hooks | `useWebSocket.ts`, `useGameState.ts`, `useWallet.ts`, etc. |
+| **frontend/src/screens/** | Screen-level React components | `LandingScreen.tsx`, `LobbyScreen.tsx`, `GameScreen.tsx`, `SpectatorScreen.tsx`, `RevealScreen.tsx`, `GameOverScreen.tsx` |
+| **frontend/src/components/** | Shared UI components | `GameComponents.tsx` (PlayerCard, GamePlayerCard, BettingStatusBar, EmoteMenu, ChatBoard), `UIComponents.tsx` (GlassCard, Button, Input) |
+| **frontend/src/store.ts** | Unified Zustand state | Single `useGameStore` managing all game, chat, betting, wallet, and WebSocket state |
+| **frontend/src/websocket.ts** | WebSocket client | Auto-reconnect with exponential backoff, 25s ping keepalive |
+| **frontend/src/types.ts** | TypeScript enums & interfaces | `ScreenState`, `GamePhase`, `Role`, `Player`, `Message`, `Bet`, `BetType` |
+| **frontend/src/mappers.ts** | Backend ↔ frontend mapping | `mapPhase`, `mapRole`, `mapWinner`, `buildPlayerFromName` |
+| **frontend/src/constants.ts** | Static data | `AGENTS_DATA` (7 agents), `PHASE_GRADIENTS` |
 
 ---
 
@@ -270,53 +274,68 @@ sequenceDiagram
     participant GameEngine
 
     User->>Browser: Navigate to http://localhost:8080
-    Browser->>Browser: Load React SPA
+    Browser->>Browser: Load React SPA (LandingScreen)
+
+    User->>Browser: Click "CONNECT WALLET"
+    Browser->>Browser: MetaMask prompt OR simulated fallback (0x71C...9A21)
+    Browser->>Browser: walletConnected = true → show nickname step
+
+    User->>Browser: Enter nickname → click "Next"
+    Browser->>Browser: Show avatar selection (8 character portraits)
+    User->>Browser: Select avatar → click "Enter Lobby"
+
     Browser->>WebSocket: Connect ws://localhost:8080/ws
     WebSocket-->>Browser: Connection established
-
-    User->>Browser: Click "Join Game" + enter name
-    Browser->>WebSocket: send join_lobby {type: "human", name: "Alice"}
+    Browser->>WebSocket: send join_lobby {type: "join_lobby", name: "Alice"}
     WebSocket->>LobbyManager: Create HumanPlayer → join()
-    LobbyManager-->>WebSocket: lobby_joined {name: "Alice", success: true}
-    WebSocket-->>Browser: lobby_status {players: [...], count: 3, ready: false}
-    Browser->>Browser: Update UI: "Waiting for players (3/7)"
+    LobbyManager-->>WebSocket: lobby_joined {success: true, game_id: "..."}
+    WebSocket-->>Browser: screen = ScreenState.LOBBY
+    WebSocket-->>Browser: lobby_status {players: [...]}
+    Browser->>Browser: LobbyScreen: show player cards (filled + scanning slots)
 
     LobbyManager->>LobbyManager: Timeout (300s) → fill_with_house_ai()
-    LobbyManager-->>WebSocket: game_starting {player_count: 7}
-    WebSocket-->>Browser: Switch to Game screen
+    LobbyManager-->>WebSocket: game_starting {players: [...]}
+    WebSocket-->>Browser: screen = ScreenState.GAME (Role Reveal modal shown)
 
     GameEngine->>GameEngine: Assign roles randomly (2 mafia, 1 detective, 4 citizen)
-    GameEngine->>WebSocket: phase_change {phase: "night", round: 0}
-    WebSocket-->>Browser: Night background crossfade, blue tint, stars + moon
+    GameEngine->>WebSocket: phase_change {phase: "night", round: 1}
+    WebSocket-->>Browser: Night background crossfade, blue tint, NIGHT PHASE overlay (Moon icon + text)
 ```
 
 ### Human Player Actions by Phase
 
 | Phase | UI | Player Action | Timeout (60s fallback) |
 |-------|------|-------------|--------------|
-| **NIGHT** | Night background, blue tint `#0a0e1f/60%`, NightOverlay (stars + moon via Canvas) | Mafia: choose kill target. Detective: choose investigation target. Citizen: no action. | Random target |
-| **DAY_DISCUSSION** | Day background, amber tint `#0a0a05/50%` | 2 statements (textarea, 200 char limit) | "I have nothing to say." |
-| **DAY_VOTE** | Red tint `#1a0505/70%`, "Voting Time" overlay | Select candidate from dropdown | Random candidate |
-| **REVEAL** | Purple tint `#4c1d95/60%`, 3D card flip animation | Watch player types revealed (AI/Human) | — |
-| **GAME_OVER** | Winner color + confetti (300 particles, 3s) | View results, click "Play Again" | — |
+| **NIGHT** | `game-bg-night.png` crossfades in (2s CSS transition), blue tint `#0a0e1f/60%`, fullscreen "NIGHT PHASE" overlay (Moon icon + animated text, auto-dismisses after 3s) | Mafia: click target name in modal. Detective: click target name in modal. Citizen: no action. | Random target |
+| **DAY_DISCUSSION** | `game-bg.png` crossfades in (2s CSS transition), amber tint `#0a0a05/50%`. ChatBoard header shows "Your Turn to Speak" | Type statement in ChatBoard → Enter or Send button submits via `action_response` | "I have nothing to say." |
+| **DAY_VOTE** | Red tint `#1a0505/70%`. Player cards show red hover overlay + Target icon. Vote count badge appears on card top-right. | Click any alive player card (cursor-pointer, red hover glow) | Random candidate |
+| **REVEAL** | Purple radial gradient background. 3D card flip animation (click each card) | Click player cards to reveal AI/Human identity. Click "View Game Results" to proceed | — |
+| **GAME_OVER** | Winner-color gradient (red/green) + canvas confetti (150 particles) | View chip balance + bets placed. Click "Play Again" or "Back to Lobby" | — |
 
 **Interaction Protocol:**
 
 ```
-Server → WebSocket: action_request {prompt, actionType, options, timeout: 60}
+Server → WebSocket: action_request {prompt, action_type, options, timeout: 60}
     ↓
-Frontend: Show ActionPanel (textarea / dropdown / button grid + ProgressRing timer)
+Frontend (GameScreen): Renders based on action_type:
+  - "statement" → ChatBoard header = "Your Turn to Speak", sends via submitActionResponse
+  - "vote" → Player cards become clickable (showVoteButtons = true)
+  - "night_action" → Fullscreen Night Action modal with target buttons
     ↓
-User submits → WebSocket: action_response {type, player_name, response}
+User submits → WebSocket: action_response {type: "action_response", player_name, response}
     ↓
 Server: HumanPlayer._response_future.set_result(response) → GameEngine processes
 ```
 
-### ActionPanel UI
+### Role Reveal Modal
 
-**Desktop:** Glassmorphic card at bottom center. Input varies by action type. ProgressRing countdown timer. Submit button disabled until input provided.
+When the game starts, a fullscreen Role Reveal modal appears immediately in `GameScreen`:
 
-**Mobile:** Same layout, full-screen modal on small devices (`<sm`).
+- **Mafia** — Red theme, Sword icon, "Eliminate citizens without being caught"
+- **Detective** — Blue theme, Eye icon, "Investigate one player each night"
+- **Citizen** — Green theme, Shield icon, "Find and vote out the Mafia"
+
+Player taps "Start Game" to dismiss the modal and begin playing.
 
 ---
 
@@ -326,18 +345,43 @@ Spectators watch games in real-time and place bets without participating in game
 
 ### Joining as Spectator
 
-1. Navigate to landing screen
-2. Click "Spectate" (instead of "Join Game")
-3. WebSocket connects, but no `join_lobby` sent
-4. Receives all game events as broadcast (phase_change, agent_message, vote_cast, elimination, etc.)
-5. Can place bets via betting terminal
+1. Navigate to landing screen → Connect Wallet
+2. Enter nickname → Click "Spectate Match" (instead of proceeding to avatar selection)
+3. `isSpectator = true`, screen transitions to `ScreenState.SPECTATE`
+4. WebSocket connects, but no `join_lobby` sent — spectators only receive broadcast events
+5. Receives all game events (phase_change, agent_message, vote_cast, elimination, etc.)
+6. Can place USDC bets via the right-side Betting Terminal
 
 ### Spectator Screen Layout
 
-- **Player Grid** (3×3) — Live player cards showing status
-- **Game Log** (15 messages) — Recent events scrollable
-- **Betting Terminal** — Bet type tabs, quick amounts, payout calculator
-- **Spectator Chat** — Floating panel for spectator-only messages
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ [Header: MAFI-AI | 👁 Spectator | Phase | Round | Timer | $USDC | Exit] │
+├─────────────────────────────────────────┬───────────────────────┤
+│                                         │                       │
+│  Game Board (flex-1)                    │  Betting Terminal     │
+│  ┌──────────────────────────────┐       │  (380px fixed)        │
+│  │  PlayerCard × 4 (top row)    │       │                       │
+│  │  - portrait image             │       │  [Live Odds]          │
+│  │  - chat bubble overlay        │       │  Mafia 2.86x          │
+│  │  - emote overlay              │       │  Citizens 1.54x       │
+│  └──────────────────────────────┘       │                       │
+│  ┌──────────────────────────────┐       │  [Place Bet (USDC)]   │
+│  │  PlayerCard × 3 (bottom row) │       │  Bet Type dropdown    │
+│  └──────────────────────────────┘       │  Target dropdown      │
+│                                         │  Amount input         │
+│  [BettingStatusBar — bottom center]     │  Quick amounts        │
+│                                         │  Payout preview       │
+│  [Spectator Chat FAB — bottom-left]     │  PLACE BET button     │
+│                                         │                       │
+│                                         │  [My Bets list]       │
+│                                         │  [Game Log — 15 msgs] │
+│                                         │                       │
+│                                         │  [X402 Protocol branding] │
+└─────────────────────────────────────────┴───────────────────────┘
+```
+
+**Spectator Chat**: Floating panel (340×420px) toggled via bottom-left FAB. Shows simulated spectator messages from other viewers. Unread badge on FAB when closed.
 
 ---
 
@@ -350,7 +394,7 @@ Spectators watch games in real-time and place bets without participating in game
 | **side_win** | `"citizens"` or `"mafia"` | Anytime before GAME_OVER | Winner announced |
 | **next_elimination** | Player name (alive) | Before DAY_VOTE ends | Next elimination revealed |
 | **is_mafia** | Player name (alive) | Before player dies | Player's role revealed |
-| **is_ai_or_human** | `"PlayerName:ai"` or `"PlayerName:human"` | Before REVEAL phase | REVEAL phase |
+| **is_ai_or_human** | Player name (alive) | Before REVEAL phase | REVEAL phase |
 
 ### Pari-Mutuel Payout Logic
 
@@ -402,7 +446,7 @@ sequenceDiagram
     Backend->>Blockchain: USDC transfer to winners (if settlement_enabled)
     Blockchain-->>Backend: tx_hash
     Backend->>Frontend: usdc_settlement {amount, tx_hash}
-    Frontend->>Frontend: Toast: "You won $12.50! TX: 0x..."
+    Frontend->>Frontend: System message: "You won $12.50 USDC!"
 ```
 
 ### AI Oddsmaker
@@ -425,7 +469,7 @@ GPT-4o-mini analyzes game state every phase transition:
 
 Odds are blended: 70% AI analysis + 30% market-implied odds from actual bet distribution.
 
-Broadcast via `odds_update` WebSocket event → updates betting UI for all connected clients.
+Broadcast via `odds_update` WebSocket event → updates `BettingStatusBar` and `SpectatorScreen` betting terminal for all connected clients.
 
 ---
 
@@ -435,30 +479,29 @@ Broadcast via `odds_update` WebSocket event → updates betting UI for all conne
 
 | Event | Data Fields | Trigger | UI Effect |
 |-------|-------------|---------|-----------|
-| **phase_change** | `phase`, `round` | Phase transitions | Background crossfade, tint overlay update, auto-transition to game screen if missed game_starting |
-| **agent_message** | `agent`, `message` | Player speaks | Chat bubble on player card (5s auto-dismiss), chat panel message, auto-transition to game screen if missed game_starting |
-| **vote_cast** | `voter`, `target` | Player votes | Vote overlay on target card, badge count increment, vote count tracking |
-| **elimination** | `agent` (or `eliminated`), `role`, `reason` | Player eliminated | Skull overlay on player card, chat message with role reveal |
-| **game_over** | `winner`, `rounds`, `alive_agents`, `payouts` | Game ends | Transition to reveal screen first, then confetti + winner announcement |
-| **odds_update** | `mafia_win_prob`, `citizen_win_prob`, `mafia_suspects` | Oddsmaker analysis | Betting panel odds display update |
-| **lobby_joined** | `name`, `success` | Player joins lobby | "You joined as {name}" system message |
-| **lobby_status** | `players`, `count`, `ready` | Lobby state change | Player slots update, counter "3/7" |
-| **game_starting** | `players` (array with name, player_type) | Game starts | Countdown modal → transition to game screen, init players |
-| **action_request** | `prompt`, `action_type`, `options`, `timeout` | Player's turn | ActionPanel (textarea/dropdown/buttons) + timer (skipped for spectators) |
-| **identity_reveal** | `player_name` (or `name`), `player_type`, `all_revealed` | REVEAL phase | Player card badge update (AI/Human icon), transition to game_over if all_revealed |
-| **bet_placed** | `bet` (object) | Bet confirmed | Add to "My Bets" list |
-| **bet_confirmed** | `bet_id` | Bet won | Green checkmark, payout shown |
-| **bet_rejected** | `bet_id` | Bet lost | Red X, loss shown |
-| **usdc_settlement** | `transfers` (array of address, amount, tx_hash) | USDC payouts | Toast with Monad explorer link |
-| **pong** | — | Keepalive response | (No UI effect) |
+| **phase_change** | `phase`, `round`, `alive_agents` | Phase transitions | Background crossfade (2s CSS transition), tint overlay update, update dead players from `alive_agents`, auto-transition to GAME screen if missed game_starting |
+| **agent_message** | `agent`, `message` | Player speaks | Chat bubble on player card (5s auto-dismiss), ChatBoard message appended, activeSpeakerId highlights card with gold glow for 3s |
+| **vote_cast** | `voter`, `target` | Player votes | System message in ChatBoard |
+| **elimination** | `agent` (or `eliminated`), `role`, `reason` | Player eliminated | Skull overlay on player card (grayscale portrait), elimination message in ChatBoard with red skull banner |
+| **game_over** | `winner`, `rounds`, `alive_agents`, `payouts` | Game ends | Sets `winner` in store. After 15s timeout transitions to GAME_OVER if not already on REVEAL screen |
+| **odds_update** | `mafia_win_prob`, `citizen_win_prob`, `mafia_suspects` | Oddsmaker analysis | BettingStatusBar animated bar, SpectatorScreen odds display |
+| **lobby_joined** | `success`, `game_id` | Player joins lobby | screen → ScreenState.LOBBY, connectionStatus → 'connected' |
+| **lobby_status** | `players` (array of names) | Lobby state change | Player slots update with portrait cards or scanning placeholders |
+| **game_starting** | `players` (array with name, player_type) | Game starts | screen → ScreenState.GAME (or SPECTATE), Role Reveal modal shown |
+| **action_request** | `prompt`, `action_type`, `options`, `timeout`, `context` | Player's turn | `currentAction` set in store; ChatBoard = "Your Turn to Speak" for statements; player cards clickable for votes; Night Action modal for night_action |
+| **identity_reveal** | `player_name` (or `name`), `role`, `player_type`, `all_revealed` | REVEAL phase | Player `isAi` field updated; if `all_revealed`, screen → ScreenState.REVEAL |
+| **bet_confirmed** | `bet_id`, `amount_usdc`, `target` | Bet confirmed | USDC bet status → 'pending', system message in ChatBoard |
+| **bet_rejected** | `reason` | Bet rejected | System error message in ChatBoard |
+| **usdc_settlement** | `bet_id`, `won`, `payout` | USDC payouts | Bet status → 'won'/'lost', usdcBalance updated, system message |
+| **error** | `message` | Server error | Error system message in ChatBoard |
 
 ### Client → Server Events (3 events)
 
 | Event | Data Fields | Trigger | Purpose |
 |-------|-------------|---------|---------|
-| **join_lobby** | `type` ("human" \| "agent_human"), `name` | Click "Join Game" | Register as player |
-| **action_response** | `type` ("statement" \| "vote" \| "night_action"), `player_name`, `response` | Submit ActionPanel | Send player decision |
-| **ping** | — | 30-second interval | Keep WebSocket alive |
+| **join_lobby** | `type: "join_lobby"`, `name` | Avatar selected → "Enter Lobby" | Register as player (no player type field — server infers from connection context) |
+| **action_response** | `type: "action_response"`, `player_name`, `response` | Statement typed / player card clicked / night action selected | Send player decision to server |
+| **ping** | `type: "ping"` | 25-second interval (automatic) | Keep WebSocket alive — server responds with `{type: "pong"}` (ignored by client) |
 
 ---
 
@@ -466,37 +509,36 @@ Broadcast via `odds_update` WebSocket event → updates betting UI for all conne
 
 ```mermaid
 stateDiagram-v2
-    [*] --> landing: Page load
+    [*] --> LANDING: Page load
 
-    landing --> lobby: Click "Play" OR "Spectate"
+    LANDING --> LOBBY: connectAndJoin() called<br/>(after wallet + nickname + avatar)
+    LANDING --> SPECTATE: joinAsSpectator() called
 
-    lobby --> game: game_starting event<br/>(if player)
-    lobby --> spectate: game_starting event<br/>(if spectator)
+    LOBBY --> GAME: lobby_joined + game_starting events<br/>(isSpectator = false)
+    LOBBY --> SPECTATE: game_starting event<br/>(isSpectator = true)
 
-    game --> reveal: phase === "reveal"
-    spectate --> reveal: phase === "reveal"
+    GAME --> REVEAL: identity_reveal with all_revealed=true
+    SPECTATE --> REVEAL: identity_reveal with all_revealed=true
 
-    reveal --> game: Next round starts<br/>(phase === "night")
-    reveal --> spectate: Next round starts<br/>(spectator view)
+    REVEAL --> GAME_OVER: endGame() called<br/>(click "View Game Results")
 
-    game --> game_over: game_over event
-    spectate --> game_over: game_over event
+    GAME --> GAME_OVER: game_over event<br/>+ 15s safety timeout
 
-    game_over --> landing: Click "Play Again"
+    GAME_OVER --> LANDING: resetGame() called<br/>(click "Play Again" or "Back to Lobby")
 
-    state landing {
-        [*] --> title_screen
-        title_screen --> enter_name: Click "Join Game"
-        enter_name --> [*]: Submit name
+    state LANDING {
+        [*] --> connect_wallet
+        connect_wallet --> enter_nickname: walletConnected = true
+        enter_nickname --> select_avatar: nickname entered → "Next"
+        select_avatar --> [*]: avatar selected → "Enter Lobby"
     }
 
-    state lobby {
+    state LOBBY {
         [*] --> waiting
-        waiting --> countdown: 7 players joined
-        countdown --> [*]: Game starts
+        waiting --> [*]: game_starting received
     }
 
-    state game {
+    state GAME {
         [*] --> night
         night --> day_discussion
         day_discussion --> day_vote
@@ -504,30 +546,30 @@ stateDiagram-v2
         day_vote --> [*]: Win condition met
     }
 
-    state spectate {
+    state SPECTATE {
         [*] --> watching
         watching --> betting
         betting --> watching
     }
 
-    style landing fill:#3b82f6,stroke:#1e40af,color:#fff
-    style lobby fill:#10b981,stroke:#059669,color:#fff
-    style game fill:#f59e0b,stroke:#d97706,color:#000
-    style spectate fill:#8b5cf6,stroke:#7c3aed,color:#fff
-    style reveal fill:#ec4899,stroke:#db2777,color:#fff
-    style game_over fill:#6b7280,stroke:#4b5563,color:#fff
+    style LANDING fill:#3b82f6,stroke:#1e40af,color:#fff
+    style LOBBY fill:#10b981,stroke:#059669,color:#fff
+    style GAME fill:#f59e0b,stroke:#d97706,color:#000
+    style SPECTATE fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    style REVEAL fill:#ec4899,stroke:#db2777,color:#fff
+    style GAME_OVER fill:#6b7280,stroke:#4b5563,color:#fff
 ```
 
 ### Screen Routing Logic
 
-| Screen | Condition | Components Rendered |
-|--------|-----------|---------------------|
-| **landing** | `gameStore.screen === 'landing'` | `LandingScreen` (shattered mask effect, "Play" / "Spectate" buttons) |
-| **lobby** | `gameStore.screen === 'lobby'` | `LobbyScreen` (player slots, countdown, "Join Game" form) |
-| **game** | `gameStore.screen === 'game' && gameStore.isPlayer` | `GameLayout` (Header, Background, GameBoard, ChatPanel, BettingPanel, ActionPanel) |
-| **spectate** | `gameStore.screen === 'game' && !gameStore.isPlayer` | `SpectatorScreen` (player grid, game log, betting terminal, spectator chat) |
-| **reveal** | `gameStore.phase === 'reveal'` | `RevealScreen` (3D card flip animations showing AI/Human labels) |
-| **game_over** | `gameStore.screen === 'game_over'` | `GameOverScreen` (winner announcement, confetti, final bets, "Play Again") |
+| ScreenState | Condition | Component Rendered |
+|------------|-----------|---------------------|
+| **LANDING** | `screen === ScreenState.LANDING` | `LandingScreen` — shattered mask effect, wallet connect, nickname + avatar selection |
+| **LOBBY** | `screen === ScreenState.LOBBY` | `LobbyScreen` — player portrait grid (7 slots), progress bar, scanning placeholder slots |
+| **GAME** | `screen === ScreenState.GAME` | `GameScreen` — 2-section layout: Board (player cards + BettingStatusBar) + ChatBoard (340px right panel); Role Reveal modal on load |
+| **SPECTATE** | `screen === ScreenState.SPECTATE` | `SpectatorScreen` — Board + 380px Betting Terminal right panel, Spectator Chat FAB |
+| **REVEAL** | `screen === ScreenState.REVEAL` | `RevealScreen` — 3D card flip grid (4-col), purple gradient bg, "Tap to reveal" cards |
+| **GAME_OVER** | `screen === ScreenState.GAME_OVER` | `GameOverScreen` — winner announcement, canvas confetti, chip balance + bet count, player roster |
 
 ---
 
@@ -535,167 +577,147 @@ stateDiagram-v2
 
 ```mermaid
 graph TB
-    App[App.tsx]
+    App[App.tsx<br/>AnimatePresence screen transitions]
 
     App --> Landing[LandingScreen]
     App --> Lobby[LobbyScreen]
-    App --> GameLayout
+    App --> Game[GameScreen]
     App --> Spectate[SpectatorScreen]
     App --> Reveal[RevealScreen]
     App --> GameOver[GameOverScreen]
 
-    Landing --> LandingBG[Shattered Mask Effect]
-    Landing --> PlayBtn[Play / Spectate Buttons]
+    Landing --> LandingBG[Shattered Mask SVG Effect<br/>landing-bg.png, 70 horizontal strips]
+    Landing --> FloatPieces[Floating Fragment Particles<br/>20 drifting image shards at seam]
+    Landing --> WalletStep[Wallet Connect Step<br/>MetaMask OR simulated 0x71C...9A21]
+    Landing --> NickStep[Nickname Step<br/>Input + Next button + Spectate button]
+    Landing --> AvatarStep[Avatar Selection Step<br/>4×2 grid of 8 character portraits]
 
-    Lobby --> LobbySlots[PlayerSlot × 7]
-    Lobby --> JoinForm[JoinForm]
-    Lobby --> Countdown[CountdownModal]
+    Lobby --> LobbyGrid[Player Portrait Grid<br/>PlayerCard × filled slots]
+    Lobby --> EmptySlots[Scanning Placeholder Slots<br/>Loader2 spinner, dashed border]
+    Lobby --> ProgressBar[Fill Progress Bar<br/>players.length / 7]
 
-    GameLayout --> Header
-    GameLayout --> Background[Background<br/>day/night images]
-    GameLayout --> PhaseTint[PhaseTintOverlay<br/>blue/amber/red]
-    GameLayout --> NightOverlay[NightOverlay<br/>stars + moon]
-    GameLayout --> GameBoard
-    GameLayout --> ChatPanel
-    GameLayout --> BettingPanel
-    GameLayout --> BettingStatusBar
-    GameLayout --> EmoteMenu
-    GameLayout --> MobileTab[MobileTabBar]
+    Game --> BG[Background Crossfade<br/>game-bg.png ↔ game-bg-night.png<br/>2s CSS transition-opacity]
+    Game --> PhaseTint[Phase Tint Overlay<br/>blue night / amber day / red vote<br/>2s CSS transition-all]
+    Game --> NightOverlay[Night Phase Overlay<br/>Moon icon + NIGHT PHASE text<br/>auto-dismiss 3s]
+    Game --> RoleRevealModal[Role Reveal Modal<br/>fullscreen, spring animation<br/>Sword/Eye/Shield icon + description]
+    Game --> NightActionModal[Night Action Modal<br/>target button grid for Mafia/Detective]
+    Game --> Header[Header<br/>Logo + Phase badge + Round + Timer + Action indicator]
+    Game --> Board[Game Board<br/>flex-1 center]
+    Game --> ChatPanel[Chat Panel<br/>340px right fixed]
+    Game --> MobileFAB[Mobile Chat FAB<br/>bottom-left, hidden on md+]
+    Game --> MobileDrawer[Mobile Chat Drawer<br/>slide from right, full-width]
 
-    GameBoard --> PlayerCard[PlayerCard × 7]
+    Board --> BSBar[BettingStatusBar<br/>centered at bottom, odds bar]
+    Board --> TopRow[Top Row Grid 4-col<br/>GamePlayerCard × 4]
+    Board --> BotRow[Bottom Row Grid 3-col<br/>GamePlayerCard × 3]
 
-    PlayerCard --> Portrait[Portrait Image<br/>AVATAR_IMAGES array]
-    PlayerCard --> ChatBubble[Chat Bubble Overlay<br/>inside card, gold border]
-    PlayerCard --> EmoteOverlay[Emote Overlay<br/>spring animation]
-    PlayerCard --> VoteOverlay[Vote Overlay<br/>count badge]
-    PlayerCard --> RoleBadge[Role Badge<br/>Sword/Eye/Shield]
-    PlayerCard --> DeadSkull[Dead Skull Overlay]
+    TopRow --> GPC[GamePlayerCard]
+    GPC --> Portrait[Portrait Image<br/>AVATAR_IMAGES array<br/>or icon fallback]
+    GPC --> ChatBubble[Chat Bubble Overlay<br/>5s auto-dismiss<br/>gold border, arrow pointer]
+    GPC --> EmoteOv[Emote Overlay<br/>spring animation, 3s duration<br/>floats upward]
+    GPC --> VoteOv[Vote Overlay<br/>red hover glow + Target icon<br/>red badge on top-right]
+    GPC --> DeadSkull[Dead Skull Overlay<br/>grayscale portrait + Skull icon]
+    GPC --> RoleBadge[Role Badge top-left<br/>Sword=Mafia / Eye=Detective / Shield=Citizen<br/>human player only]
 
-    ChatPanel --> Messages[ChatMessage × N]
+    ChatPanel --> ChatBoard[ChatBoard<br/>messages + input + EmoteMenu]
+    ChatBoard --> EmoteMenu[EmoteMenu<br/>8 emotes popup grid<br/>triggered by Smile button]
 
-    BettingPanel --> BetTabs[Bet Type Tabs × 4]
-    BettingPanel --> BetSlip[BetSlip]
-    BettingPanel --> MyBets[My Bets List]
+    Spectate --> SBoard[Game Board flex-1]
+    Spectate --> BettingTerminal[Betting Terminal 380px<br/>Live Odds + Place Bet + My Bets + Game Log]
+    Spectate --> SpecChatFAB[Spectator Chat FAB<br/>bottom-left, unread badge]
+    Spectate --> SpecChatPanel[Spectator Chat Panel<br/>340×420px popup, simulated messages]
 
-    Spectate --> SpectGrid[Player Grid 3×3]
-    Spectate --> GameLog[Game Log 15 msgs]
-    Spectate --> BetTerminal[Betting Terminal]
-    Spectate --> SpecChat[Spectator Chat<br/>floating panel]
+    Reveal --> RevealCards[RevealCard × 7<br/>3D flip on click]
+    RevealCards --> FrontFace[Front: Portrait + name + Tap to reveal]
+    RevealCards --> BackFace[Back: AI/Human label + role badge]
 
-    BetTerminal --> QuickAmounts[Quick Amount Buttons]
-    BetTerminal --> PayoutCalc[Payout Calculator]
-
-    Reveal --> CardFlip[3D Card Flip Animation × 7]
-
-    GameOver --> WinnerMsg[Winner Announcement]
-    GameOver --> Confetti[Canvas Confetti]
-    GameOver --> FinalBets[Final Bet Results]
+    GameOver --> Confetti[Canvas Confetti<br/>150 particles, gravity simulation]
+    GameOver --> WinnerCard[GlassCard<br/>trophy icon + winner text]
+    GameOver --> PlayerRoster[Player Roster grid<br/>alive/dead status + role labels]
 
     style App fill:#3b82f6,stroke:#1e40af,color:#fff
-    style GameLayout fill:#10b981,stroke:#059669,color:#fff
-    style PlayerCard fill:#f59e0b,stroke:#d97706,color:#000
+    style Game fill:#10b981,stroke:#059669,color:#fff
+    style GPC fill:#f59e0b,stroke:#d97706,color:#000
     style Portrait fill:#ec4899,stroke:#db2777,color:#fff
     style ChatBubble fill:#fbbf24,stroke:#f59e0b,color:#000
-    style BettingPanel fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    style BettingTerminal fill:#8b5cf6,stroke:#7c3aed,color:#fff
     style Spectate fill:#06b6d4,stroke:#0891b2,color:#fff
 ```
 
 ---
 
-## State Management (4 Zustand Stores)
+## State Management (1 Unified Zustand Store)
 
-### 1. gameStore
+The frontend uses a **single Zustand store** (`store.ts`) that combines all game, UI, WebSocket, betting, and wallet state into one `useGameStore` hook.
 
 ```typescript
-interface GameStore {
-  // Core game state
-  phase: Phase
-  round: number
-  players: Record<string, Player>
-  votes: Vote[]
-  winner: string | null  // "citizens" | "mafia"
-
-  // Player identity
-  isPlayer: boolean
-  myPlayerName: string | null
-
-  // Lobby state
-  lobbyPlayers: string[]
-  lobbyCount: number
-  lobbyReady: boolean
-
-  // Action requests
-  actionRequest: ActionRequest | null
-
+interface GameState {
   // Screen routing
-  screen: 'landing' | 'lobby' | 'game' | 'game_over'
+  screen: ScreenState;        // LANDING | LOBBY | GAME | SPECTATE | REVEAL | GAME_OVER
 
-  // User preferences
-  nickname: string
-  avatarIndex: number
-  isSpectator: boolean
+  // Game state
+  phase: GamePhase;           // DAY_DISCUSSION | DAY_VOTE | NIGHT | REVEAL
+  round: number;
+  players: Player[];
+  winner: 'Mafia' | 'Citizens' | null;
+  activeEmotes: Record<string, string>;  // playerId → emoji (auto-cleared after 3s)
 
-  // Visual effects
-  activeEmotes: Record<string, { emoji: string; timeout: ReturnType<typeof setTimeout> }>
-  chatBubbles: Record<string, string>
-  voteCounts: Record<string, number>       // target → count
-  showVoteUI: boolean
-  selectedVoteTarget: string | null
+  // Chat / messages
+  messages: Message[];        // unified log: chat + system + elimination + game_over
 
-  // WebSocket sender
-  wsSend: (data: Record<string, unknown>) => void
+  // Betting state
+  bets: Bet[];                // chip bets (local only)
+  usdcBets: USDCBet[];        // USDC bets tracked locally
+  usdcBalance: number;        // starts at 50.0 USDC
+
+  // Wallet / auth
+  walletConnected: boolean;
+  walletAddress: string | null;
+  balance: number;            // chip balance (starts at 1000)
+  nickname: string;
+  avatarIndex: number | null;
+
+  // WebSocket integration
+  connectionStatus: 'disconnected' | 'connecting' | 'connected';
+  gameId: string | null;
+  playerName: string;
+  currentAction: ActionRequest | null;  // pending action_request from server
+  odds: OddsData | null;               // latest odds_update data
+  isSpectator: boolean;
+
+  // Actions (store methods)
+  connectWallet: () => Promise<void>;
+  connectAndJoin: (nickname: string, avatarIndex: number) => void;
+  joinAsSpectator: () => void;
+  handleWSEvent: (event: any) => void;
+  submitActionResponse: (response: string) => void;
+  addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void;
+  placeBet: (amount: number, target: 'Mafia' | 'Citizens') => void;
+  placeBetUSDC: (betType: BetType, target: string, amount: number) => void;
+  triggerEmote: (playerId: string, emote: string) => void;
+  triggerReveal: () => void;
+  endGame: () => void;
+  resetGame: () => void;
 }
 ```
 
-### 2. chatStore
+### Key State Transitions
 
-```typescript
-interface ChatStore {
-  messages: ChatMessage[]
-  addMessage: (message: ChatMessage) => void
-  addSystemMessage: (text: string, type?: 'system' | 'elimination' | 'game-over') => void
-  clearMessages: () => void
-}
-
-interface ChatMessage {
-  id: string
-  agent: string
-  message: string
-  timestamp: number
-  type: 'agent' | 'system' | 'elimination' | 'game-over'
-}
-```
-
-### 3. bettingStore
-
-```typescript
-interface BettingStore {
-  odds: OddsBoard | null
-  bets: Bet[]
-  balance: number  // USDC balance
-
-  setOdds: (odds: OddsBoard) => void
-  addBet: (bet: Bet) => void
-  updateBetStatus: (betId: string, status: BetStatus) => void
-  setBalance: (balance: number) => void
-}
-```
-
-### 4. walletStore
-
-```typescript
-interface WalletStore {
-  connected: boolean
-  address: string | null
-  balance: string | null  // USDC balance
-  txStatus: 'idle' | 'pending' | 'success' | 'error'
-
-  connect: () => Promise<void>
-  disconnect: () => void
-  placeBet: (betData: BetData) => Promise<string>
-  claimWinnings: (gameId: string) => Promise<string>
-}
-```
+| Action | Store Change |
+|--------|-------------|
+| `connectWallet()` | MetaMask or simulated → `walletConnected = true, walletAddress = "0x..."` |
+| `connectAndJoin(nick, avatar)` | Opens WebSocket, sends `join_lobby` on `onOpen` |
+| `joinAsSpectator()` | `isSpectator = true, screen = SPECTATE`, opens WebSocket (no `join_lobby`) |
+| `handleWSEvent("lobby_joined")` | `screen = LOBBY, gameId = ...` |
+| `handleWSEvent("game_starting")` | `screen = GAME` (or `SPECTATE`), players populated |
+| `handleWSEvent("phase_change")` | `phase` updated, dead players recalculated from `alive_agents` |
+| `handleWSEvent("agent_message")` | Message appended to `messages[]` |
+| `handleWSEvent("action_request")` | `currentAction` set (ignored for spectators) |
+| `submitActionResponse(text)` | Sends `action_response` WS message, clears `currentAction` |
+| `handleWSEvent("game_over")` | `winner` set; safety timeout → `screen = GAME_OVER` after 15s |
+| `handleWSEvent("identity_reveal")` | Player `isAi` updated; if `all_revealed`, `screen = REVEAL` |
+| `endGame()` | `screen = GAME_OVER` |
+| `resetGame()` | Disconnects WebSocket, resets all state to initial values, `screen = LANDING` |
 
 ---
 
@@ -703,82 +725,113 @@ interface WalletStore {
 
 | Phase | Background | Tint Overlay | Special Effects |
 |-------|-----------|-------------|----------------|
-| **lobby** | — | — | — |
-| **night** | `game-bg-night.png` (crossfade 2s) | Blue `#0a0e1f/60%` | NightOverlay (animated stars + moon via Canvas) |
-| **day_discussion** | `game-bg.png` (crossfade 2s) | Amber `#0a0a05/50%` | — |
-| **day_vote** | `game-bg.png` | Red `#1a0505/70%` | "Voting Time" ballot overlay |
-| **reveal** | `game-bg.png` | Purple `#4c1d95/60%` | 3D card flip animation (showing AI/Human) |
-| **game_over** | `game-bg.png` | Emerald `#064e3b/60%` (citizens) or Red `#7f1d1d/60%` (mafia) | Canvas confetti (300 particles, 3s) |
+| **lobby** | Radial indigo gradient | — | Progress bar animation |
+| **night** | `game-bg-night.png` (crossfades in, 2s CSS `transition-opacity`) | Blue `#0a0e1f/60%` (2s CSS transition) | NightOverlay: fullscreen black modal with rotating Moon icon + "NIGHT PHASE" text, auto-dismisses after 3s |
+| **day_discussion** | `game-bg.png` (crossfades in, 2s CSS `transition-opacity`) | Amber `#0a0a05/50%` (2s CSS transition) | — |
+| **day_vote** | `game-bg.png` | Red `#1a0505/70%` (2s CSS transition) | Player cards show red hover glow, vote count badges |
+| **reveal** | Purple radial gradient background | — | 3D card flip animation on click (CSS `rotateY(180deg)`) |
+| **game_over** | Emerald gradient (citizens) or Red gradient (mafia) | `opacity-40` gradient | Canvas confetti (150 particles, gravity simulation) |
 
-### Background Crossfade
+### Background Crossfade Implementation
 
-```typescript
-const backgroundVariants = {
-  day: {
-    backgroundImage: 'url(/game-bg.png)',
-    transition: { duration: 2, ease: 'easeInOut' }
-  },
-  night: {
-    backgroundImage: 'url(/game-bg-night.png)',
-    transition: { duration: 2, ease: 'easeInOut' }
-  }
-}
+The background crossfade uses two stacked `<img>` elements with CSS `transition-opacity` — **not** framer-motion:
 
-<motion.div variants={backgroundVariants} animate={phase === 'night' ? 'night' : 'day'} />
+```tsx
+{/* Day background */}
+<img
+  src="/images/game-bg.png"
+  className={`absolute inset-0 w-full h-full object-cover z-0
+    transition-opacity duration-[2000ms]
+    ${phase === GamePhase.NIGHT ? 'opacity-0' : 'opacity-100'}`}
+/>
+{/* Night background */}
+<img
+  src="/images/game-bg-night.png"
+  className={`absolute inset-0 w-full h-full object-cover z-0
+    transition-opacity duration-[2000ms]
+    ${phase === GamePhase.NIGHT ? 'opacity-100' : 'opacity-0'}`}
+/>
+{/* Phase tint overlay */}
+<div className={`absolute inset-0 transition-all duration-[2000ms]
+  ${phase === GamePhase.NIGHT ? 'bg-[#0a0e1f]/60' :
+    phase === GamePhase.DAY_VOTE ? 'bg-[#1a0505]/70' :
+    'bg-[#0a0a05]/50'}`}
+/>
 ```
 
 ---
 
 ## Desktop & Mobile Layouts
 
-### Desktop (lg+)
+### Desktop (md+)
 
+**GameScreen:**
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ [Header: Logo | Phase Badge | Round | Timer]                     │
-├────────────────┬─────────────────────┬───────────────────────────┤
-│ PLAYERS        │ GAME BOARD          │ BETTING                   │
-│ (280px fixed)  │ (flex-1)            │ (320px fixed)             │
-│                │                     │                           │
-│ [PlayerCard]   │ ┌─────────────────┐ │ [Bet Type Tabs]           │
-│ [PlayerCard]   │ │ PlayerCard × 7  │ │ [Target Dropdown]         │
-│ [PlayerCard]   │ │ (portrait imgs) │ │ [Quick Amounts]           │
-│ [PlayerCard]   │ │ Chat bubbles    │ │ [Payout Calc]             │
-│ [PlayerCard]   │ │ Emote overlays  │ │ [Place Bet Button]        │
-│ [PlayerCard]   │ │ Vote badges     │ │ [My Bets List]            │
-│ [PlayerCard]   │ └─────────────────┘ │                           │
-│                │                     │ [ODDS BAR]                │
-│ [CHAT PANEL]   │                     │ Citizens 65% | Mafia 35%  │
-└────────────────┴─────────────────────┴───────────────────────────┘
-│ [BettingStatusBar — bottom center, 80% width]                    │
-│ Current Bets: 3 | Total Wagered: $12 | Est. Payout: $18.50      │
-└──────────────────────────────────────────────────────────────────┘
+│ [Header: Logo | Phase badge + Round + Timer | Action indicator]  │
+├──────────────────────────────────────────────┬───────────────────┤
+│                                              │                   │
+│  Game Board (flex-1)                         │  Chat Panel       │
+│                                              │  (340px fixed)    │
+│  ┌──────────────────────────────────┐        │                   │
+│  │  GamePlayerCard × 4 (top row)    │        │  [Header:         │
+│  │  - portrait image                │        │   Encrypted       │
+│  │  - chat bubble overlay           │        │   Channel /       │
+│  │  - emote overlay                 │        │   Your Turn       │
+│  │  - vote badge top-right          │        │   to Speak]       │
+│  │  - role badge top-left           │        │                   │
+│  │  - skull if dead                 │        │  [Messages]       │
+│  └──────────────────────────────────┘        │                   │
+│  ┌──────────────────────────────────┐        │  [Emote Btn]      │
+│  │  GamePlayerCard × 3 (bottom row) │        │  [Input + Send]   │
+│  └──────────────────────────────────┘        │                   │
+│                                              │                   │
+│  [BettingStatusBar — bottom center]          │                   │
+│  Mafia 2.86x |======---| Citizens 1.54x      │                   │
+└──────────────────────────────────────────────┴───────────────────┘
 ```
 
-### Mobile (<lg)
-
+**SpectatorScreen:**
 ```
-┌──────────────────────────┐
-│ [Header]                 │
-├──────────────────────────┤
-│                          │
-│ [PlayerCard Grid 2×4]    │
-│ - Portrait images        │
-│ - Chat bubbles inside    │
-│ - Emote overlays         │
-│ - Vote badges            │
-│                          │
-├──────────────────────────┤
-│ [Bottom Tab Bar]         │
-│ [Game] [Chat] [Bet]      │
-└──────────────────────────┘
-
-Tab 1: Game — PlayerCard grid + ActionPanel
-Tab 2: Chat — Full-screen chat messages
-Tab 3: Bet  — Betting terminal + odds + My Bets
+┌──────────────────────────────────────────────┬───────────────────┐
+│  Game Board (flex-1)                         │ Betting Terminal  │
+│  (same player grid as GameScreen)            │ (380px fixed)     │
+│                                              │                   │
+│  [Spectator Chat FAB — bottom-left]          │ [Live Odds]       │
+│                                              │ [Place Bet]       │
+│                                              │ [My Bets]         │
+│                                              │ [Game Log]        │
+└──────────────────────────────────────────────┴───────────────────┘
 ```
 
-MobileTabBar: Fixed bottom, 3 tabs (Users, MessageCircle, DollarSign icons), visible only on `<lg` breakpoint.
+### Mobile (<md)
+
+**GameScreen mobile:**
+```
+┌──────────────────────────────┐
+│ [Header]                     │
+│                              │
+│ [GamePlayerCard Grid 2×2+]   │
+│ - Chat bubbles                │
+│ - Emote overlays              │
+│ - Vote badges                 │
+│                              │
+│ [BettingStatusBar]           │
+│                              │
+│ [Chat FAB — bottom-left ●]   │
+└──────────────────────────────┘
+
+When FAB tapped → Chat Drawer slides in from right (full-width):
+┌──────────────────────────────┐
+│ [Encrypted Channel]    [✕]   │
+│                              │
+│ [Messages scroll area]       │
+│                              │
+│ [😊] [Input          ] [▶]  │
+└──────────────────────────────┘
+```
+
+No MobileTabBar — mobile chat is a FAB + full-width slide-in drawer.
 
 ---
 
@@ -837,7 +890,7 @@ Behavior: Watches via WebSocket, analyzes with GPT-4o-mini, bets when confidence
 | Issue | Cause | Fix |
 |-------|-------|-----|
 | **OpenAI API errors** | Invalid key, rate limit | Check `.env` OPENAI_API_KEY, verify quota |
-| **WebSocket disconnects** | Network instability | Auto-reconnect with exponential backoff (built-in) |
+| **WebSocket disconnects** | Network instability | Auto-reconnect with exponential backoff (built-in, max 10s delay) |
 | **Frontend not loading** | Build not run | `cd frontend && npm run build` |
 | **Players stuck in lobby** | Not enough players, timeout not reached | Wait for timeout or add more players |
 | **402 on /api/bets** | X402 not enabled or no payment header | Set `X402_ENABLED=true` in `.env` |
@@ -846,7 +899,8 @@ Behavior: Watches via WebSocket, analyzes with GPT-4o-mini, bets when confidence
 | **Blockchain tx fails** | Insufficient MON | Get MON from faucet, verify Chain ID 10143 |
 | **AI Bettor not betting** | Confidence < 0.6, wrong phase, cooldown | Check logs for confidence scores |
 | **Moltbook agent join fails** | Invalid JWT, wrong app key | Verify `MOLTBOOK_APP_KEY` and agent registration |
-| **Auto-transition not working** | Client missed game_starting/agent_message | Implemented fallback in useWebSocket.ts (checks screen state on phase_change/agent_message) |
+| **Auto-transition not working** | Client missed game_starting | Phase_change handler auto-transitions to GAME screen if still on LOBBY/LANDING |
+| **Chat not sending** | No active `action_request` | Local messages only appear locally when not your turn; `action_response` only sent when `currentAction` is set |
 
 ---
 
@@ -854,8 +908,8 @@ Behavior: Watches via WebSocket, analyzes with GPT-4o-mini, bets when confidence
 
 - **AsyncIO**: All I/O is async (OpenAI API, SQLite, WebSocket)
 - **Lazy evaluation**: Odds calculated only on phase transitions
-- **Individual selectors**: Zustand selectors prevent unnecessary re-renders
-- **Canvas rendering**: NightOverlay uses Canvas API (not DOM)
+- **Single store selectors**: `useGameStore()` with destructuring avoids unnecessary re-renders
+- **CSS transitions**: Background crossfade uses `transition-opacity` (no JS animation loop)
 - **GPT-4o-mini**: ~$0.05 per game (~100 API calls)
 - **SQLite**: Zero database hosting costs
 

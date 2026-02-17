@@ -12,15 +12,15 @@
 - **혼합 플레이어 게임** — 모든 플레이어 타입을 자유롭게 조합 (전원 AI, 전원 인간, 혼합) — 7인 게임
 - **Moltbook 듀얼 커넥션** — 외부 AI 에이전트가 DM API로 플레이 + X402로 베팅을 동시 수행
 - **로비 시스템** — 게임 시작 전 플레이어 참가, 부족한 인원은 House AI로 자동 보충
-- **모던 React 프론트엔드** — React 19 + TypeScript + Tailwind v4 + Framer Motion 글래스모피즘 UI
+- **모던 React 프론트엔드** — React 19 + TypeScript + Tailwind v4, 플랫 컴포넌트 구조 (6개 화면, 2개 컴포넌트 파일, 통합 Zustand 스토어 1개)
 - **실시간 관전** — WebSocket 기반 대시보드, 애니메이션 페이즈 전환
 - **통합 USDC 베팅 (X402)** — 단일 `POST /api/bets` 엔드포인트, X402 USDC 결제 (Monad 테스트넷)
-- **다이나믹 배당률** — 파리-뮤추얼 베팅 풀 + AI 기반 배당률 (5% 하우스 엣지), AI 70% + 시장 30% 블렌딩
+- **다이나믹 배당률** — 파리뮤추얼 베팅 풀 + AI 기반 배당률 (5% 하우스 엣지), AI 70% + 시장 30% 블렌딩
 - **AI Bettor** — 서버 내부 자율 "하우스 갬블러" — WebSocket 관전 + X402 베팅 (House AI와 같은 레이어)
 - **정체 베팅** — 플레이어의 AI/인간 여부에 베팅 (REVEAL 페이즈에서 정산)
 - **온체인 정산** — USDC가 승자 지갑으로 ERC-20 transfer를 통해 이체
-- **반응형 디자인** — 데스크탑 3컬럼 + 모바일 탭 인터페이스
-- **비주얼 폴리시** — 초상화 캐릭터 카드, 금색 테두리가 있는 카드 내 채팅 버블, 플로팅 이모트 오버레이, 투표 배지, 낮/밤 배경 크로스페이드, 페이즈별 색조 오버레이, 역할 배지 아이콘
+- **반응형 디자인** — 데스크톱 2섹션 레이아웃 (보드 + 채팅/베팅 패널) + 모바일 FAB + 슬라이드 채팅 드로어
+- **비주얼 폴리시** — 초상화 캐릭터 카드 (8개 선택 가능한 아바타), 카드 내 채팅 버블 (5초 자동 제거), 플로팅 이모트 오버레이 (스프링 애니메이션), 투표 수 배지, 낮/밤 배경 크로스페이드 (2초 CSS 전환), 페이즈별 색조 오버레이, 역할 공개 모달, Night Phase 오버레이
 - **OpenAI GPT-4o-mini** — 모든 AI 연산에 사용되는 빠르고 경제적인 모델
 - **불변 아키텍처** — Pydantic v2 frozen 모델, 함수형 상태 전이
 - **Python 236개 + Solidity 46개 테스트** — 총 282개 테스트
@@ -50,12 +50,12 @@ REVEAL → 플레이어 타입 공개, 정체 베팅 정산
 - **All-AI (기본)** — 7명의 House AI 에이전트가 자동 플레이, 관전자는 관전 및 베팅 가능
 - **혼합** — 인간이 로비를 통해 참가, 남은 슬롯은 House AI로 자동 보충
 - **관전자** — 게임 관전 + SpectatorScreen을 통해 베팅, 게임플레이 영향 없음
-- **외부 에이전트** — Moltbook 플랫폼의 자율 AI 에이전트가 DM API로 게임 참가 + X402로 USDC 베팅 동시 수행
+- **외부 에이전트** — Moltbook API 연동을 통해 자율 AI 에이전트 참가
 
 ### 로비 시스템
 플레이어 참가 방법:
-- **인간**: React 로비 화면에서 이름 입력 → "Join Game" 클릭 (WebSocket `join_lobby`)
-- **Moltbook 에이전트**: `POST /api/lobby/join-agent`에 Moltbook Identity JWT 전달 — `X-Moltbook-App-Key` 헤더로 신원 검증 후 `wallet_address` 반환 (이 지갑 주소로 X402 베팅 및 USDC 정산)
+- **인간**: 지갑 연결 → 닉네임 입력 → 아바타 선택 (8개 캐릭터) → React 로비 화면에서 "Enter Lobby" (WebSocket `join_lobby { type: "join_lobby", name }`)
+- **Moltbook 에이전트**: `POST /api/lobby/join-agent`에 Moltbook Identity JWT 전달 — `X-Moltbook-App-Key` 헤더로 신원 검증 후 `wallet_address` 반환 (베팅 및 정산에 사용)
 - **House AI**: 로비 타임아웃 후 남은 자리를 자동으로 채움
 - **타임아웃**: 5분 이내에 7명이 모이지 않으면 자동 보충 후 시작
 
@@ -82,7 +82,7 @@ Moltbook Agent는 **듀얼 커넥션**으로 참여: **커넥션 1** — Moltboo
 ### 베팅 (통합 X402 USDC)
 - **단일 엔드포인트** — 모든 베팅은 `POST /api/bets` + X402 USDC 결제 (칩 베팅 없음)
 - **X402 프로토콜** — Monad 테스트넷(Chain ID 10143) 암호학적 결제 검증
-- **파리-뮤추얼 풀** — 모든 베팅 풀링, 95%를 승자에게 분배 (5% 하우스 엣지)
+- **파리뮤추얼 풀** — 모든 베팅 풀링, 95%를 승자에게 분배 (5% 하우스 엣지)
 - **4가지 베팅 타입** — `side_win`, `next_elimination`, `is_mafia`, `is_ai_or_human`
 - **조기 베팅 보너스** — 라운드 0: 1.5배 가중치, 라운드 1: 1.2배 (조기 참여 인센티브)
 - **AI 배당률 분석** — GPT-4o-mini가 게임 상태를 분석, 시장 배당률과 블렌딩 (70/30)
@@ -162,13 +162,13 @@ npm run deploy:testnet
 배포된 컨트랙트 주소와 X402 설정을 `.env`에 추가:
 ```
 BLOCKCHAIN_ENABLED=true
-BLOCKCHAIN_CONTRACT_ADDRESS=0x...배포된-주소
-BLOCKCHAIN_PRIVATE_KEY=0x...오라클-키
+BLOCKCHAIN_CONTRACT_ADDRESS=0x...your-deployed-address
+BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
 
 X402_ENABLED=true
 X402_FACILITATOR_URL=https://x402-facilitator.molandak.org
 X402_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3
-X402_PAY_TO=0x...서버-지갑-주소
+X402_PAY_TO=0x...your-server-wallet
 ```
 
 ### 작동 원리
@@ -191,7 +191,7 @@ src/                              # Python 백엔드
 ├── players/                      # PlayerProtocol 구현체 (4가지 타입)
 ├── lobby/                        # 로비 매니저
 ├── moltbook/                     # 외부 에이전트 API 클라이언트
-├── betting/                      # 파리-뮤추얼 풀 + AI 배당률
+├── betting/                      # 파리뮤추얼 풀 + AI 배당률
 ├── blockchain/                   # Web3 프로바이더 + 컨트랙트 오라클
 ├── x402/                         # X402 USDC 결제 미들웨어
 ├── ai_bettor/                    # 자율 베팅 에이전트
@@ -199,19 +199,23 @@ src/                              # Python 백엔드
 ├── storage/                      # aiosqlite + 리포지토리
 └── utils/                        # 로깅, 재시도, 에러
 
-frontend/                         # React 19 + TypeScript (54개 소스 파일)
+frontend/                         # React 19 + TypeScript (플랫 구조)
 ├── src/
+│   ├── screens/                  # 화면별 파일 하나씩
+│   │   ├── LandingScreen.tsx     # 지갑 연결 + 닉네임 + 아바타 선택
+│   │   ├── LobbyScreen.tsx       # 플레이어 초상화 그리드 + 진행 바
+│   │   ├── GameScreen.tsx        # 보드 + ChatPanel + 오버레이 (역할 공개, Night Phase, Night Action)
+│   │   ├── SpectatorScreen.tsx   # 보드 + 베팅 터미널 (380px) + 관전자 채팅
+│   │   ├── RevealScreen.tsx      # 3D 카드 플립 정체 공개
+│   │   └── GameOverScreen.tsx    # 승자 발표 + 컨페티 + 플레이어 명단
 │   ├── components/
-│   │   ├── layout/               # Header, GameLayout, MobileTabBar
-│   │   ├── lobby/                # LobbyScreen, PlayerSlot, JoinForm
-│   │   ├── game/                 # GameBoard, PlayerCard (초상화 이미지, CSS-art 아바타 아님), ChatPanel, PhaseOverlay, EmoteMenu, NightOverlay, BettingStatusBar 등
-│   │   ├── betting/              # BettingPanel, OddsBar, BetSlip, SuspectList 등
-│   │   ├── wallet/               # ConnectButton, TxToast
-│   │   ├── screens/              # LandingScreen, SpectatorScreen, RevealScreen, GameOverScreen
-│   │   └── ui/                   # GlassCard, Badge, Button, Confetti, Input, ProgressRing, RoleRevealModal 등
-│   ├── hooks/                    # useWebSocket, useGameState, useWallet 등
-│   ├── stores/                   # Zustand 스토어 (game, chat, betting, wallet)
-│   └── lib/                      # 타입, 상수, WebSocket 클라이언트, 블록체인
+│   │   ├── GameComponents.tsx    # PlayerCard, GamePlayerCard, BettingStatusBar, EmoteMenu, ChatBoard, BettingPanel (스텁)
+│   │   └── UIComponents.tsx      # GlassCard, Button, Input
+│   ├── store.ts                  # 단일 useGameStore (Zustand) — 모든 상태
+│   ├── websocket.ts              # 지수 백오프 재연결이 있는 WebSocket 클라이언트
+│   ├── types.ts                  # ScreenState, GamePhase, Role, Player, Message, Bet, BetType, AVATAR_IMAGES
+│   ├── constants.ts              # AGENTS_DATA (7가지 성격), PHASE_GRADIENTS
+│   └── mappers.ts                # mapPhase, mapRole, mapWinner, buildPlayerFromName
 ├── vite.config.ts
 └── package.json
 
@@ -223,7 +227,7 @@ contracts/                        # Solidity 스마트 컨트랙트
 - 모든 백엔드 모델은 `frozen=True` — 새 객체 생성, 절대 변경 안 함
 - 게임 상태 전이는 새로운 `GameState` 인스턴스 반환
 - 에이전트 메모리는 불변 롤링 윈도우 (최근 10개 이벤트)
-- 프론트엔드는 Zustand 5 + 개별 셀렉터 (React 19 호환)
+- 프론트엔드는 단일 Zustand 스토어 (`useGameStore`)로 모든 게임, 채팅, 베팅, 지갑, WebSocket 상태 통합
 - WebSocket 자동 재연결 (exponential backoff)
 - 페이즈 적응형 UI (배경 그래디언트, 페이즈별 애니메이션 전환)
 - 블록체인/X402는 선택사항 — 지갑 연결 없이도 게임 가능
@@ -266,8 +270,8 @@ contracts/                        # Solidity 스마트 컨트랙트
 - **React 19** + TypeScript — 컴포넌트 기반 SPA
 - **Vite 6** — 빠른 HMR, 최적화 빌드
 - **Tailwind CSS v4** — 유틸리티 퍼스트 스타일링
-- **Framer Motion** — 선언적 애니메이션 (페이즈 전환, stagger 효과)
-- **Zustand 5** — 최소한의 상태 관리 (4개 스토어)
+- **Framer Motion** — 선언적 애니메이션 (화면 전환, 오버레이, 이모트 스프링 애니메이션)
+- **Zustand 5** — 최소한의 상태 관리 (통합 스토어 1개)
 - **Lucide React** — 아이콘
 - **ethers.js v6** — MetaMask + 컨트랙트 상호작용
 
@@ -335,9 +339,9 @@ ws://localhost:8080/ws
 
 ### WebSocket 이벤트 (클라이언트 → 서버)
 ```
-  join_lobby        — { type, name }
-  action_response   — { type, player_name, response }
-  ping              — 킵얼라이브 (30초 간격)
+  join_lobby        — { type: "join_lobby", name }       (player_type 필드 없음)
+  action_response   — { type: "action_response", player_name, response }
+  ping              — { type: "ping" } 킵얼라이브 (25초 간격, 자동 전송)
 ```
 
 ## 📝 개발
@@ -356,7 +360,7 @@ ptw tests/
 
 ### 프로젝트 구조
 - `src/` — Python 백엔드 (API, 게임 엔진, AI 에이전트, 베팅, 블록체인)
-- `frontend/` — React 19 + TypeScript 소스 (54개 소스 파일)
+- `frontend/` — React 19 + TypeScript 소스 (6개 화면, 2개 컴포넌트 파일, 통합 스토어 1개)
 - `static/` — Vite 빌드 출력 (프로덕션에서 FastAPI가 서빙)
 - `tests/` — 테스트 모음 (단위 + 통합 + 목)
 - `contracts/` — Solidity 스마트 컨트랙트
@@ -367,13 +371,16 @@ ptw tests/
 - `src/main.py` — CLI 진입점
 - `src/engine/game_engine.py` — 메인 게임 루프
 - `src/agents/llm_client.py` — OpenAI API 연동
-- `src/betting/pool.py` — 파리-뮤추얼 로직
+- `src/betting/pool.py` — 파리뮤추얼 로직
 - `src/x402/middleware.py` — X402 USDC 결제 검증
 - `src/ai_bettor/client.py` — 자율 베팅 에이전트
 - `src/api/server.py` — FastAPI + WebSocket 서버
-- `frontend/src/App.tsx` — React 앱 루트 (라우팅, WS 연결)
-- `frontend/src/hooks/useWebSocket.ts` — 15개 이상 WS 이벤트 핸들러
-- `frontend/src/stores/gameStore.ts` — Zustand 게임 상태
+- `frontend/src/App.tsx` — React 앱 루트 (ScreenState 열거형으로 화면 라우팅)
+- `frontend/src/store.ts` — 단일 Zustand 스토어 (게임 + 채팅 + 베팅 + 지갑 상태 전체)
+- `frontend/src/websocket.ts` — 지수 백오프 재연결이 있는 WebSocket 클라이언트
+- `frontend/src/screens/GameScreen.tsx` — 보드 + 채팅 패널이 있는 메인 플레이어 화면
+- `frontend/src/screens/SpectatorScreen.tsx` — 베팅 터미널이 있는 관전자 뷰
+- `frontend/src/components/GameComponents.tsx` — PlayerCard, GamePlayerCard, ChatBoard, EmoteMenu, BettingStatusBar
 - `contracts/MafiaBetting.sol` — 온체인 베팅 스마트 컨트랙트
 
 ## 🎯 승리 조건

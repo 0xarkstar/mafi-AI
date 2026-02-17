@@ -95,27 +95,27 @@ cd frontend && npm run dev
 
 ```mermaid
 graph TB
-    subgraph "Frontend (React 19 + TypeScript)"
+    subgraph "프론트엔드 (React 19 + TypeScript)"
         UI[React SPA]
         Vite[Vite Dev Server :5173]
-        Static[Built Files /static/]
+        Static[빌드 파일 /static/]
     end
 
-    subgraph "Backend (Python 3.11 + FastAPI)"
+    subgraph "백엔드 (Python 3.11 + FastAPI)"
         API[REST API :8080]
         WS[WebSocket Manager]
-        Engine[Game Engine]
+        Engine[게임 엔진]
         HouseAI[House AI ×N<br/>GPT-4o-mini]
         AIBet[AI Bettor ×1<br/>GPT-4o-mini]
-        Lobby[Lobby Manager]
-        Betting[Betting Manager]
+        Lobby[로비 매니저]
+        Betting[베팅 매니저]
         DB[(SQLite aiosqlite)]
     end
 
-    subgraph "External Services"
+    subgraph "외부 서비스"
         Blockchain[Monad Testnet<br/>Chain ID 10143]
         X402[X402 Facilitator<br/>USDC Payments]
-        Moltbook[Moltbook API<br/>External Agents]
+        Moltbook[Moltbook API<br/>외부 에이전트]
     end
 
     UI -->|HTTP/WS| API
@@ -166,9 +166,13 @@ graph TB
 | **src/api/** | FastAPI 서버 | `server.py`, `routes.py`, `ws_manager.py` |
 | **src/storage/** | 데이터베이스 레이어 | `database.py` (aiosqlite), `repositories/` |
 | **src/utils/** | 유틸리티 | `logger.py` (structlog), `retry.py`, `errors.py` |
-| **frontend/src/components/** | React UI 컴포넌트 | `layout/`, `lobby/`, `game/`, `betting/`, `wallet/`, `screens/`, `ui/` (37개 .tsx 파일) |
-| **frontend/src/stores/** | Zustand 상태 관리 | `gameStore.ts`, `chatStore.ts`, `bettingStore.ts`, `walletStore.ts` |
-| **frontend/src/hooks/** | React 훅 | `useWebSocket.ts`, `useGameState.ts`, `useWallet.ts` 등 |
+| **frontend/src/screens/** | 화면 단위 React 컴포넌트 | `LandingScreen.tsx`, `LobbyScreen.tsx`, `GameScreen.tsx`, `SpectatorScreen.tsx`, `RevealScreen.tsx`, `GameOverScreen.tsx` |
+| **frontend/src/components/** | 공유 UI 컴포넌트 | `GameComponents.tsx` (PlayerCard, GamePlayerCard, BettingStatusBar, EmoteMenu, ChatBoard), `UIComponents.tsx` (GlassCard, Button, Input) |
+| **frontend/src/store.ts** | 통합 Zustand 상태 | 게임, 채팅, 베팅, 지갑, WebSocket 상태를 모두 관리하는 단일 `useGameStore` |
+| **frontend/src/websocket.ts** | WebSocket 클라이언트 | 지수 백오프 자동 재연결, 25초 ping keepalive |
+| **frontend/src/types.ts** | TypeScript 열거형 & 인터페이스 | `ScreenState`, `GamePhase`, `Role`, `Player`, `Message`, `Bet`, `BetType` |
+| **frontend/src/mappers.ts** | 백엔드 ↔ 프론트엔드 매핑 | `mapPhase`, `mapRole`, `mapWinner`, `buildPlayerFromName` |
+| **frontend/src/constants.ts** | 정적 데이터 | `AGENTS_DATA` (7 에이전트), `PHASE_GRADIENTS` |
 
 ---
 
@@ -176,14 +180,14 @@ graph TB
 
 ```mermaid
 flowchart TD
-    Start([서버 시작]) --> Lobby[LOBBY Phase<br/>플레이어 참가]
+    Start([서버 시작]) --> Lobby[LOBBY 페이즈<br/>플레이어 참가]
 
     Lobby -->|7명 또는 타임아웃| Start_Game{게임 자동 시작}
-    Start_Game -->|역할 배정| Night[NIGHT Phase<br/>마피아 킬<br/>탐정 조사]
+    Start_Game -->|역할 배정| Night[NIGHT 페이즈<br/>마피아 킬<br/>탐정 조사]
 
-    Night --> Day_Discussion[DAY_DISCUSSION Phase<br/>플레이어당 2회 발언<br/>AI Oddsmaker 분석]
+    Night --> Day_Discussion[DAY_DISCUSSION 페이즈<br/>플레이어당 2회 발언<br/>AI Oddsmaker 분석]
 
-    Day_Discussion --> Day_Vote[DAY_VOTE Phase<br/>각 플레이어 투표<br/>과반수가 추방]
+    Day_Discussion --> Day_Vote[DAY_VOTE 페이즈<br/>각 플레이어 투표<br/>과반수가 추방]
 
     Day_Vote --> Win_Check{승리 조건?}
 
@@ -191,10 +195,10 @@ flowchart TD
     Win_Check -->|마피아 ≥ 시민| Mafia_Win[마피아 승리]
     Win_Check -->|게임 계속| Night
 
-    Citizens_Win --> Game_Over[GAME_OVER Phase<br/>승자 발표<br/>side_win 베팅 정산]
+    Citizens_Win --> Game_Over[GAME_OVER 페이즈<br/>승자 발표<br/>side_win 베팅 정산]
     Mafia_Win --> Game_Over
 
-    Game_Over --> Reveal[REVEAL Phase<br/>플레이어 타입 공개<br/>is_ai_or_human 베팅 정산]
+    Game_Over --> Reveal[REVEAL 페이즈<br/>플레이어 타입 공개<br/>is_ai_or_human 베팅 정산]
 
     Reveal --> Settlement{정산<br/>활성화?}
     Settlement -->|Yes| USDC[USDC 전송<br/>온체인으로 승자에게]
@@ -270,53 +274,68 @@ sequenceDiagram
     participant GameEngine
 
     User->>Browser: http://localhost:8080 접속
-    Browser->>Browser: React SPA 로드
+    Browser->>Browser: React SPA 로드 (LandingScreen)
+
+    User->>Browser: "CONNECT WALLET" 클릭
+    Browser->>Browser: MetaMask 프롬프트 OR 시뮬레이션 폴백 (0x71C...9A21)
+    Browser->>Browser: walletConnected = true → 닉네임 단계 표시
+
+    User->>Browser: 닉네임 입력 → "Next" 클릭
+    Browser->>Browser: 아바타 선택 표시 (8개 캐릭터 초상화)
+    User->>Browser: 아바타 선택 → "Enter Lobby" 클릭
+
     Browser->>WebSocket: ws://localhost:8080/ws 연결
     WebSocket-->>Browser: 연결 수립
-
-    User->>Browser: "Join Game" 클릭 + 이름 입력
-    Browser->>WebSocket: join_lobby {type: "human", name: "Alice"} 전송
+    Browser->>WebSocket: join_lobby {type: "join_lobby", name: "Alice"} 전송
     WebSocket->>LobbyManager: HumanPlayer 생성 → join()
-    LobbyManager-->>WebSocket: lobby_joined {name: "Alice", success: true}
-    WebSocket-->>Browser: lobby_status {players: [...], count: 3, ready: false}
-    Browser->>Browser: UI 업데이트: "플레이어 대기 중 (3/7)"
+    LobbyManager-->>WebSocket: lobby_joined {success: true, game_id: "..."}
+    WebSocket-->>Browser: screen = ScreenState.LOBBY
+    WebSocket-->>Browser: lobby_status {players: [...]}
+    Browser->>Browser: LobbyScreen: 플레이어 카드 표시 (채워진 슬롯 + 스캔 중인 슬롯)
 
     LobbyManager->>LobbyManager: 타임아웃 (300초) → fill_with_house_ai()
-    LobbyManager-->>WebSocket: game_starting {player_count: 7}
-    WebSocket-->>Browser: 게임 화면으로 전환
+    LobbyManager-->>WebSocket: game_starting {players: [...]}
+    WebSocket-->>Browser: screen = ScreenState.GAME (역할 공개 모달 표시)
 
     GameEngine->>GameEngine: 무작위 역할 배정 (마피아 2, 탐정 1, 시민 4)
-    GameEngine->>WebSocket: phase_change {phase: "night", round: 0}
-    WebSocket-->>Browser: 밤 배경 크로스페이드, 파란색 틴트, 별 + 달
+    GameEngine->>WebSocket: phase_change {phase: "night", round: 1}
+    WebSocket-->>Browser: 밤 배경 크로스페이드, 파란색 틴트, NIGHT PHASE 오버레이 (달 아이콘 + 텍스트)
 ```
 
 ### 페이즈별 휴먼 플레이어 행동
 
 | 페이즈 | UI | 플레이어 행동 | 타임아웃 (60초 폴백) |
 |-------|------|-------------|--------------|
-| **NIGHT** | 밤 배경, 파란색 틴트 `#0a0e1f/60%`, NightOverlay (Canvas를 통한 별 + 달) | 마피아: 킬 대상 선택. 탐정: 조사 대상 선택. 시민: 행동 없음. | 무작위 대상 |
-| **DAY_DISCUSSION** | 낮 배경, 황갈색 틴트 `#0a0a05/50%` | 2회 발언 (textarea, 200자 제한) | "I have nothing to say." |
-| **DAY_VOTE** | 빨간색 틴트 `#1a0505/70%`, "Voting Time" 오버레이 | 드롭다운에서 후보 선택 | 무작위 후보 |
-| **REVEAL** | 보라색 틴트 `#4c1d95/60%`, 3D 카드 플립 애니메이션 | 플레이어 타입 공개 관람 (AI/Human) | — |
-| **GAME_OVER** | 승자 색상 + confetti (300개 파티클, 3초) | 결과 확인, "Play Again" 클릭 | — |
+| **NIGHT** | `game-bg-night.png` 크로스페이드 (2초 CSS 전환), 파란색 틴트 `#0a0e1f/60%`, 풀스크린 "NIGHT PHASE" 오버레이 (달 아이콘 + 애니메이션 텍스트, 3초 후 자동 닫힘) | 마피아: 모달에서 대상 이름 클릭. 탐정: 모달에서 대상 이름 클릭. 시민: 행동 없음. | 무작위 대상 |
+| **DAY_DISCUSSION** | `game-bg.png` 크로스페이드 (2초 CSS 전환), 황갈색 틴트 `#0a0a05/50%`. ChatBoard 헤더에 "Your Turn to Speak" 표시 | ChatBoard에 발언 입력 → Enter 또는 전송 버튼으로 `action_response` 전송 | "I have nothing to say." |
+| **DAY_VOTE** | 빨간색 틴트 `#1a0505/70%`. 플레이어 카드에 빨간색 호버 오버레이 + 대상 아이콘 표시. 카드 우측 상단에 투표 수 배지. | 살아있는 플레이어 카드 클릭 (cursor-pointer, 빨간색 호버 글로우) | 무작위 후보 |
+| **REVEAL** | 보라색 방사형 그래디언트 배경. 3D 카드 플립 애니메이션 (각 카드 클릭) | 플레이어 카드를 클릭하여 AI/Human 정체 공개. "View Game Results" 클릭으로 진행 | — |
+| **GAME_OVER** | 승자 색상 그래디언트 (빨간색/초록색) + 캔버스 컨페티 (150개 파티클) | 칩 잔액 + 베팅 내역 확인. "Play Again" 또는 "Back to Lobby" 클릭 | — |
 
 **상호작용 프로토콜:**
 
 ```
-서버 → WebSocket: action_request {prompt, actionType, options, timeout: 60}
+서버 → WebSocket: action_request {prompt, action_type, options, timeout: 60}
     ↓
-프론트엔드: ActionPanel 표시 (textarea / 드롭다운 / 버튼 그리드 + ProgressRing 타이머)
+프론트엔드 (GameScreen): action_type에 따라 렌더링:
+  - "statement" → ChatBoard 헤더 = "Your Turn to Speak", submitActionResponse로 전송
+  - "vote" → 플레이어 카드 클릭 가능 (showVoteButtons = true)
+  - "night_action" → 대상 버튼이 있는 풀스크린 Night Action 모달
     ↓
-사용자 제출 → WebSocket: action_response {type, player_name, response}
+사용자 제출 → WebSocket: action_response {type: "action_response", player_name, response}
     ↓
 서버: HumanPlayer._response_future.set_result(response) → GameEngine 처리
 ```
 
-### ActionPanel UI
+### 역할 공개 모달
 
-**데스크톱:** 하단 중앙의 글래스모픽 카드. 액션 타입에 따라 입력 방식 변경. ProgressRing 카운트다운 타이머. 입력 제공 전까지 제출 버튼 비활성화.
+게임 시작 시 `GameScreen`에 즉시 풀스크린 역할 공개 모달이 표시됩니다:
 
-**모바일:** 동일한 레이아웃, 소형 디바이스(`<sm`)에서는 풀스크린 모달.
+- **마피아** — 빨간색 테마, 검 아이콘, "들키지 않고 시민을 제거하세요"
+- **탐정** — 파란색 테마, 눈 아이콘, "매 밤 플레이어 한 명을 조사하세요"
+- **시민** — 초록색 테마, 방패 아이콘, "마피아를 찾아 투표로 추방하세요"
+
+플레이어가 "Start Game"을 탭하면 모달이 닫히고 게임이 시작됩니다.
 
 ---
 
@@ -326,18 +345,43 @@ sequenceDiagram
 
 ### 관전자로 참가하기
 
-1. 랜딩 화면으로 이동
-2. ("Join Game" 대신) "Spectate" 클릭
-3. WebSocket 연결되지만 `join_lobby`는 전송하지 않음
-4. 브로드캐스트로 모든 게임 이벤트 수신 (phase_change, agent_message, vote_cast, elimination 등)
-5. 베팅 터미널을 통해 베팅 가능
+1. 랜딩 화면으로 이동 → 지갑 연결
+2. 닉네임 입력 → "Spectate Match" 클릭 (아바타 선택 대신)
+3. `isSpectator = true`, 화면이 `ScreenState.SPECTATE`로 전환
+4. WebSocket 연결되지만 `join_lobby`는 전송하지 않음 — 관전자는 브로드캐스트 이벤트만 수신
+5. 모든 게임 이벤트 수신 (phase_change, agent_message, vote_cast, elimination 등)
+6. 우측의 베팅 터미널에서 USDC 베팅 가능
 
 ### 관전자 화면 레이아웃
 
-- **플레이어 그리드** (3×3) — 상태를 보여주는 실시간 플레이어 카드
-- **게임 로그** (15개 메시지) — 스크롤 가능한 최근 이벤트
-- **베팅 터미널** — 베팅 타입 탭, 빠른 금액, 페이아웃 계산기
-- **관전자 채팅** — 관전자 전용 메시지를 위한 플로팅 패널
+```
+┌─────────────────────────────────────────────────────────────────┐
+│ [헤더: MAFI-AI | 👁 관전자 | 페이즈 | 라운드 | 타이머 | $USDC | 나가기] │
+├─────────────────────────────────────────┬───────────────────────┤
+│                                         │                       │
+│  게임 보드 (flex-1)                      │  베팅 터미널           │
+│  ┌──────────────────────────────┐       │  (380px 고정)          │
+│  │  PlayerCard × 4 (상단 행)    │       │                       │
+│  │  - 초상화 이미지              │       │  [실시간 배당률]        │
+│  │  - 채팅 버블 오버레이         │       │  마피아 2.86x          │
+│  │  - 이모트 오버레이            │       │  시민 1.54x            │
+│  └──────────────────────────────┘       │                       │
+│  ┌──────────────────────────────┐       │  [베팅 하기 (USDC)]    │
+│  │  PlayerCard × 3 (하단 행)    │       │  베팅 타입 드롭다운     │
+│  └──────────────────────────────┘       │  대상 드롭다운         │
+│                                         │  금액 입력            │
+│  [BettingStatusBar — 하단 중앙]          │  빠른 금액            │
+│                                         │  예상 페이아웃        │
+│  [관전자 채팅 FAB — 좌측 하단]            │  베팅 버튼            │
+│                                         │                       │
+│                                         │  [내 베팅 목록]        │
+│                                         │  [게임 로그 — 15개]   │
+│                                         │                       │
+│                                         │  [X402 Protocol 브랜딩] │
+└─────────────────────────────────────────┴───────────────────────┘
+```
+
+**관전자 채팅**: 좌측 하단 FAB으로 토글하는 플로팅 패널 (340×420px). 다른 시청자의 시뮬레이션 메시지 표시. 닫혀 있을 때 FAB에 읽지 않은 배지 표시.
 
 ---
 
@@ -350,7 +394,7 @@ sequenceDiagram
 | **side_win** | `"citizens"` 또는 `"mafia"` | GAME_OVER 이전 언제든지 | 승자 발표 시 |
 | **next_elimination** | 플레이어 이름 (생존자) | DAY_VOTE 종료 전 | 다음 제거 공개 시 |
 | **is_mafia** | 플레이어 이름 (생존자) | 플레이어 사망 전 | 플레이어 역할 공개 시 |
-| **is_ai_or_human** | `"PlayerName:ai"` 또는 `"PlayerName:human"` | REVEAL 페이즈 전 | REVEAL 페이즈에서 |
+| **is_ai_or_human** | 플레이어 이름 (생존자) | REVEAL 페이즈 전 | REVEAL 페이즈에서 |
 
 ### 파리뮤추얼 페이아웃 로직
 
@@ -402,7 +446,7 @@ sequenceDiagram
     Backend->>Blockchain: 승자에게 USDC 전송 (settlement_enabled인 경우)
     Blockchain-->>Backend: tx_hash
     Backend->>Frontend: usdc_settlement {amount, tx_hash}
-    Frontend->>Frontend: 토스트: "You won $12.50! TX: 0x..."
+    Frontend->>Frontend: 시스템 메시지: "You won $12.50 USDC!"
 ```
 
 ### AI Oddsmaker
@@ -425,7 +469,7 @@ GPT-4o-mini가 매 페이즈 전환 시 게임 상태 분석:
 
 배당률은 블렌딩됨: AI 분석 70% + 실제 베팅 분포에서 도출한 시장 암시 배당률 30%.
 
-모든 연결된 클라이언트의 베팅 UI를 업데이트하기 위해 `odds_update` WebSocket 이벤트를 통해 브로드캐스트.
+모든 연결된 클라이언트의 `BettingStatusBar`와 `SpectatorScreen` 베팅 터미널을 업데이트하기 위해 `odds_update` WebSocket 이벤트를 통해 브로드캐스트.
 
 ---
 
@@ -435,30 +479,29 @@ GPT-4o-mini가 매 페이즈 전환 시 게임 상태 분석:
 
 | 이벤트 | 데이터 필드 | 트리거 | UI 효과 |
 |-------|-------------|---------|-----------|
-| **phase_change** | `phase`, `round` | 페이즈 전환 | 배경 크로스페이드, 틴트 오버레이 업데이트, game_starting을 놓친 경우 게임 화면으로 자동 전환 |
-| **agent_message** | `agent`, `message` | 플레이어 발언 | 플레이어 카드에 채팅 버블 (5초 자동 제거), 채팅 패널 메시지, game_starting을 놓친 경우 게임 화면으로 자동 전환 |
-| **vote_cast** | `voter`, `target` | 플레이어 투표 | 대상 카드에 투표 오버레이, 배지 카운트 증가, 투표 수 추적 |
-| **elimination** | `agent` (또는 `eliminated`), `role`, `reason` | 플레이어 제거 | 플레이어 카드에 해골 오버레이, 역할 공개와 함께 채팅 메시지 |
-| **game_over** | `winner`, `rounds`, `alive_agents`, `payouts` | 게임 종료 | 먼저 reveal 화면으로 전환, 그 다음 confetti + 승자 발표 |
-| **odds_update** | `mafia_win_prob`, `citizen_win_prob`, `mafia_suspects` | Oddsmaker 분석 | 베팅 패널 배당률 표시 업데이트 |
-| **lobby_joined** | `name`, `success` | 플레이어가 로비 참가 | "You joined as {name}" 시스템 메시지 |
-| **lobby_status** | `players`, `count`, `ready` | 로비 상태 변경 | 플레이어 슬롯 업데이트, 카운터 "3/7" |
-| **game_starting** | `players` (name, player_type 포함 배열) | 게임 시작 | 카운트다운 모달 → 게임 화면으로 전환, 플레이어 초기화 |
-| **action_request** | `prompt`, `action_type`, `options`, `timeout` | 플레이어 차례 | ActionPanel (textarea/드롭다운/버튼) + 타이머 (관전자는 건너뜀) |
-| **identity_reveal** | `player_name` (또는 `name`), `player_type`, `all_revealed` | REVEAL 페이즈 | 플레이어 카드 배지 업데이트 (AI/Human 아이콘), all_revealed이면 game_over로 전환 |
-| **bet_placed** | `bet` (객체) | 베팅 확인 | "My Bets" 목록에 추가 |
-| **bet_confirmed** | `bet_id` | 베팅 승리 | 녹색 체크마크, 페이아웃 표시 |
-| **bet_rejected** | `bet_id` | 베팅 패배 | 빨간 X, 손실 표시 |
-| **usdc_settlement** | `transfers` (address, amount, tx_hash 배열) | USDC 페이아웃 | Monad 익스플로러 링크가 있는 토스트 |
-| **pong** | — | Keepalive 응답 | (UI 효과 없음) |
+| **phase_change** | `phase`, `round`, `alive_agents` | 페이즈 전환 | 배경 크로스페이드 (2초 CSS 전환), 틴트 오버레이 업데이트, `alive_agents`에서 사망 플레이어 업데이트, game_starting을 놓친 경우 GAME 화면으로 자동 전환 |
+| **agent_message** | `agent`, `message` | 플레이어 발언 | 플레이어 카드에 채팅 버블 (5초 자동 제거), ChatBoard에 메시지 추가, activeSpeakerId로 카드에 3초간 금색 글로우 강조 |
+| **vote_cast** | `voter`, `target` | 플레이어 투표 | ChatBoard에 시스템 메시지 |
+| **elimination** | `agent` (또는 `eliminated`), `role`, `reason` | 플레이어 제거 | 플레이어 카드에 해골 오버레이 (회색조 초상화), ChatBoard에 빨간 해골 배너와 함께 제거 메시지 |
+| **game_over** | `winner`, `rounds`, `alive_agents`, `payouts` | 게임 종료 | 스토어에 `winner` 설정. REVEAL 화면이 아닌 경우 15초 후 GAME_OVER로 자동 전환 |
+| **odds_update** | `mafia_win_prob`, `citizen_win_prob`, `mafia_suspects` | Oddsmaker 분석 | BettingStatusBar 애니메이션 바, SpectatorScreen 배당률 표시 |
+| **lobby_joined** | `success`, `game_id` | 플레이어가 로비 참가 | screen → ScreenState.LOBBY, connectionStatus → 'connected' |
+| **lobby_status** | `players` (이름 배열) | 로비 상태 변경 | 초상화 카드 또는 스캔 중인 플레이스홀더로 플레이어 슬롯 업데이트 |
+| **game_starting** | `players` (name, player_type 포함 배열) | 게임 시작 | screen → ScreenState.GAME (또는 SPECTATE), 역할 공개 모달 표시 |
+| **action_request** | `prompt`, `action_type`, `options`, `timeout`, `context` | 플레이어 차례 | 스토어에 `currentAction` 설정; 발언 시 ChatBoard = "Your Turn to Speak"; 투표 시 플레이어 카드 클릭 가능; night_action 시 Night Action 모달 |
+| **identity_reveal** | `player_name` (또는 `name`), `role`, `player_type`, `all_revealed` | REVEAL 페이즈 | 플레이어 `isAi` 필드 업데이트; `all_revealed`이면 screen → ScreenState.REVEAL |
+| **bet_confirmed** | `bet_id`, `amount_usdc`, `target` | 베팅 확인 | USDC 베팅 상태 → 'pending', ChatBoard에 시스템 메시지 |
+| **bet_rejected** | `reason` | 베팅 거부 | ChatBoard에 시스템 오류 메시지 |
+| **usdc_settlement** | `bet_id`, `won`, `payout` | USDC 페이아웃 | 베팅 상태 → 'won'/'lost', usdcBalance 업데이트, 시스템 메시지 |
+| **error** | `message` | 서버 오류 | ChatBoard에 오류 시스템 메시지 |
 
 ### 클라이언트 → 서버 이벤트 (3개 이벤트)
 
 | 이벤트 | 데이터 필드 | 트리거 | 목적 |
 |-------|-------------|---------|---------|
-| **join_lobby** | `type` ("human" \| "agent_human"), `name` | "Join Game" 클릭 | 플레이어로 등록 |
-| **action_response** | `type` ("statement" \| "vote" \| "night_action"), `player_name`, `response` | ActionPanel 제출 | 플레이어 결정 전송 |
-| **ping** | — | 30초 간격 | WebSocket 유지 |
+| **join_lobby** | `type: "join_lobby"`, `name` | 아바타 선택 → "Enter Lobby" | 플레이어로 등록 (player type 필드 없음 — 서버가 연결 컨텍스트로 추론) |
+| **action_response** | `type: "action_response"`, `player_name`, `response` | 발언 입력 / 플레이어 카드 클릭 / 밤 행동 선택 | 플레이어 결정을 서버로 전송 |
+| **ping** | `type: "ping"` | 25초 간격 (자동) | WebSocket 유지 — 서버는 `{type: "pong"}`으로 응답 (클라이언트가 무시) |
 
 ---
 
@@ -466,37 +509,36 @@ GPT-4o-mini가 매 페이즈 전환 시 게임 상태 분석:
 
 ```mermaid
 stateDiagram-v2
-    [*] --> landing: 페이지 로드
+    [*] --> LANDING: 페이지 로드
 
-    landing --> lobby: "Play" 또는 "Spectate" 클릭
+    LANDING --> LOBBY: connectAndJoin() 호출<br/>(지갑 + 닉네임 + 아바타 완료)
+    LANDING --> SPECTATE: joinAsSpectator() 호출
 
-    lobby --> game: game_starting 이벤트<br/>(플레이어인 경우)
-    lobby --> spectate: game_starting 이벤트<br/>(관전자인 경우)
+    LOBBY --> GAME: lobby_joined + game_starting 이벤트<br/>(isSpectator = false)
+    LOBBY --> SPECTATE: game_starting 이벤트<br/>(isSpectator = true)
 
-    game --> reveal: phase === "reveal"
-    spectate --> reveal: phase === "reveal"
+    GAME --> REVEAL: identity_reveal (all_revealed=true)
+    SPECTATE --> REVEAL: identity_reveal (all_revealed=true)
 
-    reveal --> game: 다음 라운드 시작<br/>(phase === "night")
-    reveal --> spectate: 다음 라운드 시작<br/>(관전자 뷰)
+    REVEAL --> GAME_OVER: endGame() 호출<br/>("View Game Results" 클릭)
 
-    game --> game_over: game_over 이벤트
-    spectate --> game_over: game_over 이벤트
+    GAME --> GAME_OVER: game_over 이벤트<br/>+ 15초 안전 타임아웃
 
-    game_over --> landing: "Play Again" 클릭
+    GAME_OVER --> LANDING: resetGame() 호출<br/>("Play Again" 또는 "Back to Lobby" 클릭)
 
-    state landing {
-        [*] --> title_screen
-        title_screen --> enter_name: "Join Game" 클릭
-        enter_name --> [*]: 이름 제출
+    state LANDING {
+        [*] --> connect_wallet
+        connect_wallet --> enter_nickname: walletConnected = true
+        enter_nickname --> select_avatar: 닉네임 입력 → "Next"
+        select_avatar --> [*]: 아바타 선택 → "Enter Lobby"
     }
 
-    state lobby {
+    state LOBBY {
         [*] --> waiting
-        waiting --> countdown: 7명 참가
-        countdown --> [*]: 게임 시작
+        waiting --> [*]: game_starting 수신
     }
 
-    state game {
+    state GAME {
         [*] --> night
         night --> day_discussion
         day_discussion --> day_vote
@@ -504,30 +546,30 @@ stateDiagram-v2
         day_vote --> [*]: 승리 조건 충족
     }
 
-    state spectate {
+    state SPECTATE {
         [*] --> watching
         watching --> betting
         betting --> watching
     }
 
-    style landing fill:#3b82f6,stroke:#1e40af,color:#fff
-    style lobby fill:#10b981,stroke:#059669,color:#fff
-    style game fill:#f59e0b,stroke:#d97706,color:#000
-    style spectate fill:#8b5cf6,stroke:#7c3aed,color:#fff
-    style reveal fill:#ec4899,stroke:#db2777,color:#fff
-    style game_over fill:#6b7280,stroke:#4b5563,color:#fff
+    style LANDING fill:#3b82f6,stroke:#1e40af,color:#fff
+    style LOBBY fill:#10b981,stroke:#059669,color:#fff
+    style GAME fill:#f59e0b,stroke:#d97706,color:#000
+    style SPECTATE fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    style REVEAL fill:#ec4899,stroke:#db2777,color:#fff
+    style GAME_OVER fill:#6b7280,stroke:#4b5563,color:#fff
 ```
 
 ### 화면 라우팅 로직
 
-| 화면 | 조건 | 렌더링된 컴포넌트 |
-|--------|-----------|---------------------|
-| **landing** | `gameStore.screen === 'landing'` | `LandingScreen` (깨진 마스크 효과, "Play" / "Spectate" 버튼) |
-| **lobby** | `gameStore.screen === 'lobby'` | `LobbyScreen` (플레이어 슬롯, 카운트다운, "Join Game" 폼) |
-| **game** | `gameStore.screen === 'game' && gameStore.isPlayer` | `GameLayout` (Header, Background, GameBoard, ChatPanel, BettingPanel, ActionPanel) |
-| **spectate** | `gameStore.screen === 'game' && !gameStore.isPlayer` | `SpectatorScreen` (플레이어 그리드, 게임 로그, 베팅 터미널, 관전자 채팅) |
-| **reveal** | `gameStore.phase === 'reveal'` | `RevealScreen` (AI/Human 라벨을 보여주는 3D 카드 플립 애니메이션) |
-| **game_over** | `gameStore.screen === 'game_over'` | `GameOverScreen` (승자 발표, confetti, 최종 베팅, "Play Again") |
+| ScreenState | 조건 | 렌더링된 컴포넌트 |
+|------------|-----------|---------------------|
+| **LANDING** | `screen === ScreenState.LANDING` | `LandingScreen` — 파편화된 마스크 효과, 지갑 연결, 닉네임 + 아바타 선택 |
+| **LOBBY** | `screen === ScreenState.LOBBY` | `LobbyScreen` — 플레이어 초상화 그리드 (7 슬롯), 진행 바, 스캔 중인 플레이스홀더 슬롯 |
+| **GAME** | `screen === ScreenState.GAME` | `GameScreen` — 2섹션 레이아웃: 보드 (플레이어 카드 + BettingStatusBar) + ChatBoard (우측 340px 고정); 로드 시 역할 공개 모달 |
+| **SPECTATE** | `screen === ScreenState.SPECTATE` | `SpectatorScreen` — 보드 + 380px 베팅 터미널 우측 패널, 관전자 채팅 FAB |
+| **REVEAL** | `screen === ScreenState.REVEAL` | `RevealScreen` — 3D 카드 플립 그리드 (4열), 보라색 그래디언트 배경, "탭하여 공개" 카드 |
+| **GAME_OVER** | `screen === ScreenState.GAME_OVER` | `GameOverScreen` — 승자 발표, 캔버스 컨페티, 칩 잔액 + 베팅 수, 플레이어 명단 |
 
 ---
 
@@ -535,167 +577,147 @@ stateDiagram-v2
 
 ```mermaid
 graph TB
-    App[App.tsx]
+    App[App.tsx<br/>AnimatePresence 화면 전환]
 
     App --> Landing[LandingScreen]
     App --> Lobby[LobbyScreen]
-    App --> GameLayout
+    App --> Game[GameScreen]
     App --> Spectate[SpectatorScreen]
     App --> Reveal[RevealScreen]
     App --> GameOver[GameOverScreen]
 
-    Landing --> LandingBG[Shattered Mask Effect]
-    Landing --> PlayBtn[Play / Spectate Buttons]
+    Landing --> LandingBG[파편화된 마스크 SVG 효과<br/>landing-bg.png, 70개 수평 스트립]
+    Landing --> FloatPieces[플로팅 조각 파티클<br/>이음새에서 20개 떠다니는 이미지 파편]
+    Landing --> WalletStep[지갑 연결 단계<br/>MetaMask OR 시뮬레이션 0x71C...9A21]
+    Landing --> NickStep[닉네임 단계<br/>입력 + Next 버튼 + 관전 버튼]
+    Landing --> AvatarStep[아바타 선택 단계<br/>8개 캐릭터 초상화 4×2 그리드]
 
-    Lobby --> LobbySlots[PlayerSlot × 7]
-    Lobby --> JoinForm[JoinForm]
-    Lobby --> Countdown[CountdownModal]
+    Lobby --> LobbyGrid[플레이어 초상화 그리드<br/>PlayerCard × 채워진 슬롯]
+    Lobby --> EmptySlots[스캔 중인 플레이스홀더 슬롯<br/>Loader2 스피너, 점선 테두리]
+    Lobby --> ProgressBar[채우기 진행 바<br/>players.length / 7]
 
-    GameLayout --> Header
-    GameLayout --> Background[Background<br/>day/night images]
-    GameLayout --> PhaseTint[PhaseTintOverlay<br/>blue/amber/red]
-    GameLayout --> NightOverlay[NightOverlay<br/>stars + moon]
-    GameLayout --> GameBoard
-    GameLayout --> ChatPanel
-    GameLayout --> BettingPanel
-    GameLayout --> BettingStatusBar
-    GameLayout --> EmoteMenu
-    GameLayout --> MobileTab[MobileTabBar]
+    Game --> BG[배경 크로스페이드<br/>game-bg.png ↔ game-bg-night.png<br/>2초 CSS transition-opacity]
+    Game --> PhaseTint[페이즈 틴트 오버레이<br/>파란 밤 / 황갈색 낮 / 빨간 투표<br/>2초 CSS transition-all]
+    Game --> NightOverlay[Night Phase 오버레이<br/>달 아이콘 + NIGHT PHASE 텍스트<br/>3초 후 자동 닫힘]
+    Game --> RoleRevealModal[역할 공개 모달<br/>풀스크린, 스프링 애니메이션<br/>검/눈/방패 아이콘 + 설명]
+    Game --> NightActionModal[Night Action 모달<br/>마피아/탐정용 대상 버튼 그리드]
+    Game --> Header[헤더<br/>로고 + 페이즈 배지 + 라운드 + 타이머 + 행동 표시]
+    Game --> Board[게임 보드<br/>flex-1 가운데]
+    Game --> ChatPanel[채팅 패널<br/>우측 340px 고정]
+    Game --> MobileFAB[모바일 채팅 FAB<br/>좌측 하단, md+ 에서 숨김]
+    Game --> MobileDrawer[모바일 채팅 드로어<br/>우측에서 슬라이드, 전체 너비]
 
-    GameBoard --> PlayerCard[PlayerCard × 7]
+    Board --> BSBar[BettingStatusBar<br/>하단 가운데, 배당률 바]
+    Board --> TopRow[상단 행 4열 그리드<br/>GamePlayerCard × 4]
+    Board --> BotRow[하단 행 3열 그리드<br/>GamePlayerCard × 3]
 
-    PlayerCard --> Portrait[Portrait Image<br/>AVATAR_IMAGES array]
-    PlayerCard --> ChatBubble[Chat Bubble Overlay<br/>inside card, gold border]
-    PlayerCard --> EmoteOverlay[Emote Overlay<br/>spring animation]
-    PlayerCard --> VoteOverlay[Vote Overlay<br/>count badge]
-    PlayerCard --> RoleBadge[Role Badge<br/>Sword/Eye/Shield]
-    PlayerCard --> DeadSkull[Dead Skull Overlay]
+    TopRow --> GPC[GamePlayerCard]
+    GPC --> Portrait[초상화 이미지<br/>AVATAR_IMAGES 배열<br/>또는 아이콘 폴백]
+    GPC --> ChatBubble[채팅 버블 오버레이<br/>5초 자동 제거<br/>금색 테두리, 화살표 포인터]
+    GPC --> EmoteOv[이모트 오버레이<br/>스프링 애니메이션, 3초<br/>위로 떠오름]
+    GPC --> VoteOv[투표 오버레이<br/>빨간 호버 글로우 + 대상 아이콘<br/>우측 상단 빨간 배지]
+    GPC --> DeadSkull[사망 해골 오버레이<br/>회색조 초상화 + 해골 아이콘]
+    GPC --> RoleBadge[역할 배지 좌측 상단<br/>검=마피아 / 눈=탐정 / 방패=시민<br/>인간 플레이어만]
 
-    ChatPanel --> Messages[ChatMessage × N]
+    ChatPanel --> ChatBoard[ChatBoard<br/>메시지 + 입력 + EmoteMenu]
+    ChatBoard --> EmoteMenu[EmoteMenu<br/>8개 이모트 팝업 그리드<br/>Smile 버튼으로 트리거]
 
-    BettingPanel --> BetTabs[Bet Type Tabs × 4]
-    BettingPanel --> BetSlip[BetSlip]
-    BettingPanel --> MyBets[My Bets List]
+    Spectate --> SBoard[게임 보드 flex-1]
+    Spectate --> BettingTerminal[베팅 터미널 380px<br/>실시간 배당률 + 베팅 하기 + 내 베팅 + 게임 로그]
+    Spectate --> SpecChatFAB[관전자 채팅 FAB<br/>좌측 하단, 읽지 않은 배지]
+    Spectate --> SpecChatPanel[관전자 채팅 패널<br/>340×420px 팝업, 시뮬레이션 메시지]
 
-    Spectate --> SpectGrid[Player Grid 3×3]
-    Spectate --> GameLog[Game Log 15 msgs]
-    Spectate --> BetTerminal[Betting Terminal]
-    Spectate --> SpecChat[Spectator Chat<br/>floating panel]
+    Reveal --> RevealCards[RevealCard × 7<br/>클릭 시 3D 플립]
+    RevealCards --> FrontFace[앞면: 초상화 + 이름 + 탭하여 공개]
+    RevealCards --> BackFace[뒷면: AI/Human 라벨 + 역할 배지]
 
-    BetTerminal --> QuickAmounts[Quick Amount Buttons]
-    BetTerminal --> PayoutCalc[Payout Calculator]
-
-    Reveal --> CardFlip[3D Card Flip Animation × 7]
-
-    GameOver --> WinnerMsg[Winner Announcement]
-    GameOver --> Confetti[Canvas Confetti]
-    GameOver --> FinalBets[Final Bet Results]
+    GameOver --> Confetti[캔버스 컨페티<br/>150개 파티클, 중력 시뮬레이션]
+    GameOver --> WinnerCard[GlassCard<br/>트로피 아이콘 + 승자 텍스트]
+    GameOver --> PlayerRoster[플레이어 명단 그리드<br/>생존/사망 상태 + 역할 라벨]
 
     style App fill:#3b82f6,stroke:#1e40af,color:#fff
-    style GameLayout fill:#10b981,stroke:#059669,color:#fff
-    style PlayerCard fill:#f59e0b,stroke:#d97706,color:#000
+    style Game fill:#10b981,stroke:#059669,color:#fff
+    style GPC fill:#f59e0b,stroke:#d97706,color:#000
     style Portrait fill:#ec4899,stroke:#db2777,color:#fff
     style ChatBubble fill:#fbbf24,stroke:#f59e0b,color:#000
-    style BettingPanel fill:#8b5cf6,stroke:#7c3aed,color:#fff
+    style BettingTerminal fill:#8b5cf6,stroke:#7c3aed,color:#fff
     style Spectate fill:#06b6d4,stroke:#0891b2,color:#fff
 ```
 
 ---
 
-## 상태 관리 (4개의 Zustand 스토어)
+## 상태 관리 (통합 Zustand 스토어 1개)
 
-### 1. gameStore
+프론트엔드는 **단일 Zustand 스토어** (`store.ts`)를 사용하여 모든 게임, UI, WebSocket, 베팅, 지갑 상태를 하나의 `useGameStore` 훅으로 관리합니다.
 
 ```typescript
-interface GameStore {
-  // 핵심 게임 상태
-  phase: Phase
-  round: number
-  players: Record<string, Player>
-  votes: Vote[]
-  winner: string | null  // "citizens" | "mafia"
-
-  // 플레이어 정체성
-  isPlayer: boolean
-  myPlayerName: string | null
-
-  // 로비 상태
-  lobbyPlayers: string[]
-  lobbyCount: number
-  lobbyReady: boolean
-
-  // 행동 요청
-  actionRequest: ActionRequest | null
-
+interface GameState {
   // 화면 라우팅
-  screen: 'landing' | 'lobby' | 'game' | 'game_over'
+  screen: ScreenState;        // LANDING | LOBBY | GAME | SPECTATE | REVEAL | GAME_OVER
 
-  // 사용자 환경설정
-  nickname: string
-  avatarIndex: number
-  isSpectator: boolean
+  // 게임 상태
+  phase: GamePhase;           // DAY_DISCUSSION | DAY_VOTE | NIGHT | REVEAL
+  round: number;
+  players: Player[];
+  winner: 'Mafia' | 'Citizens' | null;
+  activeEmotes: Record<string, string>;  // playerId → emoji (3초 후 자동 제거)
 
-  // 시각 효과
-  activeEmotes: Record<string, { emoji: string; timeout: ReturnType<typeof setTimeout> }>
-  chatBubbles: Record<string, string>
-  voteCounts: Record<string, number>       // target → count
-  showVoteUI: boolean
-  selectedVoteTarget: string | null
+  // 채팅 / 메시지
+  messages: Message[];        // 채팅 + 시스템 + 제거 + game_over 통합 로그
 
-  // WebSocket 전송자
-  wsSend: (data: Record<string, unknown>) => void
+  // 베팅 상태
+  bets: Bet[];                // 칩 베팅 (로컬 전용)
+  usdcBets: USDCBet[];        // 로컬 추적 USDC 베팅
+  usdcBalance: number;        // 시작 잔액 50.0 USDC
+
+  // 지갑 / 인증
+  walletConnected: boolean;
+  walletAddress: string | null;
+  balance: number;            // 칩 잔액 (시작 1000)
+  nickname: string;
+  avatarIndex: number | null;
+
+  // WebSocket 통합
+  connectionStatus: 'disconnected' | 'connecting' | 'connected';
+  gameId: string | null;
+  playerName: string;
+  currentAction: ActionRequest | null;  // 서버에서 온 pending action_request
+  odds: OddsData | null;               // 최신 odds_update 데이터
+  isSpectator: boolean;
+
+  // 액션 (스토어 메서드)
+  connectWallet: () => Promise<void>;
+  connectAndJoin: (nickname: string, avatarIndex: number) => void;
+  joinAsSpectator: () => void;
+  handleWSEvent: (event: any) => void;
+  submitActionResponse: (response: string) => void;
+  addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void;
+  placeBet: (amount: number, target: 'Mafia' | 'Citizens') => void;
+  placeBetUSDC: (betType: BetType, target: string, amount: number) => void;
+  triggerEmote: (playerId: string, emote: string) => void;
+  triggerReveal: () => void;
+  endGame: () => void;
+  resetGame: () => void;
 }
 ```
 
-### 2. chatStore
+### 주요 상태 전환
 
-```typescript
-interface ChatStore {
-  messages: ChatMessage[]
-  addMessage: (message: ChatMessage) => void
-  addSystemMessage: (text: string, type?: 'system' | 'elimination' | 'game-over') => void
-  clearMessages: () => void
-}
-
-interface ChatMessage {
-  id: string
-  agent: string
-  message: string
-  timestamp: number
-  type: 'agent' | 'system' | 'elimination' | 'game-over'
-}
-```
-
-### 3. bettingStore
-
-```typescript
-interface BettingStore {
-  odds: OddsBoard | null
-  bets: Bet[]
-  balance: number  // USDC 잔액
-
-  setOdds: (odds: OddsBoard) => void
-  addBet: (bet: Bet) => void
-  updateBetStatus: (betId: string, status: BetStatus) => void
-  setBalance: (balance: number) => void
-}
-```
-
-### 4. walletStore
-
-```typescript
-interface WalletStore {
-  connected: boolean
-  address: string | null
-  balance: string | null  // USDC 잔액
-  txStatus: 'idle' | 'pending' | 'success' | 'error'
-
-  connect: () => Promise<void>
-  disconnect: () => void
-  placeBet: (betData: BetData) => Promise<string>
-  claimWinnings: (gameId: string) => Promise<string>
-}
-```
+| 액션 | 스토어 변경 |
+|--------|-------------|
+| `connectWallet()` | MetaMask 또는 시뮬레이션 → `walletConnected = true, walletAddress = "0x..."` |
+| `connectAndJoin(nick, avatar)` | WebSocket 열기, `onOpen` 시 `join_lobby` 전송 |
+| `joinAsSpectator()` | `isSpectator = true, screen = SPECTATE`, WebSocket 열기 (`join_lobby` 없음) |
+| `handleWSEvent("lobby_joined")` | `screen = LOBBY, gameId = ...` |
+| `handleWSEvent("game_starting")` | `screen = GAME` (또는 `SPECTATE`), 플레이어 채우기 |
+| `handleWSEvent("phase_change")` | `phase` 업데이트, `alive_agents`에서 사망 플레이어 재계산 |
+| `handleWSEvent("agent_message")` | `messages[]`에 메시지 추가 |
+| `handleWSEvent("action_request")` | `currentAction` 설정 (관전자는 무시) |
+| `submitActionResponse(text)` | `action_response` WS 메시지 전송, `currentAction` 초기화 |
+| `handleWSEvent("game_over")` | `winner` 설정; 안전 타임아웃 → 15초 후 `screen = GAME_OVER` |
+| `handleWSEvent("identity_reveal")` | 플레이어 `isAi` 업데이트; `all_revealed`이면 `screen = REVEAL` |
+| `endGame()` | `screen = GAME_OVER` |
+| `resetGame()` | WebSocket 연결 해제, 모든 상태 초기값으로 재설정, `screen = LANDING` |
 
 ---
 
@@ -703,82 +725,113 @@ interface WalletStore {
 
 | 페이즈 | 배경 | 틴트 오버레이 | 특수 효과 |
 |-------|-----------|-------------|----------------|
-| **lobby** | — | — | — |
-| **night** | `game-bg-night.png` (2초 크로스페이드) | 파란색 `#0a0e1f/60%` | NightOverlay (Canvas를 통한 애니메이션 별 + 달) |
-| **day_discussion** | `game-bg.png` (2초 크로스페이드) | 황갈색 `#0a0a05/50%` | — |
-| **day_vote** | `game-bg.png` | 빨간색 `#1a0505/70%` | "Voting Time" 투표 오버레이 |
-| **reveal** | `game-bg.png` | 보라색 `#4c1d95/60%` | 3D 카드 플립 애니메이션 (AI/Human 표시) |
-| **game_over** | `game-bg.png` | 에메랄드 `#064e3b/60%` (시민) 또는 빨간색 `#7f1d1d/60%` (마피아) | Canvas confetti (300개 파티클, 3초) |
+| **lobby** | 방사형 인디고 그래디언트 | — | 진행 바 애니메이션 |
+| **night** | `game-bg-night.png` (크로스페이드, 2초 CSS `transition-opacity`) | 파란색 `#0a0e1f/60%` (2초 CSS 전환) | NightOverlay: 회전하는 달 아이콘 + "NIGHT PHASE" 텍스트가 있는 풀스크린 블랙 모달, 3초 후 자동 닫힘 |
+| **day_discussion** | `game-bg.png` (크로스페이드, 2초 CSS `transition-opacity`) | 황갈색 `#0a0a05/50%` (2초 CSS 전환) | — |
+| **day_vote** | `game-bg.png` | 빨간색 `#1a0505/70%` (2초 CSS 전환) | 플레이어 카드에 빨간 호버 글로우, 투표 수 배지 |
+| **reveal** | 보라색 방사형 그래디언트 배경 | — | 클릭 시 3D 카드 플립 애니메이션 (CSS `rotateY(180deg)`) |
+| **game_over** | 에메랄드 그래디언트 (시민) 또는 빨간색 그래디언트 (마피아) | `opacity-40` 그래디언트 | 캔버스 컨페티 (150개 파티클, 중력 시뮬레이션) |
 
-### 배경 크로스페이드
+### 배경 크로스페이드 구현
 
-```typescript
-const backgroundVariants = {
-  day: {
-    backgroundImage: 'url(/game-bg.png)',
-    transition: { duration: 2, ease: 'easeInOut' }
-  },
-  night: {
-    backgroundImage: 'url(/game-bg-night.png)',
-    transition: { duration: 2, ease: 'easeInOut' }
-  }
-}
+배경 크로스페이드는 CSS `transition-opacity`를 사용하는 두 개의 겹친 `<img>` 요소로 구현됩니다 — framer-motion이 아님:
 
-<motion.div variants={backgroundVariants} animate={phase === 'night' ? 'night' : 'day'} />
+```tsx
+{/* 낮 배경 */}
+<img
+  src="/images/game-bg.png"
+  className={`absolute inset-0 w-full h-full object-cover z-0
+    transition-opacity duration-[2000ms]
+    ${phase === GamePhase.NIGHT ? 'opacity-0' : 'opacity-100'}`}
+/>
+{/* 밤 배경 */}
+<img
+  src="/images/game-bg-night.png"
+  className={`absolute inset-0 w-full h-full object-cover z-0
+    transition-opacity duration-[2000ms]
+    ${phase === GamePhase.NIGHT ? 'opacity-100' : 'opacity-0'}`}
+/>
+{/* 페이즈 틴트 오버레이 */}
+<div className={`absolute inset-0 transition-all duration-[2000ms]
+  ${phase === GamePhase.NIGHT ? 'bg-[#0a0e1f]/60' :
+    phase === GamePhase.DAY_VOTE ? 'bg-[#1a0505]/70' :
+    'bg-[#0a0a05]/50'}`}
+/>
 ```
 
 ---
 
 ## 데스크톱 & 모바일 레이아웃
 
-### 데스크톱 (lg+)
+### 데스크톱 (md+)
 
+**GameScreen:**
 ```
 ┌──────────────────────────────────────────────────────────────────┐
-│ [Header: 로고 | 페이즈 배지 | 라운드 | 타이머]                      │
-├────────────────┬─────────────────────┬───────────────────────────┤
-│ PLAYERS        │ GAME BOARD          │ BETTING                   │
-│ (280px 고정)   │ (flex-1)            │ (320px 고정)              │
-│                │                     │                           │
-│ [PlayerCard]   │ ┌─────────────────┐ │ [베팅 타입 탭]             │
-│ [PlayerCard]   │ │ PlayerCard × 7  │ │ [대상 드롭다운]            │
-│ [PlayerCard]   │ │ (초상화 이미지)   │ │ [빠른 금액]               │
-│ [PlayerCard]   │ │ 채팅 버블        │ │ [페이아웃 계산기]          │
-│ [PlayerCard]   │ │ 이모트 오버레이   │ │ [Place Bet 버튼]          │
-│ [PlayerCard]   │ │ 투표 배지        │ │ [My Bets 목록]            │
-│ [PlayerCard]   │ └─────────────────┘ │                           │
-│                │                     │ [ODDS BAR]                │
-│ [CHAT PANEL]   │                     │ Citizens 65% | Mafia 35%  │
-└────────────────┴─────────────────────┴───────────────────────────┘
-│ [BettingStatusBar — 하단 중앙, 80% 너비]                          │
-│ Current Bets: 3 | Total Wagered: $12 | Est. Payout: $18.50      │
-└──────────────────────────────────────────────────────────────────┘
+│ [헤더: 로고 | 페이즈 배지 + 라운드 + 타이머 | 행동 표시기]           │
+├──────────────────────────────────────────────┬───────────────────┤
+│                                              │                   │
+│  게임 보드 (flex-1)                           │  채팅 패널        │
+│                                              │  (340px 고정)     │
+│  ┌──────────────────────────────────┐        │                   │
+│  │  GamePlayerCard × 4 (상단 행)    │        │  [헤더:           │
+│  │  - 초상화 이미지                  │        │   Encrypted       │
+│  │  - 채팅 버블 오버레이             │        │   Channel /       │
+│  │  - 이모트 오버레이               │        │   Your Turn       │
+│  │  - 투표 배지 우측 상단           │        │   to Speak]       │
+│  │  - 역할 배지 좌측 상단           │        │                   │
+│  │  - 사망 시 해골                  │        │  [메시지]          │
+│  └──────────────────────────────────┘        │                   │
+│  ┌──────────────────────────────────┐        │  [이모트 버튼]     │
+│  │  GamePlayerCard × 3 (하단 행)    │        │  [입력 + 전송]     │
+│  └──────────────────────────────────┘        │                   │
+│                                              │                   │
+│  [BettingStatusBar — 하단 가운데]             │                   │
+│  마피아 2.86x |======---| 시민 1.54x          │                   │
+└──────────────────────────────────────────────┴───────────────────┘
 ```
 
-### 모바일 (<lg)
-
+**SpectatorScreen:**
 ```
-┌──────────────────────────┐
-│ [Header]                 │
-├──────────────────────────┤
-│                          │
-│ [PlayerCard 그리드 2×4]   │
-│ - 초상화 이미지            │
-│ - 카드 내부 채팅 버블       │
-│ - 이모트 오버레이          │
-│ - 투표 배지               │
-│                          │
-├──────────────────────────┤
-│ [하단 탭 바]              │
-│ [Game] [Chat] [Bet]      │
-└──────────────────────────┘
-
-탭 1: Game — PlayerCard 그리드 + ActionPanel
-탭 2: Chat — 풀스크린 채팅 메시지
-탭 3: Bet  — 베팅 터미널 + 배당률 + My Bets
+┌──────────────────────────────────────────────┬───────────────────┐
+│  게임 보드 (flex-1)                           │ 베팅 터미널       │
+│  (GameScreen과 동일한 플레이어 그리드)          │ (380px 고정)     │
+│                                              │                   │
+│  [관전자 채팅 FAB — 좌측 하단]                │ [실시간 배당률]   │
+│                                              │ [베팅 하기]       │
+│                                              │ [내 베팅]         │
+│                                              │ [게임 로그]       │
+└──────────────────────────────────────────────┴───────────────────┘
 ```
 
-MobileTabBar: 하단 고정, 3개 탭 (Users, MessageCircle, DollarSign 아이콘), `<lg` 브레이크포인트에서만 표시.
+### 모바일 (<md)
+
+**GameScreen 모바일:**
+```
+┌──────────────────────────────┐
+│ [헤더]                        │
+│                              │
+│ [GamePlayerCard 그리드 2×2+]  │
+│ - 채팅 버블                   │
+│ - 이모트 오버레이              │
+│ - 투표 배지                   │
+│                              │
+│ [BettingStatusBar]           │
+│                              │
+│ [채팅 FAB — 좌측 하단 ●]      │
+└──────────────────────────────┘
+
+FAB 탭 시 → 채팅 드로어가 우측에서 슬라이드 (전체 너비):
+┌──────────────────────────────┐
+│ [Encrypted Channel]    [✕]   │
+│                              │
+│ [메시지 스크롤 영역]           │
+│                              │
+│ [😊] [입력            ] [▶]  │
+└──────────────────────────────┘
+```
+
+모바일 탭 바 없음 — 모바일 채팅은 FAB + 전체 너비 슬라이드 드로어.
 
 ---
 
@@ -793,7 +846,7 @@ X402_ENABLED=true
 X402_FACILITATOR_URL=https://x402-facilitator.molandak.org
 X402_NETWORK=eip155:10143
 X402_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3
-X402_PAY_TO=0x...your-server-wallet
+X402_PAY_TO=0x...서버-지갑-주소
 ```
 
 필요사항: Monad 테스트넷의 USDC, X402 facilitator 서비스, MetaMask (휴먼용).
@@ -837,7 +890,7 @@ AI_BETTOR_PRIVATE_KEY=0x...optional
 | 문제 | 원인 | 해결 방법 |
 |-------|-------|-----|
 | **OpenAI API 오류** | 잘못된 키, 속도 제한 | `.env`에서 OPENAI_API_KEY 확인, 할당량 검증 |
-| **WebSocket 연결 끊김** | 네트워크 불안정 | 지수 백오프로 자동 재연결 (내장) |
+| **WebSocket 연결 끊김** | 네트워크 불안정 | 지수 백오프로 자동 재연결 (내장, 최대 10초 지연) |
 | **프론트엔드가 로드되지 않음** | 빌드가 실행되지 않음 | `cd frontend && npm run build` |
 | **로비에서 멈춤** | 플레이어 부족, 타임아웃 미도달 | 타임아웃 대기 또는 더 많은 플레이어 추가 |
 | **/api/bets에서 402** | X402가 활성화되지 않았거나 결제 헤더 없음 | `.env`에서 `X402_ENABLED=true` 설정 |
@@ -846,7 +899,8 @@ AI_BETTOR_PRIVATE_KEY=0x...optional
 | **블록체인 tx 실패** | MON 부족 | faucet에서 MON 받기, Chain ID 10143 확인 |
 | **AI Bettor가 베팅하지 않음** | 확신도 < 0.6, 잘못된 페이즈, 쿨다운 | 로그에서 확신도 점수 확인 |
 | **Moltbook 에이전트 참가 실패** | 잘못된 JWT, 잘못된 앱 키 | `MOLTBOOK_APP_KEY`와 에이전트 등록 검증 |
-| **자동 전환이 작동하지 않음** | 클라이언트가 game_starting/agent_message를 놓침 | useWebSocket.ts에서 폴백 구현 (phase_change/agent_message 시 화면 상태 확인) |
+| **자동 전환이 작동하지 않음** | 클라이언트가 game_starting를 놓침 | phase_change 핸들러가 LOBBY/LANDING인 경우 GAME 화면으로 자동 전환 |
+| **채팅 메시지가 전송되지 않음** | 활성 `action_request` 없음 | 로컬 메시지는 턴이 아닐 때 로컬에만 표시; `action_response`는 `currentAction`이 설정된 경우에만 전송 |
 
 ---
 
@@ -854,8 +908,8 @@ AI_BETTOR_PRIVATE_KEY=0x...optional
 
 - **AsyncIO**: 모든 I/O가 비동기 (OpenAI API, SQLite, WebSocket)
 - **지연 평가**: 페이즈 전환 시에만 배당률 계산
-- **개별 셀렉터**: Zustand 셀렉터로 불필요한 재렌더링 방지
-- **Canvas 렌더링**: NightOverlay는 Canvas API 사용 (DOM 아님)
+- **단일 스토어 셀렉터**: 구조 분해를 통한 `useGameStore()`로 불필요한 리렌더링 방지
+- **CSS 전환**: 배경 크로스페이드에 `transition-opacity` 사용 (JS 애니메이션 루프 없음)
 - **GPT-4o-mini**: 게임당 ~$0.05 (~100회 API 호출)
 - **SQLite**: 데이터베이스 호스팅 비용 제로
 
