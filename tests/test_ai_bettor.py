@@ -584,6 +584,27 @@ async def test_client_lifecycle():
     assert client._running is False
 
 
+def test_ai_bettor_client_x402_transport():
+    """AIBettorClient uses x402 transport when private_key provided."""
+    mock_x402_client = MagicMock()
+    mock_x402_module = MagicMock()
+    mock_x402_module.create_x402_httpx_client.return_value = mock_x402_client
+
+    with patch.dict("sys.modules", {
+        "x402": MagicMock(),
+        "x402.clients": MagicMock(),
+        "x402.clients.httpx": mock_x402_module,
+    }):
+        client = AIBettorClient(
+            ws_url="ws://localhost:8080/ws",
+            api_url="http://localhost:8080",
+            api_key="test-key",
+            budget_usdc=Decimal("50.00"),
+            private_key="0x" + "a" * 64,
+        )
+        assert client.http_client is mock_x402_client
+
+
 @pytest.mark.asyncio
 async def test_client_place_bet_updates_state():
     """Should update state immutably after successful bet."""

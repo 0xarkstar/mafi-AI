@@ -442,3 +442,35 @@ Remove wallet connection, simplify onboarding to single step, add server game lo
 - Frontend flow: LANDING → LOBBY → GAME → GAME_OVER → (Play Again → LOBBY | Back to Home → LANDING)
 
 ## Pipeline Complete
+
+---
+
+## Phase 2: Wire Frontend Betting, Deprecate V1, X402 Signing, Deploy Prep — 2026-02-18
+
+### Goal
+Fix 4 remaining issues: frontend betting not wired, V1 dead code, AI Bettor can't sign X402, V2 deploy scripts missing.
+
+### P1 Implementation — COMPLETE
+- Started: 2026-02-18
+- Team: p-impl-frontend (sonnet), p-impl-python (sonnet), p-test-writer (sonnet)
+
+| Agent | Files | Status |
+|-------|-------|--------|
+| p-impl-frontend | frontend/src/store.ts | Done |
+| p-impl-python | server.py, client.py, main.py, contract.py (deleted), package.json | Done |
+| p-test-writer | test_api.py, test_ai_bettor.py, test_blockchain.py, CLAUDE.md | Done |
+
+### Changes
+1. **Frontend betting wired** — `placeBetUSDC()` in store.ts now sends `sendWS({ type: 'place_bet', ... })` after local state update
+2. **WS bet processing** — server.py `place_bet` handler calls `betting_manager.place_bet()`, sends `bet_confirmed`/`bet_rejected`
+3. **V1 contract deleted** — `src/blockchain/contract.py` removed, `TestMafiaBettingContract` removed (-2 tests)
+4. **X402 transport** — AIBettorClient accepts `private_key`, creates x402 httpx client for auto 402 handling
+5. **V2 deploy scripts** — `deploy-v2:testnet` and `deploy-v2:local` added to package.json
+6. **main.py** — passes `private_key` from settings to AIBettorClient
+
+### Test Results
+- **308 Python tests**, all passing
+- **90 Hardhat tests** (unchanged)
+- **398 total tests**
+
+## Pipeline Complete

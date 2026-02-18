@@ -491,7 +491,6 @@ except ValueError:
 - **Provider**: AsyncWeb3 with POA middleware for Monad testnet
 - **Gateway**: `BlockchainGateway` handles V2 commit-reveal lifecycle (commit_roles → lock_betting → settle_game)
 - **V2 Contract**: `MafiaBettingV2.sol` — bytes32 gameId, 4 bet types, oracle settlement, pull-payment (`claimPayout`)
-- **V1 Contract**: `MafiaBetting.sol` (legacy, untouched)
 - **Frontend**: MetaMask + ethers.js v6 for direct contract betting
 - **Fallback**: Blockchain disabled by default, chip betting always available
 
@@ -545,7 +544,6 @@ src/
 ├── blockchain/
 │   ├── __init__.py
 │   ├── provider.py              # AsyncWeb3 + POA middleware
-│   ├── contract.py              # V1 contract (legacy)
 │   └── gateway.py               # V2 BlockchainGateway (commit-reveal, lock, settle)
 ├── x402/
 │   ├── __init__.py
@@ -626,9 +624,9 @@ pyproject.toml                   # Dependencies, pytest config
 - **Async Support** — pytest-asyncio for all async code
 
 ### Test Counts
-- **Python**: 290 tests passing
+- **Python**: 308 tests passing
 - **Solidity**: 90 tests passing (Hardhat — 34 V1 + 56 V2)
-- **Total**: 380 tests
+- **Total**: 398 tests
 
 ### Running Tests
 ```bash

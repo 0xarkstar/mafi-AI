@@ -442,22 +442,47 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                     else:
                         ws_manager.resolve_response(player_name, response)
 
-                # Handle bet placement from client (redirect to REST API)
                 elif data.get("type") == "place_bet":
-                    log.info("bet_request_via_websocket", data=data)
+                    log.info("bet_via_ws", data=data)
+                    from decimal import Decimal as D
 
-                    # WebSocket is for spectating only, not betting
-                    # Direct users to use the REST API with X402 payment
-                    await ws.send_json(
-                        {
-                            "type": "bet_info",
-                            "data": {
-                                "message": "Betting is via REST API only",
-                                "endpoint": "POST /api/bets",
-                                "instructions": "Use X402 payment protocol to place bets",
-                            },
-                        }
-                    )
+                    try:
+                        betting_mgr = app.state.betting_manager
+                        if not betting_mgr:
+                            await ws.send_json({
+                                "type": "bet_rejected",
+                                "data": {"reason": "Betting not enabled"},
+                            })
+                            continue
+
+                        bet = betting_mgr.place_bet(
+                            bettor_address=f"ws:{id(ws)}",
+                            bet_type=data.get("bet_type"),
+                            target=data.get("target"),
+                            amount_usdc=D(str(data.get("amount_usdc", 0))),
+                            round_number=data.get("round", 0),
+                            tx_hash=None,
+                        )
+                        if bet:
+                            await ws.send_json({
+                                "type": "bet_confirmed",
+                                "data": {
+                                    "bet_id": data.get("bet_id"),
+                                    "bet_type": bet.bet_type.value,
+                                    "target": bet.target,
+                                    "amount_usdc": float(bet.amount),
+                                },
+                            })
+                        else:
+                            await ws.send_json({
+                                "type": "bet_rejected",
+                                "data": {"reason": "Invalid bet parameters"},
+                            })
+                    except Exception as exc:
+                        await ws.send_json({
+                            "type": "bet_rejected",
+                            "data": {"reason": str(exc)},
+                        })
 
                 # Echo for debugging
                 elif data.get("type") == "ping":

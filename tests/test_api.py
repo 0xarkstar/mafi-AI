@@ -265,88 +265,71 @@ class TestWebSocket:
 
             assert response["type"] == "pong"
 
-    def test_websocket_place_bet_redirects_to_rest(self, client, betting_manager):
-        """Test placing bet via WebSocket returns redirect to REST API."""
+    def test_ws_place_bet_confirmed(self, client, betting_manager):
+        """Test WS place_bet returns bet_confirmed on success."""
         routes.set_betting_manager(betting_manager)
 
-        with client.websocket_connect("/ws") as websocket:
-            websocket.send_json(
-                {
-                    "type": "place_bet",
-                    "bet_type": "side_win",
-                    "target": "mafia",
-                    "amount": 100,
-                    "round": 0,
-                }
-            )
+        # Mock place_bet to return a bet
+        mock_bet = MagicMock()
+        mock_bet.bet_type = BetType.SIDE_WIN
+        mock_bet.target = "mafia"
+        mock_bet.amount = Decimal("5.00")
+        betting_manager.place_bet = MagicMock(return_value=mock_bet)
 
+        with client.websocket_connect("/ws") as websocket:
+            websocket.send_json({
+                "type": "place_bet",
+                "bet_id": "test-bet-1",
+                "bet_type": "side_win",
+                "target": "mafia",
+                "amount_usdc": 5.0,
+                "round": 0,
+            })
             response = websocket.receive_json()
 
-            # WebSocket betting now redirects to REST API
-            assert response["type"] == "bet_info"
-            assert "data" in response
-            assert "REST API" in response["data"]["message"]
-            assert response["data"]["endpoint"] == "POST /api/bets"
+        assert response["type"] == "bet_confirmed"
+        assert response["data"]["bet_id"] == "test-bet-1"
+        assert response["data"]["bet_type"] == "side_win"
+        assert response["data"]["target"] == "mafia"
+        assert response["data"]["amount_usdc"] == 5.0
 
-    def test_websocket_place_bet_redirects_regardless_of_amount(self, client, betting_manager):
-        """Test WebSocket bet redirect works for any amount."""
+    def test_ws_place_bet_rejected(self, client, betting_manager):
+        """Test WS place_bet returns bet_rejected when bet fails."""
         routes.set_betting_manager(betting_manager)
+        betting_manager.place_bet = MagicMock(return_value=None)
 
         with client.websocket_connect("/ws") as websocket:
-            websocket.send_json(
-                {
-                    "type": "place_bet",
-                    "bet_type": "side_win",
-                    "target": "mafia",
-                    "amount": 10000,
-                    "round": 0,
-                }
-            )
-
+            websocket.send_json({
+                "type": "place_bet",
+                "bet_id": "test-bet-2",
+                "bet_type": "side_win",
+                "target": "mafia",
+                "amount_usdc": 5.0,
+                "round": 0,
+            })
             response = websocket.receive_json()
 
-            # Always redirects to REST API
-            assert response["type"] == "bet_info"
-            assert "REST API" in response["data"]["message"]
+        assert response["type"] == "bet_rejected"
+        assert "reason" in response["data"]
 
-    def test_websocket_place_bet_redirects_invalid_type(self, client, betting_manager):
-        """Test WebSocket bet redirect even for invalid bet types."""
+    def test_ws_place_bet_exception(self, client, betting_manager):
+        """Test WS place_bet returns bet_rejected on exception."""
         routes.set_betting_manager(betting_manager)
+        betting_manager.place_bet = MagicMock(side_effect=Exception("Pool closed"))
 
         with client.websocket_connect("/ws") as websocket:
-            websocket.send_json(
-                {
-                    "type": "place_bet",
-                    "bet_type": "invalid_type",
-                    "target": "mafia",
-                    "amount": 100,
-                    "round": 0,
-                }
-            )
-
+            websocket.send_json({
+                "type": "place_bet",
+                "bet_id": "test-bet-3",
+                "bet_type": "side_win",
+                "target": "mafia",
+                "amount_usdc": 5.0,
+                "round": 0,
+            })
             response = websocket.receive_json()
 
-            assert response["type"] == "bet_info"
-
-    def test_websocket_place_bet_redirects_no_manager(self, mock_settings, ws_manager):
-        """Test WebSocket bet redirect when no betting manager."""
-        app = create_app(mock_settings, ws_manager, betting_manager=None)
-        test_client = TestClient(app)
-
-        with test_client.websocket_connect("/ws") as websocket:
-            websocket.send_json(
-                {
-                    "type": "place_bet",
-                    "bet_type": "side_win",
-                    "target": "mafia",
-                    "amount": 100,
-                    "round": 0,
-                }
-            )
-
-            response = websocket.receive_json()
-
-            assert response["type"] == "bet_info"
+        assert response["type"] == "bet_rejected"
+        assert "Pool closed" in response["data"]["reason"]
 
 
 class TestRootEndpoint:

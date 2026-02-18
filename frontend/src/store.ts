@@ -470,6 +470,13 @@ export const useGameStore = create<GameState>((set, get) => ({
       usdcBets: [...state.usdcBets, newBet],
       usdcBalance: state.usdcBalance - amount,
     }));
+    sendWS({
+      type: 'place_bet',
+      bet_id: newBet.id,
+      bet_type: betType,
+      target,
+      amount_usdc: amount,
+    });
   },
 
   setPhase: (phase) => {

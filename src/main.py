@@ -182,6 +182,7 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
                 api_url=f"http://localhost:{settings.port}",
                 api_key=settings.openai_api_key.get_secret_value(),
                 budget_usdc=Decimal(str(settings.ai_bettor_budget_usdc)),
+                private_key=settings.ai_bettor_private_key.get_secret_value() or None,
             )
             bettor_task = asyncio.create_task(bettor.run())
             log.info("ai_bettor_started", budget=settings.ai_bettor_budget_usdc)

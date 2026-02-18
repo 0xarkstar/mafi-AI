@@ -26,6 +26,7 @@ class AIBettorClient:
         api_url: str,
         api_key: str,
         budget_usdc: Decimal,
+        private_key: str | None = None,
         model: str = "gpt-4o-mini",
     ):
         """Initialize AI Bettor client.
@@ -44,7 +45,14 @@ class AIBettorClient:
 
         self.analyzer = GameAnalyzer(api_key, model)
         self.strategy = BettingStrategy()
-        self.http_client = httpx.AsyncClient(timeout=10.0)
+        if private_key:
+            from x402.clients.httpx import create_x402_httpx_client
+            self.http_client = create_x402_httpx_client(
+                private_key=private_key,
+                timeout=10.0,
+            )
+        else:
+            self.http_client = httpx.AsyncClient(timeout=10.0)
 
         # Initialize state
         self.state = AIBettorState(
@@ -269,9 +277,6 @@ class AIBettorClient:
     ) -> bool:
         """Place bet via REST API (unified endpoint with X402).
 
-        TODO: Implement X402 payment signing before calling the API.
-        For now, this will fail with 402 Payment Required.
-
         Args:
             game_id: Game ID
             bet_type: Type of bet
@@ -290,10 +295,6 @@ class AIBettorClient:
                 "amount_usdc": float(amount),
                 "round": self.current_round,
             }
-
-            # TODO: Add X402 payment signing here
-            # The request needs x-payment header with signed payment
-            # For now, this will return 402 Payment Required
 
             response = await self.http_client.post(url, json=payload)
 
