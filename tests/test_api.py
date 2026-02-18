@@ -474,3 +474,107 @@ class TestMoltbookJoin:
         data = response.json()
         assert data["success"] is False
         assert "Lobby not available" in data["error"]
+
+
+class TestJoinMoltbook:
+    """Tests for POST /api/lobby/join-moltbook endpoint."""
+
+    def test_join_moltbook_no_lobby(self, client):
+        """Returns failure when lobby not available."""
+        response = client.post(
+            "/api/lobby/join-moltbook",
+            json={"name": "BotAgent", "moltbook_agent_id": "agent-001"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "Lobby not available" in data["error"]
+
+    def test_join_moltbook_missing_name(self, mock_settings, ws_manager):
+        """Returns failure when name field is missing or empty."""
+        from src.lobby.manager import LobbyManager
+
+        app = create_app(mock_settings, ws_manager, betting_manager=None)
+        lobby = LobbyManager()
+        app.state.lobby_manager = lobby
+        test_client = TestClient(app)
+
+        response = test_client.post(
+            "/api/lobby/join-moltbook",
+            json={"name": "", "moltbook_agent_id": "agent-001"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "Invalid name" in data["error"] or "name" in data["error"].lower()
+
+    def test_join_moltbook_missing_agent_id(self, mock_settings, ws_manager):
+        """Returns failure when moltbook_agent_id is missing or empty."""
+        from src.lobby.manager import LobbyManager
+
+        app = create_app(mock_settings, ws_manager, betting_manager=None)
+        lobby = LobbyManager()
+        app.state.lobby_manager = lobby
+        test_client = TestClient(app)
+
+        response = test_client.post(
+            "/api/lobby/join-moltbook",
+            json={"name": "BotAgent", "moltbook_agent_id": ""},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False
+        assert "moltbook_agent_id" in data["error"]
+
+    def test_join_moltbook_success(self, mock_settings, ws_manager):
+        """Successfully joins the lobby with valid name and agent_id."""
+        from unittest.mock import MagicMock
+        from src.lobby.manager import LobbyManager
+
+        app = create_app(mock_settings, ws_manager, betting_manager=None)
+        lobby = LobbyManager()
+        app.state.lobby_manager = lobby
+        app.state.settings = mock_settings
+        mock_settings.moltbook_api_url = "https://api.moltbook.io"
+        test_client = TestClient(app)
+
+        response = test_client.post(
+            "/api/lobby/join-moltbook",
+            json={"name": "BotAgent", "moltbook_agent_id": "agent-xyz-001"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is True
+        assert "BotAgent" in lobby.players
+
+    def test_join_moltbook_lobby_full(self, mock_settings, ws_manager):
+        """Returns failure (success=False) when lobby is already full."""
+        from src.config.constants import PlayerType
+        from src.lobby.manager import LobbyManager
+
+        app = create_app(mock_settings, ws_manager, betting_manager=None)
+        lobby = LobbyManager()
+        app.state.lobby_manager = lobby
+        app.state.settings = mock_settings
+        mock_settings.moltbook_api_url = "https://api.moltbook.io"
+        test_client = TestClient(app)
+
+        # Fill lobby with 7 agents
+        for i in range(7):
+            mock_player = MagicMock()
+            mock_player.name = f"FillerAgent{i}"
+            mock_player.player_type = PlayerType.HOUSE_AI
+            lobby.players[mock_player.name] = mock_player
+
+        response = test_client.post(
+            "/api/lobby/join-moltbook",
+            json={"name": "LateAgent", "moltbook_agent_id": "agent-late"},
+        )
+
+        assert response.status_code == 200
+        data = response.json()
+        assert data["success"] is False

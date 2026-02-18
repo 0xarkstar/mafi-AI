@@ -180,6 +180,26 @@ class AIBettorClient:
             self._add_event(f"Game over! {winner} won")
             self.current_phase = "game_over"
 
+        elif event_type == "usdc_settlement":
+            won = data.get("won", False)
+            payout = Decimal(str(data.get("payout", 0)))
+            if won:
+                self.state = self.state.model_copy(
+                    update={
+                        "total_won": self.state.total_won + payout,
+                        "balance_usdc": self.state.balance_usdc + payout,
+                    }
+                )
+            logger.info("settlement_received", won=won, payout=float(payout))
+
+        elif event_type == "bet_confirmed":
+            bet_id = data.get("bet_id")
+            logger.info("bet_confirmed_received", bet_id=bet_id)
+
+        elif event_type == "bet_rejected":
+            reason = data.get("reason", "unknown")
+            logger.warning("bet_rejected_received", reason=reason)
+
     def _reset_game_state(self, game_id: str):
         """Reset accumulated game state for new game."""
         self.current_game_id = game_id

@@ -170,10 +170,3 @@ class BlockchainGateway:
 
         log.info("v2_game_settled", game_id=game_id, tx_hash=tx_hash.hex())
         return tx_hash.hex()
-
-    async def relay_bet(self, **kwargs) -> str | None:
-        """Placeholder for future server-side bet relay.
-
-        Returns None (bets are placed directly by users via contract).
-        """
-        return None

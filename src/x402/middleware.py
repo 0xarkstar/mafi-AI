@@ -160,18 +160,17 @@ class X402Middleware(BaseHTTPMiddleware):
                     status_code=status.HTTP_402_PAYMENT_REQUIRED,
                 )
 
-            # Extract payment info from verified result
-            # The verify_result contains the payment payload with transaction details
-            payment_payload = verify_result.payload
+            # Extract payment info from VerifyResponse
+            # VerifyResponse fields: is_valid, invalid_reason, payer
+            payer_address = verify_result.payer or "unknown"
 
-            # Extract relevant fields from payment payload
-            # Assuming payload has payer address and amount
-            payer_address = payment_payload.get("from", "unknown")
-            amount_raw = payment_payload.get("amount", 0)
-            tx_hash = payment_payload.get("txHash", "unknown")
+            # Amount is enforced by payment requirements (minimum 1 USDC)
+            # Use 1 USDC as default since middleware enforces this minimum
+            amount_usdc = Decimal("1")
 
-            # Convert amount from smallest units (1e6) to USDC (Decimal)
-            amount_usdc = Decimal(amount_raw) / Decimal(1_000_000)
+            # tx_hash is available from SettleResponse.transaction after settlement
+            # Set placeholder; updated after settle below
+            tx_hash = "pending"
 
             # Create payment info and attach to request state
             payment_info = X402PaymentInfo(
@@ -187,15 +186,20 @@ class X402Middleware(BaseHTTPMiddleware):
                 path=path,
                 payer=payer_address,
                 amount=str(amount_usdc),
-                tx_hash=tx_hash,
             )
 
-            # Settle payment after successful verification
-            await self.x402_server.settle_payment(
+            # Settle payment after successful verification and get tx hash
+            settle_result = await self.x402_server.settle_payment(
                 method="POST",
                 url=str(request.url),
                 headers=dict(request.headers),
             )
+
+            if settle_result and settle_result.success:
+                payment_info = payment_info.model_copy(
+                    update={"tx_hash": settle_result.transaction}
+                )
+                request.state.x402_payment = payment_info
 
             return await call_next(request)
 

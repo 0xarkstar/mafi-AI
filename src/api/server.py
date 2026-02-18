@@ -245,6 +245,67 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
             log.error("moltbook_join_failed", error=str(exc))
             return {"success": False, "error": str(exc)}
 
+    # Simple Moltbook agent join endpoint (no Identity verification)
+    @app.post("/api/lobby/join-moltbook")
+    async def join_moltbook(request: Request):
+        """Moltbook agent joins the lobby by name and agent ID.
+
+        Accepts JSON body: {"name": str, "moltbook_agent_id": str}
+
+        Returns:
+            Success/failure response.
+        """
+        if not hasattr(app.state, "lobby_manager") or not app.state.lobby_manager:
+            return {"success": False, "error": "Lobby not available"}
+
+        try:
+            body = await request.json()
+            name = body.get("name", "")
+            moltbook_agent_id = body.get("moltbook_agent_id", "")
+
+            name_error = validate_player_name(name)
+            if name_error:
+                return {"success": False, "error": f"Invalid name: {name_error}"}
+
+            if not moltbook_agent_id or not isinstance(moltbook_agent_id, str):
+                return {"success": False, "error": "moltbook_agent_id must be a non-empty string"}
+
+            from src.moltbook.client import MoltbookClient
+            from src.players.moltbook_agent import MoltbookAgentPlayer
+
+            moltbook_client = MoltbookClient(
+                base_url=app.state.settings.moltbook_api_url
+            )
+            player = MoltbookAgentPlayer(
+                name=name,
+                agent_id=moltbook_agent_id,
+                api_key="",
+                moltbook_client=moltbook_client,
+            )
+
+            success = app.state.lobby_manager.join(player)
+
+            if success:
+                from datetime import datetime
+
+                await ws_manager.broadcast(
+                    WSEvent(
+                        event_type="lobby_status",
+                        data=app.state.lobby_manager.get_lobby_status(),
+                        game_id="",
+                        timestamp=datetime.now().isoformat(),
+                    )
+                )
+
+            return {
+                "success": success,
+                "message": "Agent joined lobby" if success else "Lobby full",
+            }
+
+        except Exception as exc:
+            log.error("moltbook_join_failed", error=str(exc))
+            return {"success": False, "error": str(exc)}
+
     # Static files — mount /assets for Vite bundles, explicit route for /
     static_dir = Path(__file__).parent.parent.parent / "static"
     assets_dir = static_dir / "assets"

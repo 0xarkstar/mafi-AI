@@ -42,6 +42,10 @@ interface GameState {
   handleWSEvent: (event: any) => void;
 }
 
+// Module-level timeout tracking (outside Zustand state — must be serializable)
+let gameOverTimeoutId: ReturnType<typeof setTimeout> | null = null;
+const emoteTimeoutIds = new Map<string, ReturnType<typeof setTimeout>>();
+
 export const useGameStore = create<GameState>((set, get) => ({
   screen: ScreenState.LANDING,
   phase: GamePhase.DAY_DISCUSSION,
@@ -321,7 +325,9 @@ export const useGameStore = create<GameState>((set, get) => ({
         });
 
         // Safety: if no identity_reveal transitions to REVEAL within 15s, go to GAME_OVER directly
-        setTimeout(() => {
+        if (gameOverTimeoutId) clearTimeout(gameOverTimeoutId);
+        gameOverTimeoutId = setTimeout(() => {
+          gameOverTimeoutId = null;
           const s = get();
           if (s.winner && s.screen !== ScreenState.REVEAL && s.screen !== ScreenState.GAME_OVER) {
             set({ screen: ScreenState.GAME_OVER });
@@ -496,6 +502,9 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   resetGame: () => {
     disconnectWS();
+    if (gameOverTimeoutId) { clearTimeout(gameOverTimeoutId); gameOverTimeoutId = null; }
+    emoteTimeoutIds.forEach((id) => clearTimeout(id));
+    emoteTimeoutIds.clear();
     set({
       screen: ScreenState.LANDING,
       phase: GamePhase.DAY_DISCUSSION,
@@ -518,6 +527,7 @@ export const useGameStore = create<GameState>((set, get) => ({
   },
 
   playAgain: () => {
+    if (gameOverTimeoutId) { clearTimeout(gameOverTimeoutId); gameOverTimeoutId = null; }
     const state = get();
     set({
       screen: ScreenState.LOBBY,
@@ -536,12 +546,15 @@ export const useGameStore = create<GameState>((set, get) => ({
 
   triggerEmote: (playerId, emote) => {
     set((state) => ({ activeEmotes: { ...state.activeEmotes, [playerId]: emote } }));
-    setTimeout(() => {
+    const existing = emoteTimeoutIds.get(playerId);
+    if (existing) clearTimeout(existing);
+    emoteTimeoutIds.set(playerId, setTimeout(() => {
+      emoteTimeoutIds.delete(playerId);
       set((state) => {
         const newEmotes = { ...state.activeEmotes };
         delete newEmotes[playerId];
         return { activeEmotes: newEmotes };
       });
-    }, 3000);
+    }, 3000));
   },
 }));

@@ -42,7 +42,6 @@ Core environment variables (optional):
 - `PORT=8080`
 - `HOST=0.0.0.0`
 - `BETTING_WINDOW_SECONDS=30`
-- `STARTING_CHIPS=1000`
 - `DB_PATH=data/mafia-ai.db`
 - `LOG_LEVEL=INFO`
 

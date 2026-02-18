@@ -28,6 +28,8 @@ export const SpectatorScreen = () => {
   const [timeLeft, setTimeLeft] = useState(0);
   const [chatBubbles, setChatBubbles] = useState<Record<string, string>>({});
   const bubbleTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const activeSpeakerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const betSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Betting panel state
   const [selectedBetType, setSelectedBetType] = useState<BetType>('side_win');
@@ -105,7 +107,8 @@ export const SpectatorScreen = () => {
         const senderId = lastMsg.senderId;
 
         setActiveSpeakerId(senderId);
-        setTimeout(() => setActiveSpeakerId(null), 3000);
+        if (activeSpeakerTimerRef.current) clearTimeout(activeSpeakerTimerRef.current);
+        activeSpeakerTimerRef.current = setTimeout(() => setActiveSpeakerId(null), 3000);
 
         setChatBubbles(prev => ({ ...prev, [senderId]: lastMsg.text }));
         if (bubbleTimers.current[senderId]) clearTimeout(bubbleTimers.current[senderId]);
@@ -148,13 +151,22 @@ export const SpectatorScreen = () => {
     setBetSuccess(true);
     setBetAmount('');
     setBetTarget('');
-    setTimeout(() => setBetSuccess(false), 2000);
+    if (betSuccessTimerRef.current) clearTimeout(betSuccessTimerRef.current);
+    betSuccessTimerRef.current = setTimeout(() => setBetSuccess(false), 2000);
   };
 
   const scrollRef = useRef<HTMLDivElement>(null);
   useEffect(() => {
     if (scrollRef.current) scrollRef.current.scrollTop = scrollRef.current.scrollHeight;
   }, [messages]);
+
+  // Cleanup all timeouts on unmount
+  useEffect(() => {
+    return () => {
+      if (activeSpeakerTimerRef.current) clearTimeout(activeSpeakerTimerRef.current);
+      if (betSuccessTimerRef.current) clearTimeout(betSuccessTimerRef.current);
+    };
+  }, []);
 
   return (
     <div className="h-screen w-full flex flex-col overflow-hidden relative bg-[#050505]">

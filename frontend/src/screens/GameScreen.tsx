@@ -18,6 +18,7 @@ export const GameScreen = () => {
   // Real-time bubble state mapping
   const [chatBubbles, setChatBubbles] = useState<Record<string, string>>({});
   const bubbleTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const activeSpeakerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
   // Chat bubble tracking from messages
   useEffect(() => {
@@ -28,7 +29,8 @@ export const GameScreen = () => {
 
             // Set the speaking indicator
             setActiveSpeakerId(senderId);
-            setTimeout(() => setActiveSpeakerId(null), 3000);
+            if (activeSpeakerTimerRef.current) clearTimeout(activeSpeakerTimerRef.current);
+            activeSpeakerTimerRef.current = setTimeout(() => setActiveSpeakerId(null), 3000);
 
             setChatBubbles(prev => ({
                 ...prev,
@@ -74,6 +76,13 @@ export const GameScreen = () => {
         return () => clearTimeout(timerId);
     }
   }, [timeLeft]);
+
+  // Cleanup speaker timer on unmount
+  useEffect(() => {
+    return () => {
+      if (activeSpeakerTimerRef.current) clearTimeout(activeSpeakerTimerRef.current);
+    };
+  }, []);
 
   // Handle vote via action response
   const handleVote = (playerId: string) => {

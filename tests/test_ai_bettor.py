@@ -655,3 +655,175 @@ async def test_client_place_bet_updates_state():
             assert client.state.bets_placed == initial_bets + 1
             assert client.state.last_bet_time is not None
             assert client.state.total_wagered == expected_amount
+
+
+# === Event Handler Tests ===
+
+
+@pytest.mark.asyncio
+async def test_client_handle_usdc_settlement_won():
+    """usdc_settlement with won=True updates total_won and balance_usdc."""
+    client = AIBettorClient(
+        ws_url="ws://localhost:8080/ws",
+        api_url="http://localhost:8080",
+        api_key="test-key",
+        budget_usdc=Decimal("50.00"),
+    )
+
+    initial_balance = client.state.balance_usdc
+    initial_total_won = client.state.total_won
+
+    event = {
+        "event_type": "usdc_settlement",
+        "game_id": "game123",
+        "data": {"won": True, "payout": "12.50"},
+    }
+
+    await client._handle_event(event)
+
+    assert client.state.total_won == initial_total_won + Decimal("12.50")
+    assert client.state.balance_usdc == initial_balance + Decimal("12.50")
+
+
+@pytest.mark.asyncio
+async def test_client_handle_usdc_settlement_lost():
+    """usdc_settlement with won=False does not change balance or total_won."""
+    client = AIBettorClient(
+        ws_url="ws://localhost:8080/ws",
+        api_url="http://localhost:8080",
+        api_key="test-key",
+        budget_usdc=Decimal("50.00"),
+    )
+
+    initial_balance = client.state.balance_usdc
+    initial_total_won = client.state.total_won
+
+    event = {
+        "event_type": "usdc_settlement",
+        "game_id": "game123",
+        "data": {"won": False, "payout": "0"},
+    }
+
+    await client._handle_event(event)
+
+    # Balance and total_won should be unchanged
+    assert client.state.balance_usdc == initial_balance
+    assert client.state.total_won == initial_total_won
+
+
+@pytest.mark.asyncio
+async def test_client_handle_usdc_settlement_zero_payout_when_won():
+    """usdc_settlement with won=True and payout=0 adds zero but updates state."""
+    client = AIBettorClient(
+        ws_url="ws://localhost:8080/ws",
+        api_url="http://localhost:8080",
+        api_key="test-key",
+        budget_usdc=Decimal("100.00"),
+    )
+
+    initial_balance = client.state.balance_usdc
+    initial_total_won = client.state.total_won
+
+    event = {
+        "event_type": "usdc_settlement",
+        "game_id": "game123",
+        "data": {"won": True, "payout": 0},
+    }
+
+    await client._handle_event(event)
+
+    # Won but payout is 0 — balance unchanged but model_copy still called
+    assert client.state.total_won == initial_total_won + Decimal("0")
+    assert client.state.balance_usdc == initial_balance + Decimal("0")
+
+
+@pytest.mark.asyncio
+async def test_client_handle_bet_confirmed():
+    """bet_confirmed event is handled without error."""
+    client = AIBettorClient(
+        ws_url="ws://localhost:8080/ws",
+        api_url="http://localhost:8080",
+        api_key="test-key",
+        budget_usdc=Decimal("100.00"),
+    )
+
+    event = {
+        "event_type": "bet_confirmed",
+        "game_id": "game123",
+        "data": {"bet_id": "bet-abc-123"},
+    }
+
+    # Should not raise; bet_confirmed just logs
+    await client._handle_event(event)
+
+    # State should be unchanged (bet_confirmed doesn't modify state)
+    assert client.state.bets_placed == 0
+
+
+@pytest.mark.asyncio
+async def test_client_handle_bet_rejected():
+    """bet_rejected event is handled without error."""
+    client = AIBettorClient(
+        ws_url="ws://localhost:8080/ws",
+        api_url="http://localhost:8080",
+        api_key="test-key",
+        budget_usdc=Decimal("100.00"),
+    )
+
+    event = {
+        "event_type": "bet_rejected",
+        "game_id": "game123",
+        "data": {"reason": "Insufficient funds"},
+    }
+
+    # Should not raise; bet_rejected just logs a warning
+    await client._handle_event(event)
+
+    # State should be unchanged
+    assert client.state.balance_usdc == Decimal("100.00")
+
+
+@pytest.mark.asyncio
+async def test_client_handle_game_over_event():
+    """game_over event updates phase and adds to recent_events."""
+    client = AIBettorClient(
+        ws_url="ws://localhost:8080/ws",
+        api_url="http://localhost:8080",
+        api_key="test-key",
+        budget_usdc=Decimal("100.00"),
+    )
+
+    client.current_game_id = "game123"
+
+    event = {
+        "event_type": "game_over",
+        "game_id": "game123",
+        "data": {"winner": "citizens"},
+    }
+
+    await client._handle_event(event)
+
+    assert client.current_phase == "game_over"
+    assert any("citizens" in e for e in client.recent_events)
+
+
+@pytest.mark.asyncio
+async def test_client_multiple_settlements_accumulate():
+    """Multiple usdc_settlement events accumulate total_won correctly."""
+    client = AIBettorClient(
+        ws_url="ws://localhost:8080/ws",
+        api_url="http://localhost:8080",
+        api_key="test-key",
+        budget_usdc=Decimal("100.00"),
+    )
+
+    for payout in ["5.00", "3.25", "10.00"]:
+        event = {
+            "event_type": "usdc_settlement",
+            "game_id": "game123",
+            "data": {"won": True, "payout": payout},
+        }
+        await client._handle_event(event)
+
+    assert client.state.total_won == Decimal("18.25")
+    assert client.state.balance_usdc == Decimal("100.00") + Decimal("18.25")

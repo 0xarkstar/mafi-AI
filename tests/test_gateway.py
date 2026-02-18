@@ -241,12 +241,3 @@ class TestBlockchainGateway:
                 amounts=[],
             )
 
-    @pytest.mark.asyncio
-    async def test_relay_bet_returns_none(self):
-        """Test relay_bet placeholder returns None."""
-        mock_provider = self._make_mock_provider()
-        gateway = BlockchainGateway(mock_provider)
-
-        result = await gateway.relay_bet(game_id="test", bettor="0x1234", amount=Decimal("5"))
-
-        assert result is None
