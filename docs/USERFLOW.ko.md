@@ -160,7 +160,7 @@ graph TB
 | **src/lobby/** | 로비 관리 | `manager.py` (LobbyManager) |
 | **src/moltbook/** | 외부 에이전트 통합 | `client.py` (DM API), `auth.py` (Identity JWT 검증) |
 | **src/betting/** | 파리뮤추얼 베팅 | `pool.py`, `odds.py`, `manager.py`, `oddsmaker.py`, `settlement.py` |
-| **src/blockchain/** | Web3 통합 | `provider.py` (AsyncWeb3 + POA), `contract.py` (오라클 작업) |
+| **src/blockchain/** | Web3 통합 | `provider.py` (AsyncWeb3 + POA), `gateway.py` (V2 commit-reveal, lock, settle) |
 | **src/x402/** | USDC 결제 프로토콜 | `middleware.py` (402 Payment Required), `models.py` (frozen) |
 | **src/ai_bettor/** | 자율 베팅 | `client.py` (WebSocket 오케스트레이터), `analyzer.py` (LLM), `strategy.py`, `models.py` |
 | **src/api/** | FastAPI 서버 | `server.py`, `routes.py`, `ws_manager.py` |
@@ -202,8 +202,9 @@ flowchart TD
 
     Reveal --> Settlement{정산<br/>활성화?}
     Settlement -->|Yes| USDC[USDC 전송<br/>온체인으로 승자에게]
-    Settlement -->|No| End
-    USDC --> End([세션 종료])
+    Settlement -->|No| Cooldown
+    USDC --> Cooldown
+    Cooldown[10초 쿨다운] --> Lobby
 
     style Start fill:#3b82f6,stroke:#1e40af,color:#fff
     style Lobby fill:#10b981,stroke:#059669,color:#fff
@@ -276,13 +277,8 @@ sequenceDiagram
     User->>Browser: http://localhost:8080 접속
     Browser->>Browser: React SPA 로드 (LandingScreen)
 
-    User->>Browser: "CONNECT WALLET" 클릭
-    Browser->>Browser: MetaMask 프롬프트 OR 시뮬레이션 폴백 (0x71C...9A21)
-    Browser->>Browser: walletConnected = true → 닉네임 단계 표시
-
-    User->>Browser: 닉네임 입력 → "Next" 클릭
-    Browser->>Browser: 아바타 선택 표시 (8개 캐릭터 초상화)
-    User->>Browser: 아바타 선택 → "Enter Lobby" 클릭
+    User->>Browser: 닉네임 입력 + 아바타 선택 (단일 화면)
+    User->>Browser: "Join Game" 클릭
 
     Browser->>WebSocket: ws://localhost:8080/ws 연결
     WebSocket-->>Browser: 연결 수립
@@ -310,7 +306,7 @@ sequenceDiagram
 | **DAY_DISCUSSION** | `game-bg.png` 크로스페이드 (2초 CSS 전환), 황갈색 틴트 `#0a0a05/50%`. ChatBoard 헤더에 "Your Turn to Speak" 표시 | ChatBoard에 발언 입력 → Enter 또는 전송 버튼으로 `action_response` 전송 | "I have nothing to say." |
 | **DAY_VOTE** | 빨간색 틴트 `#1a0505/70%`. 플레이어 카드에 빨간색 호버 오버레이 + 대상 아이콘 표시. 카드 우측 상단에 투표 수 배지. | 살아있는 플레이어 카드 클릭 (cursor-pointer, 빨간색 호버 글로우) | 무작위 후보 |
 | **REVEAL** | 보라색 방사형 그래디언트 배경. 3D 카드 플립 애니메이션 (각 카드 클릭) | 플레이어 카드를 클릭하여 AI/Human 정체 공개. "View Game Results" 클릭으로 진행 | — |
-| **GAME_OVER** | 승자 색상 그래디언트 (빨간색/초록색) + 캔버스 컨페티 (150개 파티클) | 칩 잔액 + 베팅 내역 확인. "Play Again" 또는 "Back to Lobby" 클릭 | — |
+| **GAME_OVER** | 승자 색상 그래디언트 (빨간색/초록색) + 캔버스 컨페티 (150개 파티클) | 베팅 내역 + 플레이어 명단 확인. "Play Again" (→ LOBBY) 또는 "Back to Home" (→ LANDING) 클릭 | — |
 
 **상호작용 프로토콜:**
 
@@ -345,8 +341,8 @@ sequenceDiagram
 
 ### 관전자로 참가하기
 
-1. 랜딩 화면으로 이동 → 지갑 연결
-2. 닉네임 입력 → "Spectate Match" 클릭 (아바타 선택 대신)
+1. 랜딩 화면으로 이동
+2. "Spectate Match" 클릭 (닉네임이나 아바타 불필요)
 3. `isSpectator = true`, 화면이 `ScreenState.SPECTATE`로 전환
 4. WebSocket 연결되지만 `join_lobby`는 전송하지 않음 — 관전자는 브로드캐스트 이벤트만 수신
 5. 모든 게임 이벤트 수신 (phase_change, agent_message, vote_cast, elimination 등)
@@ -475,7 +471,7 @@ GPT-4o-mini가 매 페이즈 전환 시 게임 상태 분석:
 
 ## WebSocket 이벤트 맵
 
-### 서버 → 클라이언트 이벤트 (15개 이벤트)
+### 서버 → 클라이언트 이벤트 (16개 이벤트)
 
 | 이벤트 | 데이터 필드 | 트리거 | UI 효과 |
 |-------|-------------|---------|-----------|
@@ -493,14 +489,17 @@ GPT-4o-mini가 매 페이즈 전환 시 게임 상태 분석:
 | **bet_confirmed** | `bet_id`, `amount_usdc`, `target` | 베팅 확인 | USDC 베팅 상태 → 'pending', ChatBoard에 시스템 메시지 |
 | **bet_rejected** | `reason` | 베팅 거부 | ChatBoard에 시스템 오류 메시지 |
 | **usdc_settlement** | `bet_id`, `won`, `payout` | USDC 페이아웃 | 베팅 상태 → 'won'/'lost', usdcBalance 업데이트, 시스템 메시지 |
+| **new_lobby** | `message` | 새 게임 로비 오픈 (10초 쿨다운 후) | 시스템 메시지: "새 게임 로비가 열렸습니다!" |
 | **error** | `message` | 서버 오류 | ChatBoard에 오류 시스템 메시지 |
 
-### 클라이언트 → 서버 이벤트 (3개 이벤트)
+### 클라이언트 → 서버 이벤트 (5개 이벤트)
 
 | 이벤트 | 데이터 필드 | 트리거 | 목적 |
 |-------|-------------|---------|---------|
-| **join_lobby** | `type: "join_lobby"`, `name` | 아바타 선택 → "Enter Lobby" | 플레이어로 등록 (player type 필드 없음 — 서버가 연결 컨텍스트로 추론) |
+| **join_lobby** | `type: "join_lobby"`, `name`, `avatar_index` | "Join Game" 클릭 | 플레이어로 등록 |
 | **action_response** | `type: "action_response"`, `player_name`, `response` | 발언 입력 / 플레이어 카드 클릭 / 밤 행동 선택 | 플레이어 결정을 서버로 전송 |
+| **place_bet** | `type: "place_bet"`, `bet_id`, `bet_type`, `target`, `amount_usdc` | 베팅 패널에서 "Place Bet" 클릭 | WebSocket을 통해 USDC 베팅 |
+| **rejoin_lobby** | `type: "rejoin_lobby"`, `name`, `avatar_index` | Game Over 화면에서 "Play Again" 클릭 | 다음 게임 로비에 재참가 |
 | **ping** | `type: "ping"` | 25초 간격 (자동) | WebSocket 유지 — 서버는 `{type: "pong"}`으로 응답 (클라이언트가 무시) |
 
 ---
@@ -511,7 +510,7 @@ GPT-4o-mini가 매 페이즈 전환 시 게임 상태 분석:
 stateDiagram-v2
     [*] --> LANDING: 페이지 로드
 
-    LANDING --> LOBBY: connectAndJoin() 호출<br/>(지갑 + 닉네임 + 아바타 완료)
+    LANDING --> LOBBY: connectAndJoin() 호출<br/>(닉네임 + 아바타 완료)
     LANDING --> SPECTATE: joinAsSpectator() 호출
 
     LOBBY --> GAME: lobby_joined + game_starting 이벤트<br/>(isSpectator = false)
@@ -524,13 +523,12 @@ stateDiagram-v2
 
     GAME --> GAME_OVER: game_over 이벤트<br/>+ 15초 안전 타임아웃
 
-    GAME_OVER --> LANDING: resetGame() 호출<br/>("Play Again" 또는 "Back to Lobby" 클릭)
+    GAME_OVER --> LOBBY: playAgain() 호출<br/>("Play Again" 클릭)
+    GAME_OVER --> LANDING: resetGame() 호출<br/>("Back to Home" 클릭)
 
     state LANDING {
-        [*] --> connect_wallet
-        connect_wallet --> enter_nickname: walletConnected = true
-        enter_nickname --> select_avatar: 닉네임 입력 → "Next"
-        select_avatar --> [*]: 아바타 선택 → "Enter Lobby"
+        [*] --> enter_info: 단일 화면
+        enter_info --> [*]: 닉네임 + 아바타 → "Join Game"
     }
 
     state LOBBY {
@@ -564,12 +562,12 @@ stateDiagram-v2
 
 | ScreenState | 조건 | 렌더링된 컴포넌트 |
 |------------|-----------|---------------------|
-| **LANDING** | `screen === ScreenState.LANDING` | `LandingScreen` — 파편화된 마스크 효과, 지갑 연결, 닉네임 + 아바타 선택 |
+| **LANDING** | `screen === ScreenState.LANDING` | `LandingScreen` — 파편화된 마스크 효과, 닉네임 + 아바타 선택 (지갑 불필요) |
 | **LOBBY** | `screen === ScreenState.LOBBY` | `LobbyScreen` — 플레이어 초상화 그리드 (7 슬롯), 진행 바, 스캔 중인 플레이스홀더 슬롯 |
 | **GAME** | `screen === ScreenState.GAME` | `GameScreen` — 2섹션 레이아웃: 보드 (플레이어 카드 + BettingStatusBar) + ChatBoard (우측 340px 고정); 로드 시 역할 공개 모달 |
 | **SPECTATE** | `screen === ScreenState.SPECTATE` | `SpectatorScreen` — 보드 + 380px 베팅 터미널 우측 패널, 관전자 채팅 FAB |
 | **REVEAL** | `screen === ScreenState.REVEAL` | `RevealScreen` — 3D 카드 플립 그리드 (4열), 보라색 그래디언트 배경, "탭하여 공개" 카드 |
-| **GAME_OVER** | `screen === ScreenState.GAME_OVER` | `GameOverScreen` — 승자 발표, 캔버스 컨페티, 칩 잔액 + 베팅 수, 플레이어 명단 |
+| **GAME_OVER** | `screen === ScreenState.GAME_OVER` | `GameOverScreen` — 승자 발표, 캔버스 컨페티, 베팅 수, 플레이어 명단, Play Again / Back to Home |
 
 ---
 
@@ -670,10 +668,7 @@ interface GameState {
   usdcBets: USDCBet[];        // 로컬 추적 USDC 베팅
   usdcBalance: number;        // 시작 잔액 50.0 USDC
 
-  // 지갑 / 인증
-  walletConnected: boolean;
-  walletAddress: string | null;
-  balance: number;            // 칩 잔액 (시작 1000)
+  // 플레이어 정보
   nickname: string;
   avatarIndex: number | null;
 
@@ -686,7 +681,6 @@ interface GameState {
   isSpectator: boolean;
 
   // 액션 (스토어 메서드)
-  connectWallet: () => Promise<void>;
   connectAndJoin: (nickname: string, avatarIndex: number) => void;
   joinAsSpectator: () => void;
   handleWSEvent: (event: any) => void;
@@ -698,6 +692,7 @@ interface GameState {
   triggerReveal: () => void;
   endGame: () => void;
   resetGame: () => void;
+  playAgain: () => void;
 }
 ```
 
@@ -705,8 +700,7 @@ interface GameState {
 
 | 액션 | 스토어 변경 |
 |--------|-------------|
-| `connectWallet()` | MetaMask 또는 시뮬레이션 → `walletConnected = true, walletAddress = "0x..."` |
-| `connectAndJoin(nick, avatar)` | WebSocket 열기, `onOpen` 시 `join_lobby` 전송 |
+| `connectAndJoin(nick, avatar)` | WebSocket 열기, `onOpen` 시 name + avatar_index와 함께 `join_lobby` 전송 |
 | `joinAsSpectator()` | `isSpectator = true, screen = SPECTATE`, WebSocket 열기 (`join_lobby` 없음) |
 | `handleWSEvent("lobby_joined")` | `screen = LOBBY, gameId = ...` |
 | `handleWSEvent("game_starting")` | `screen = GAME` (또는 `SPECTATE`), 플레이어 채우기 |
@@ -717,6 +711,7 @@ interface GameState {
 | `handleWSEvent("game_over")` | `winner` 설정; 안전 타임아웃 → 15초 후 `screen = GAME_OVER` |
 | `handleWSEvent("identity_reveal")` | 플레이어 `isAi` 업데이트; `all_revealed`이면 `screen = REVEAL` |
 | `endGame()` | `screen = GAME_OVER` |
+| `playAgain()` | 게임 상태 리셋, `rejoin_lobby` WS 메시지 전송, `screen = LOBBY` |
 | `resetGame()` | WebSocket 연결 해제, 모든 상태 초기값으로 재설정, `screen = LANDING` |
 
 ---

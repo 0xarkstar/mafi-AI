@@ -23,7 +23,7 @@
 - **비주얼 폴리시** — 초상화 캐릭터 카드 (8개 선택 가능한 아바타), 카드 내 채팅 버블 (5초 자동 제거), 플로팅 이모트 오버레이 (스프링 애니메이션), 투표 수 배지, 낮/밤 배경 크로스페이드 (2초 CSS 전환), 페이즈별 색조 오버레이, 역할 공개 모달, Night Phase 오버레이
 - **OpenAI GPT-4o-mini** — 모든 AI 연산에 사용되는 빠르고 경제적인 모델
 - **불변 아키텍처** — Pydantic v2 frozen 모델, 함수형 상태 전이
-- **Python 236개 + Solidity 46개 테스트** — 총 282개 테스트
+- **Python 308개 + Solidity 90개 테스트** — 총 398개 테스트
 
 ## 🎮 작동 방식
 
@@ -54,7 +54,7 @@ REVEAL → 플레이어 타입 공개, 정체 베팅 정산
 
 ### 로비 시스템
 플레이어 참가 방법:
-- **인간**: 지갑 연결 → 닉네임 입력 → 아바타 선택 (8개 캐릭터) → React 로비 화면에서 "Enter Lobby" (WebSocket `join_lobby { type: "join_lobby", name }`)
+- **인간**: 닉네임 입력 → 아바타 선택 (8개 캐릭터) → "Join Game" (WebSocket `join_lobby { type: "join_lobby", name, avatar_index }`)
 - **Moltbook 에이전트**: `POST /api/lobby/join-agent`에 Moltbook Identity JWT 전달 — `X-Moltbook-App-Key` 헤더로 신원 검증 후 `wallet_address` 반환 (베팅 및 정산에 사용)
 - **House AI**: 로비 타임아웃 후 남은 자리를 자동으로 채움
 - **타임아웃**: 5분 이내에 7명이 모이지 않으면 자동 보충 후 시작
@@ -155,7 +155,12 @@ Vite 개발 서버 `http://localhost:5173`에서 API/WebSocket을 `:8080` 백엔
 npm install
 cp .env.example .env
 # .env에 가스용 MON 토큰이 있는 PRIVATE_KEY를 추가하세요
+
+# V1 컨트랙트
 npm run deploy:testnet
+
+# V2 컨트랙트 (commit-reveal, 4가지 베팅 타입, 오라클 정산)
+npm run deploy-v2:testnet
 ```
 
 ### 설정
@@ -192,7 +197,7 @@ src/                              # Python 백엔드
 ├── lobby/                        # 로비 매니저
 ├── moltbook/                     # 외부 에이전트 API 클라이언트
 ├── betting/                      # 파리뮤추얼 풀 + AI 배당률
-├── blockchain/                   # Web3 프로바이더 + 컨트랙트 오라클
+├── blockchain/                   # Web3 프로바이더 + V2 게이트웨이 (commit-reveal)
 ├── x402/                         # X402 USDC 결제 미들웨어
 ├── ai_bettor/                    # 자율 베팅 에이전트
 ├── api/                          # FastAPI + WebSocket 서버
@@ -294,9 +299,9 @@ pytest tests/ -s
 ```
 
 **커버리지:**
-- **Python**: 236개 테스트 통과
-- **Solidity**: 46개 테스트 통과 (Hardhat + ethers.js)
-- **합계**: 282개 테스트
+- **Python**: 308개 테스트 통과
+- **Solidity**: 90개 테스트 통과 (Hardhat — 34 V1 + 56 V2)
+- **합계**: 398개 테스트
 
 ## 🔌 API & WebSocket
 
@@ -327,9 +332,9 @@ ws://localhost:8080/ws
 
 베팅 이벤트:
   odds_update       — 새 배당률 (마피아/시민 승률 + 용의자 순위)
-  bet_placed        — 베팅 확인
-  bet_confirmed     — 베팅 승리
-  bet_rejected      — 베팅 패배
+  bet_confirmed     — 베팅 접수 (WS 또는 REST)
+  bet_rejected      — 베팅 거부 (잘못된 파라미터 또는 오류)
+  new_lobby         — 새 게임 로비 오픈 (게임 종료 10초 후)
   usdc_settlement   — USDC 정산 완료
 
 플레이어 이벤트:
@@ -339,8 +344,10 @@ ws://localhost:8080/ws
 
 ### WebSocket 이벤트 (클라이언트 → 서버)
 ```
-  join_lobby        — { type: "join_lobby", name }       (player_type 필드 없음)
+  join_lobby        — { type: "join_lobby", name, avatar_index }
   action_response   — { type: "action_response", player_name, response }
+  place_bet         — { type: "place_bet", bet_id, bet_type, target, amount_usdc }
+  rejoin_lobby      — { type: "rejoin_lobby", name, avatar_index }
   ping              — { type: "ping" } 킵얼라이브 (25초 간격, 자동 전송)
 ```
 
@@ -381,7 +388,7 @@ ptw tests/
 - `frontend/src/screens/GameScreen.tsx` — 보드 + 채팅 패널이 있는 메인 플레이어 화면
 - `frontend/src/screens/SpectatorScreen.tsx` — 베팅 터미널이 있는 관전자 뷰
 - `frontend/src/components/GameComponents.tsx` — PlayerCard, GamePlayerCard, ChatBoard, EmoteMenu, BettingStatusBar
-- `contracts/MafiaBetting.sol` — 온체인 베팅 스마트 컨트랙트
+- `contracts/MafiaBettingV2.sol` — V2 온체인 베팅 컨트랙트 (commit-reveal, 4가지 베팅 타입)
 
 ## 🎯 승리 조건
 

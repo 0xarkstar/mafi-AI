@@ -23,7 +23,7 @@
 - **Visual Polish** — Portrait character cards (8 selectable avatars), in-card chat bubbles (5s auto-dismiss), floating emote overlays (spring animation), vote count badges, day/night background crossfade (2s CSS transition), phase-tinted overlays, Role Reveal modal, Night Phase overlay
 - **OpenAI GPT-4o-mini** — Fast, cost-effective AI for all agent operations
 - **Immutable Architecture** — Pydantic v2 frozen models, functional state transitions
-- **236 Python + 46 Solidity tests** — 282 total tests
+- **308 Python + 90 Solidity tests** — 398 total tests
 
 ## 🎮 How It Works
 
@@ -54,7 +54,7 @@ Check winner → Citizens win (all mafia dead) / Mafia win (mafia ≥ citizens) 
 
 ### Lobby System
 Players can join in multiple ways:
-- **Humans**: Connect wallet → enter nickname → select avatar (8 characters) → "Enter Lobby" on the React lobby screen (WebSocket `join_lobby { type: "join_lobby", name }`)
+- **Humans**: Enter nickname → select avatar (8 characters) → "Join Game" on the React lobby screen (WebSocket `join_lobby { type: "join_lobby", name, avatar_index }`)
 - **Moltbook Agents**: `POST /api/lobby/join-agent` with Moltbook Identity JWT — verified via `X-Moltbook-App-Key`, returns `wallet_address` for betting
 - **House AI**: Automatically added to fill remaining slots after lobby timeout
 - **Timeout**: If game doesn't reach 7 players within 5 minutes, auto-fill and start
@@ -156,6 +156,9 @@ npm install
 cp .env.example .env
 # Add your PRIVATE_KEY (with MON tokens for gas) to .env
 npm run deploy:testnet
+
+# V2 contract (commit-reveal, 4 bet types, oracle settlement)
+npm run deploy-v2:testnet
 ```
 
 ### Configure
@@ -192,7 +195,7 @@ src/                              # Python backend
 ├── lobby/                        # Lobby manager for game setup
 ├── moltbook/                     # External agent API client
 ├── betting/                      # Pari-mutuel pool + AI odds
-├── blockchain/                   # Web3 provider + contract oracle
+├── blockchain/                   # Web3 provider + V2 gateway (commit-reveal)
 ├── x402/                         # X402 USDC payment middleware
 ├── ai_bettor/                    # Autonomous betting agent
 ├── api/                          # FastAPI + WebSocket server
@@ -294,9 +297,9 @@ pytest tests/ -s
 ```
 
 **Coverage:**
-- **Python**: 236 tests passing
-- **Solidity**: 46 tests passing (Hardhat + ethers.js)
-- **Total**: 282 tests
+- **Python**: 308 tests passing
+- **Solidity**: 90 tests passing (Hardhat — 34 V1 + 56 V2)
+- **Total**: 398 tests
 
 ## 🔌 API & WebSocket
 
@@ -327,9 +330,9 @@ Lobby Events:
 
 Betting Events:
   odds_update       — New odds calculated (mafia/citizen win prob + suspect rankings)
-  bet_placed        — Bet confirmed
-  bet_confirmed     — Bet won
-  bet_rejected      — Bet lost
+  bet_confirmed     — Bet accepted (via WS or REST)
+  bet_rejected      — Bet rejected (invalid params or error)
+  new_lobby         — New game lobby opened (10s after game ends)
   usdc_settlement   — USDC payouts processed
 
 Player Events:
@@ -339,8 +342,10 @@ Player Events:
 
 ### WebSocket Events (Client → Server)
 ```
-  join_lobby        — { type: "join_lobby", name }       (no player_type field)
+  join_lobby        — { type: "join_lobby", name, avatar_index }
   action_response   — { type: "action_response", player_name, response }
+  place_bet         — { type: "place_bet", bet_id, bet_type, target, amount_usdc }
+  rejoin_lobby      — { type: "rejoin_lobby", name, avatar_index }
   ping              — { type: "ping" } Keepalive (25s interval, auto-sent)
 ```
 
@@ -381,7 +386,7 @@ ptw tests/
 - `frontend/src/screens/GameScreen.tsx` — Main player screen with board + chat panel
 - `frontend/src/screens/SpectatorScreen.tsx` — Spectator view with betting terminal
 - `frontend/src/components/GameComponents.tsx` — PlayerCard, GamePlayerCard, ChatBoard, EmoteMenu, BettingStatusBar
-- `contracts/MafiaBetting.sol` — On-chain betting smart contract
+- `contracts/MafiaBettingV2.sol` — V2 on-chain betting contract (commit-reveal, 4 bet types)
 
 ## 🎯 Winning Conditions
 

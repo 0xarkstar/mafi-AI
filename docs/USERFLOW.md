@@ -160,7 +160,7 @@ graph TB
 | **src/lobby/** | Lobby management | `manager.py` (LobbyManager) |
 | **src/moltbook/** | External agent integration | `client.py` (DM API), `auth.py` (Identity JWT verification) |
 | **src/betting/** | Pari-mutuel betting | `pool.py`, `odds.py`, `manager.py`, `oddsmaker.py`, `settlement.py` |
-| **src/blockchain/** | Web3 integration | `provider.py` (AsyncWeb3 + POA), `contract.py` (oracle operations) |
+| **src/blockchain/** | Web3 integration | `provider.py` (AsyncWeb3 + POA), `gateway.py` (V2 commit-reveal, lock, settle) |
 | **src/x402/** | USDC payment protocol | `middleware.py` (402 Payment Required), `models.py` (frozen) |
 | **src/ai_bettor/** | Autonomous betting | `client.py` (WebSocket orchestrator), `analyzer.py` (LLM), `strategy.py`, `models.py` |
 | **src/api/** | FastAPI server | `server.py`, `routes.py`, `ws_manager.py` |
@@ -202,8 +202,9 @@ flowchart TD
 
     Reveal --> Settlement{Settlement<br/>Enabled?}
     Settlement -->|Yes| USDC[USDC Transfer<br/>On-Chain to Winners]
-    Settlement -->|No| End
-    USDC --> End([Session Ends])
+    USDC --> Cooldown
+    Settlement -->|No| Cooldown[10s Cooldown]
+    Cooldown --> Lobby
 
     style Start fill:#3b82f6,stroke:#1e40af,color:#fff
     style Lobby fill:#10b981,stroke:#059669,color:#fff
@@ -276,17 +277,12 @@ sequenceDiagram
     User->>Browser: Navigate to http://localhost:8080
     Browser->>Browser: Load React SPA (LandingScreen)
 
-    User->>Browser: Click "CONNECT WALLET"
-    Browser->>Browser: MetaMask prompt OR simulated fallback (0x71C...9A21)
-    Browser->>Browser: walletConnected = true → show nickname step
-
-    User->>Browser: Enter nickname → click "Next"
-    Browser->>Browser: Show avatar selection (8 character portraits)
-    User->>Browser: Select avatar → click "Enter Lobby"
+    User->>Browser: Enter nickname + select avatar (single screen)
+    User->>Browser: Click "Join Game"
 
     Browser->>WebSocket: Connect ws://localhost:8080/ws
     WebSocket-->>Browser: Connection established
-    Browser->>WebSocket: send join_lobby {type: "join_lobby", name: "Alice"}
+    Browser->>WebSocket: send join_lobby {type: "join_lobby", name: "Alice", avatar_index: 2}
     WebSocket->>LobbyManager: Create HumanPlayer → join()
     LobbyManager-->>WebSocket: lobby_joined {success: true, game_id: "..."}
     WebSocket-->>Browser: screen = ScreenState.LOBBY
@@ -310,7 +306,7 @@ sequenceDiagram
 | **DAY_DISCUSSION** | `game-bg.png` crossfades in (2s CSS transition), amber tint `#0a0a05/50%`. ChatBoard header shows "Your Turn to Speak" | Type statement in ChatBoard → Enter or Send button submits via `action_response` | "I have nothing to say." |
 | **DAY_VOTE** | Red tint `#1a0505/70%`. Player cards show red hover overlay + Target icon. Vote count badge appears on card top-right. | Click any alive player card (cursor-pointer, red hover glow) | Random candidate |
 | **REVEAL** | Purple radial gradient background. 3D card flip animation (click each card) | Click player cards to reveal AI/Human identity. Click "View Game Results" to proceed | — |
-| **GAME_OVER** | Winner-color gradient (red/green) + canvas confetti (150 particles) | View chip balance + bets placed. Click "Play Again" or "Back to Lobby" | — |
+| **GAME_OVER** | Winner-color gradient (red/green) + canvas confetti (150 particles) | View bets placed + player roster. Click "Play Again" (→ LOBBY) or "Back to Home" (→ LANDING) | — |
 
 **Interaction Protocol:**
 
@@ -345,8 +341,8 @@ Spectators watch games in real-time and place bets without participating in game
 
 ### Joining as Spectator
 
-1. Navigate to landing screen → Connect Wallet
-2. Enter nickname → Click "Spectate Match" (instead of proceeding to avatar selection)
+1. Navigate to landing screen
+2. Click "Spectate Match" (no nickname or avatar needed)
 3. `isSpectator = true`, screen transitions to `ScreenState.SPECTATE`
 4. WebSocket connects, but no `join_lobby` sent — spectators only receive broadcast events
 5. Receives all game events (phase_change, agent_message, vote_cast, elimination, etc.)
@@ -475,7 +471,7 @@ Broadcast via `odds_update` WebSocket event → updates `BettingStatusBar` and `
 
 ## WebSocket Event Map
 
-### Server → Client Events (15 events)
+### Server → Client Events (16 events)
 
 | Event | Data Fields | Trigger | UI Effect |
 |-------|-------------|---------|-----------|
@@ -493,14 +489,17 @@ Broadcast via `odds_update` WebSocket event → updates `BettingStatusBar` and `
 | **bet_confirmed** | `bet_id`, `amount_usdc`, `target` | Bet confirmed | USDC bet status → 'pending', system message in ChatBoard |
 | **bet_rejected** | `reason` | Bet rejected | System error message in ChatBoard |
 | **usdc_settlement** | `bet_id`, `won`, `payout` | USDC payouts | Bet status → 'won'/'lost', usdcBalance updated, system message |
+| **new_lobby** | `message` | New game lobby opens (after 10s cooldown) | System message: "A new game lobby is open!" |
 | **error** | `message` | Server error | Error system message in ChatBoard |
 
-### Client → Server Events (3 events)
+### Client → Server Events (5 events)
 
 | Event | Data Fields | Trigger | Purpose |
 |-------|-------------|---------|---------|
-| **join_lobby** | `type: "join_lobby"`, `name` | Avatar selected → "Enter Lobby" | Register as player (no player type field — server infers from connection context) |
+| **join_lobby** | `type: "join_lobby"`, `name`, `avatar_index` | "Join Game" clicked | Register as player |
 | **action_response** | `type: "action_response"`, `player_name`, `response` | Statement typed / player card clicked / night action selected | Send player decision to server |
+| **place_bet** | `type: "place_bet"`, `bet_id`, `bet_type`, `target`, `amount_usdc` | "Place Bet" clicked in betting panel | Place USDC bet via WebSocket |
+| **rejoin_lobby** | `type: "rejoin_lobby"`, `name`, `avatar_index` | "Play Again" clicked on Game Over screen | Rejoin next game lobby |
 | **ping** | `type: "ping"` | 25-second interval (automatic) | Keep WebSocket alive — server responds with `{type: "pong"}` (ignored by client) |
 
 ---
@@ -511,7 +510,7 @@ Broadcast via `odds_update` WebSocket event → updates `BettingStatusBar` and `
 stateDiagram-v2
     [*] --> LANDING: Page load
 
-    LANDING --> LOBBY: connectAndJoin() called<br/>(after wallet + nickname + avatar)
+    LANDING --> LOBBY: connectAndJoin() called<br/>(after nickname + avatar)
     LANDING --> SPECTATE: joinAsSpectator() called
 
     LOBBY --> GAME: lobby_joined + game_starting events<br/>(isSpectator = false)
@@ -524,13 +523,12 @@ stateDiagram-v2
 
     GAME --> GAME_OVER: game_over event<br/>+ 15s safety timeout
 
-    GAME_OVER --> LANDING: resetGame() called<br/>(click "Play Again" or "Back to Lobby")
+    GAME_OVER --> LOBBY: playAgain() called<br/>(click "Play Again")
+    GAME_OVER --> LANDING: resetGame() called<br/>(click "Back to Home")
 
     state LANDING {
-        [*] --> connect_wallet
-        connect_wallet --> enter_nickname: walletConnected = true
-        enter_nickname --> select_avatar: nickname entered → "Next"
-        select_avatar --> [*]: avatar selected → "Enter Lobby"
+        [*] --> enter_info: Single screen
+        enter_info --> [*]: nickname + avatar → "Join Game"
     }
 
     state LOBBY {
@@ -564,12 +562,12 @@ stateDiagram-v2
 
 | ScreenState | Condition | Component Rendered |
 |------------|-----------|---------------------|
-| **LANDING** | `screen === ScreenState.LANDING` | `LandingScreen` — shattered mask effect, wallet connect, nickname + avatar selection |
+| **LANDING** | `screen === ScreenState.LANDING` | `LandingScreen` — shattered mask effect, nickname + avatar selection (no wallet) |
 | **LOBBY** | `screen === ScreenState.LOBBY` | `LobbyScreen` — player portrait grid (7 slots), progress bar, scanning placeholder slots |
 | **GAME** | `screen === ScreenState.GAME` | `GameScreen` — 2-section layout: Board (player cards + BettingStatusBar) + ChatBoard (340px right panel); Role Reveal modal on load |
 | **SPECTATE** | `screen === ScreenState.SPECTATE` | `SpectatorScreen` — Board + 380px Betting Terminal right panel, Spectator Chat FAB |
 | **REVEAL** | `screen === ScreenState.REVEAL` | `RevealScreen` — 3D card flip grid (4-col), purple gradient bg, "Tap to reveal" cards |
-| **GAME_OVER** | `screen === ScreenState.GAME_OVER` | `GameOverScreen` — winner announcement, canvas confetti, chip balance + bet count, player roster |
+| **GAME_OVER** | `screen === ScreenState.GAME_OVER` | `GameOverScreen` — winner announcement, canvas confetti, bet count, player roster, Play Again / Back to Home |
 
 ---
 
@@ -670,10 +668,7 @@ interface GameState {
   usdcBets: USDCBet[];        // USDC bets tracked locally
   usdcBalance: number;        // starts at 50.0 USDC
 
-  // Wallet / auth
-  walletConnected: boolean;
-  walletAddress: string | null;
-  balance: number;            // chip balance (starts at 1000)
+  // Player info
   nickname: string;
   avatarIndex: number | null;
 
@@ -686,7 +681,6 @@ interface GameState {
   isSpectator: boolean;
 
   // Actions (store methods)
-  connectWallet: () => Promise<void>;
   connectAndJoin: (nickname: string, avatarIndex: number) => void;
   joinAsSpectator: () => void;
   handleWSEvent: (event: any) => void;
@@ -697,6 +691,7 @@ interface GameState {
   triggerEmote: (playerId: string, emote: string) => void;
   triggerReveal: () => void;
   endGame: () => void;
+  playAgain: () => void;
   resetGame: () => void;
 }
 ```
@@ -705,8 +700,7 @@ interface GameState {
 
 | Action | Store Change |
 |--------|-------------|
-| `connectWallet()` | MetaMask or simulated → `walletConnected = true, walletAddress = "0x..."` |
-| `connectAndJoin(nick, avatar)` | Opens WebSocket, sends `join_lobby` on `onOpen` |
+| `connectAndJoin(nick, avatar)` | Opens WebSocket, sends `join_lobby` with name + avatar_index on `onOpen` |
 | `joinAsSpectator()` | `isSpectator = true, screen = SPECTATE`, opens WebSocket (no `join_lobby`) |
 | `handleWSEvent("lobby_joined")` | `screen = LOBBY, gameId = ...` |
 | `handleWSEvent("game_starting")` | `screen = GAME` (or `SPECTATE`), players populated |
@@ -717,6 +711,7 @@ interface GameState {
 | `handleWSEvent("game_over")` | `winner` set; safety timeout → `screen = GAME_OVER` after 15s |
 | `handleWSEvent("identity_reveal")` | Player `isAi` updated; if `all_revealed`, `screen = REVEAL` |
 | `endGame()` | `screen = GAME_OVER` |
+| `playAgain()` | Resets game state, sends `rejoin_lobby` WS message, `screen = LOBBY` |
 | `resetGame()` | Disconnects WebSocket, resets all state to initial values, `screen = LANDING` |
 
 ---
