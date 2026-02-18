@@ -473,4 +473,49 @@ Fix 4 remaining issues: frontend betting not wired, V1 dead code, AI Bettor can'
 - **90 Hardhat tests** (unchanged)
 - **398 total tests**
 
+---
+
+## Phase 3: Bug Fixes, Coverage Improvement, Feature Completion — 2026-02-18
+
+### Goal
+Fix all remaining issues: frontend memory leaks, test coverage gaps (80%→89%), AI Bettor completion, Moltbook join route, X402 field verification, config cleanup.
+
+### P1 Implementation — COMPLETE
+- Started: 2026-02-18
+- Team: p-impl-frontend (sonnet), p-impl-python (sonnet), p-test-writer (sonnet)
+
+| Agent | Files | Status |
+|-------|-------|--------|
+| p-impl-frontend | SpectatorScreen.tsx, GameScreen.tsx, store.ts | Done |
+| p-impl-python | client.py, server.py, middleware.py, gateway.py, .env.example, CLAUDE.md | Done |
+| p-test-writer | 5 new test files + 3 updated test files | Done |
+
+### Changes
+**Frontend:**
+1. **3 CRITICAL memory leaks fixed** — setTimeout cleanup in SpectatorScreen (activeSpeaker, betSuccess), GameScreen (activeSpeaker)
+2. **2 store timeout leaks fixed** — game_over 15s + emote 3s timeouts tracked and cleared in resetGame/playAgain
+
+**Python Source:**
+3. **AI Bettor total_won** — handles usdc_settlement/bet_confirmed/bet_rejected events, immutable state
+4. **Moltbook lobby join** — POST /api/lobby/join-moltbook for external AI agent registration
+5. **X402 field fix** — VerifyResponse.payer (not .payload.get("from")), SettleResponse.transaction
+6. **relay_bet() deleted** — placeholder removed from BlockchainGateway
+7. **.env.example created** — all configuration variables documented
+8. **STARTING_CHIPS removed** from CLAUDE.md (not in Settings)
+
+**Test Coverage (80% → 89%):**
+9. game_engine.py: 18% → 99% (+25 integration tests)
+10. storage/: 0% → 100% (+24 tests)
+11. errors.py: 0% → 100% (+22 tests)
+12. retry.py: 52% → 100% (+12 tests)
+13. ws_manager.py: 62% → 100% (+27 tests)
+14. AI Bettor event tests (+7), Moltbook route tests (+5)
+15. Stale test_relay_bet_returns_none removed
+
+### Test Results
+- **430 Python tests**, all passing
+- **90 Hardhat tests** (unchanged)
+- **520 total tests**
+- **89% Python coverage** (up from 80%)
+
 ## Pipeline Complete
