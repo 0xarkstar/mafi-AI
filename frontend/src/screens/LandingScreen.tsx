@@ -3,7 +3,7 @@ import { motion } from 'framer-motion';
 import { useGameStore } from '../store';
 import { AVATAR_IMAGES } from '../constants';
 import { Button, Input } from '../components/UIComponents';
-import { Gamepad2, Eye, HelpCircle } from 'lucide-react';
+import { Wallet, Gamepad2, Eye, HelpCircle, ChevronLeft } from 'lucide-react';
 
 // Floating fragment particles for the seam area
 interface FloatingPiece {
@@ -100,17 +100,13 @@ const buildShatteredMask = (): string => {
 };
 
 export const LandingScreen = () => {
-  const { connectAndJoin, joinAsSpectator } = useGameStore();
+  const { connectWallet, walletConnected, connectAndJoin, joinAsSpectator, walletAddress } = useGameStore();
   const [nick, setNick] = useState('');
-  const [selectedAvatar, setSelectedAvatar] = useState(0);
+  const [step, setStep] = useState<'nickname' | 'avatar'>('nickname');
+  const [selectedAvatar, setSelectedAvatar] = useState<number | null>(null);
 
   const shatteredMask = useMemo(() => buildShatteredMask(), []);
   const floatingPieces = useMemo(() => generateFloatingPieces(), []);
-
-  const handleJoin = () => {
-    if (!nick.trim()) return;
-    connectAndJoin(nick.trim(), selectedAvatar);
-  };
 
   return (
     <div className="h-screen w-full flex overflow-hidden relative bg-[#030712]">
@@ -222,32 +218,87 @@ export const LandingScreen = () => {
           transition={{ delay: 0.5, duration: 0.8 }}
           className="w-full max-w-[400px] relative z-10"
         >
-          <div className="space-y-6">
-            {/* Nickname input */}
-            <div className="space-y-2">
-              <label className="text-[10px] uppercase font-bold text-[#4b5563] tracking-[0.2em] block pl-1">
-                Agent Codename
-              </label>
-              <Input
-                placeholder="ENTER ALIAS"
-                value={nick}
-                onChange={(e) => setNick(e.target.value)}
-                maxLength={12}
-                autoFocus
-              />
-              <div className="flex items-center gap-1.5 pl-1 pt-1 opacity-70">
-                <HelpCircle className="w-3 h-3 text-[#4b5563]" />
-                <span className="text-[10px] text-[#4b5563] font-medium tracking-wide">
-                  Are you human? No problem. Write your nickname.
-                </span>
+          {!walletConnected ? (
+            <div className="mt-4">
+              <Button
+                onClick={connectWallet}
+                size="xl"
+                className="w-full border-gold/40 hover:bg-gold/5"
+                icon={<Wallet className="w-5 h-5 text-gold" />}
+              >
+                CONNECT WALLET
+              </Button>
+            </div>
+          ) : step === 'nickname' ? (
+            <div className="space-y-6">
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-[#4b5563] tracking-[0.2em] block pl-1">
+                  Agent Codename
+                </label>
+                <Input
+                  placeholder="ENTER ALIAS"
+                  value={nick}
+                  onChange={(e) => setNick(e.target.value)}
+                  maxLength={12}
+                  autoFocus
+                />
+                <div className="flex items-center gap-1.5 pl-1 pt-1 opacity-70">
+                  <HelpCircle className="w-3 h-3 text-[#4b5563]" />
+                  <span className="text-[10px] text-[#4b5563] font-medium tracking-wide">
+                    Are you human? No problem. Write your nickname.
+                  </span>
+                </div>
+              </div>
+
+              <div className="space-y-3 pt-2">
+                <Button
+                  onClick={() => nick && setStep('avatar')}
+                  disabled={!nick}
+                  size="xl"
+                  className="w-full"
+                  icon={<Gamepad2 className="w-5 h-5" />}
+                >
+                  Next
+                </Button>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="w-full"
+                  icon={<Eye className="w-4 h-4" />}
+                  onClick={joinAsSpectator}
+                >
+                  Spectate Match
+                </Button>
+              </div>
+
+              <div className="text-center pt-2">
+                <span className="text-[9px] font-mono text-white/20 tracking-widest">{walletAddress}</span>
               </div>
             </div>
+          ) : (
+            <motion.div
+              initial={{ opacity: 0, x: 20 }}
+              animate={{ opacity: 1, x: 0 }}
+              transition={{ duration: 0.4, ease: [0.22, 1, 0.36, 1] }}
+              className="space-y-5"
+            >
+              <button
+                onClick={() => setStep('nickname')}
+                className="flex items-center gap-1 text-[11px] text-white/40 hover:text-white/70 transition-colors font-medium tracking-wide"
+              >
+                <ChevronLeft className="w-3.5 h-3.5" />
+                BACK
+              </button>
 
-            {/* Avatar selection */}
-            <div className="space-y-2">
-              <label className="text-[10px] uppercase font-bold text-[#4b5563] tracking-[0.2em] block pl-1">
-                Choose Your Identity
-              </label>
+              <div className="space-y-2">
+                <label className="text-[10px] uppercase font-bold text-[#4b5563] tracking-[0.2em] block pl-1">
+                  Choose Your Identity
+                </label>
+                <p className="text-[10px] text-[#4b5563] pl-1 font-medium">
+                  Select an avatar for <span className="text-gold">{nick}</span>
+                </p>
+              </div>
+
               <div className="grid grid-cols-4 gap-2">
                 {AVATAR_IMAGES.map((src, i) => {
                   const isSelected = selectedAvatar === i;
@@ -263,35 +314,33 @@ export const LandingScreen = () => {
                           : 'border-white/10 hover:border-white/30'
                       }`}
                     >
-                      <img src={src} alt={`Character ${i + 1}`} className="w-full h-full object-cover" />
+                      <img
+                        src={src}
+                        alt={`Character ${i + 1}`}
+                        className="w-full h-full object-cover"
+                      />
                     </motion.button>
                   );
                 })}
               </div>
-            </div>
 
-            {/* Buttons */}
-            <div className="space-y-3 pt-2">
-              <Button
-                onClick={handleJoin}
-                disabled={!nick.trim()}
-                size="xl"
-                className="w-full"
-                icon={<Gamepad2 className="w-5 h-5" />}
-              >
-                Join Game
-              </Button>
-              <Button
-                variant="secondary"
-                size="lg"
-                className="w-full"
-                icon={<Eye className="w-4 h-4" />}
-                onClick={joinAsSpectator}
-              >
-                Spectate Match
-              </Button>
-            </div>
-          </div>
+              <div className="space-y-3 pt-1">
+                <Button
+                  onClick={() => selectedAvatar !== null && connectAndJoin(nick, selectedAvatar)}
+                  disabled={selectedAvatar === null}
+                  size="xl"
+                  className="w-full"
+                  icon={<Gamepad2 className="w-5 h-5" />}
+                >
+                  Enter Lobby
+                </Button>
+              </div>
+
+              <div className="text-center">
+                <span className="text-[9px] font-mono text-white/20 tracking-widest">{walletAddress}</span>
+              </div>
+            </motion.div>
+          )}
         </motion.div>
       </div>
     </div>

@@ -8,7 +8,10 @@ export interface ConnectionSlice {
   gameId: string | null;
   playerName: string;
   avatarIndex: number | null;
+  walletConnected: boolean;
+  walletAddress: string;
 
+  connectWallet: () => void;
   connectAndJoin: (nickname: string, avatarIndex: number) => void;
   joinAsSpectator: () => void;
   submitActionResponse: (response: string) => void;
@@ -19,6 +22,17 @@ export const createConnectionSlice: StateCreator<StoreState, [], [], ConnectionS
   gameId: null,
   playerName: '',
   avatarIndex: null,
+  walletConnected: false,
+  walletAddress: '',
+
+  connectWallet: () => {
+    // Mock wallet connection for hackathon demo
+    const mockAddr = '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+    set({
+      walletConnected: true,
+      walletAddress: mockAddr,
+    });
+  },
 
   connectAndJoin: (nickname, avatarIndex) => {
     set({

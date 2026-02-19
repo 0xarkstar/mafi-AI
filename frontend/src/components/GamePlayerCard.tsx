@@ -1,8 +1,18 @@
+import type React from 'react';
 import { Player, Role } from '../types';
 import { AVATAR_IMAGES } from '../constants';
 import { GlassCard } from './UIComponents';
 import { motion, AnimatePresence } from 'framer-motion';
-import { Target, Skull, Shield, Sword, Eye } from 'lucide-react';
+import { User, Diamond, Moon, Flame, Eye, Hexagon, Zap, Star, Target, Skull, Shield, Sword } from 'lucide-react';
+
+// --- Icon Helper ---
+const AvatarIcon = ({ name, className }: { name: string; className?: string }) => {
+  const icons: Record<string, React.ElementType> = {
+    User, Diamond, Moon, Flame, Eye, Hash: Hexagon, Zap, Star
+  };
+  const Icon = icons[name] || User;
+  return <Icon className={className} />;
+};
 
 interface GamePlayerCardProps {
   player: Player;
@@ -70,7 +80,7 @@ export const GamePlayerCard = ({ player, isSpeaking, onVote, showVoteButton, vot
               <img src={AVATAR_IMAGES[player.avatarIndex]} alt={player.name} className={`absolute inset-0 w-full h-full object-cover ${player.isDead ? 'grayscale opacity-40' : ''}`} />
             ) : (
               <div className={`absolute inset-0 flex items-center justify-center ${player.isDead ? 'bg-black/80' : 'bg-gradient-to-b from-[#0f172a]/80 to-black/60'}`}>
-                <div className={`w-16 h-16 ${player.isDead ? 'text-gray-700' : isSpeaking ? 'text-gold' : 'text-blue-400'}`} />
+                <AvatarIcon name={player.avatarIcon} className={`w-16 h-16 ${player.isDead ? 'text-gray-700' : isSpeaking ? 'text-gold' : 'text-blue-400'}`} />
               </div>
             )}
 
