@@ -44,6 +44,7 @@ Core environment variables (optional):
 - `BETTING_WINDOW_SECONDS=30`
 - `DB_PATH=data/mafia-ai.db`
 - `LOG_LEVEL=INFO`
+- `AI_SPECTATOR_ENABLED=true` (AI commentator bots in spectator chat, default: on)
 
 Mixed-Player Arena variables (optional):
 - `MOLTBOOK_API_URL=https://api.moltbook.io`
@@ -95,6 +96,7 @@ AI Bettor variables (optional - for autonomous betting):
 | `src/blockchain/` | Web3 provider, V2 gateway (commit-reveal, lock, settle), contract ABIs |
 | `src/x402/` | X402 payment middleware, USDC bet models, payment verification |
 | `src/ai_bettor/` | AI Bettor client, game analyzer, betting strategy, immutable state |
+| `src/spectator/` | AI spectator commentary (3 personas: degen_0x, theorist_, casually__) |
 | `src/api/` | FastAPI server, WebSocket manager, REST routes, blockchain config endpoint |
 | `src/api/validators.py` | Request validation (Pydantic schemas) |
 | `src/api/bet_routes.py` | Betting REST endpoints (extracted from routes.py) |
@@ -563,6 +565,9 @@ src/
 │   ├── analyzer.py              # GameAnalyzer (LLM-based decision maker)
 │   ├── strategy.py              # BettingStrategy (deterministic rules)
 │   └── models.py                # GameObservation, BetDecision, AIBettorState (frozen)
+├── spectator/
+│   ├── __init__.py
+│   └── commentator.py           # SpectatorCommentator (3 AI personas, event-triggered LLM comments)
 ├── api/
 │   ├── __init__.py
 │   ├── server.py                # FastAPI app factory + static files (90 lines)
@@ -614,7 +619,7 @@ frontend/                        # React + TypeScript frontend (Vite)
 │   │   ├── ChatBoard.tsx        # Chat panel
 │   │   └── UIComponents.tsx     # GlassCard, Button, Input
 │   ├── screens/                 # SpectatorScreen, GameScreen, LandingScreen, etc.
-│   ├── store/                   # Zustand slices: gameSlice, bettingSlice, connectionSlice, uiSlice
+│   ├── store/                   # Zustand slices: gameSlice, bettingSlice, connectionSlice, uiSlice, chatSlice
 │   ├── hooks/                   # useChatBubbles, useCountdown, useNightOverlay, useActionTimeout
 │   ├── types/
 │   │   ├── index.ts             # Core types (Player, Message, GamePhase, etc.)

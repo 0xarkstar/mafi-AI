@@ -12,7 +12,7 @@
 - **혼합 플레이어 게임** — 모든 플레이어 타입을 자유롭게 조합 (전원 AI, 전원 인간, 혼합) — 7인 게임
 - **Moltbook 듀얼 커넥션** — 외부 AI 에이전트가 DM API로 플레이 + X402로 베팅을 동시 수행
 - **로비 시스템** — 게임 시작 전 플레이어 참가, 부족한 인원은 House AI로 자동 보충
-- **모던 React 프론트엔드** — React 19 + TypeScript + Tailwind v4, 플랫 컴포넌트 구조 (6개 화면, 2개 컴포넌트 파일, 통합 Zustand 스토어 1개)
+- **모던 React 프론트엔드** — React 19 + TypeScript + Tailwind v4, 모듈화 구조 (6개 화면, 14개 컴포넌트 파일, 5-슬라이스 Zustand 스토어)
 - **실시간 관전** — WebSocket 기반 대시보드, 애니메이션 페이즈 전환
 - **통합 USDC 베팅 (X402)** — 단일 `POST /api/bets` 엔드포인트, X402 USDC 결제 (BSC 테스트넷 / Monad 테스트넷)
 - **다이나믹 배당률** — 파리뮤추얼 베팅 풀 + AI 기반 배당률 (5% 하우스 엣지), AI 70% + 시장 30% 블렌딩
@@ -23,7 +23,8 @@
 - **비주얼 폴리시** — 초상화 캐릭터 카드 (8개 선택 가능한 아바타), 카드 내 채팅 버블 (5초 자동 제거), 플로팅 이모트 오버레이 (스프링 애니메이션), 투표 수 배지, 낮/밤 배경 크로스페이드 (2초 CSS 전환), 페이즈별 색조 오버레이, 역할 공개 모달, Night Phase 오버레이
 - **OpenAI GPT-4o-mini** — 모든 AI 연산에 사용되는 빠르고 경제적인 모델
 - **불변 아키텍처** — Pydantic v2 frozen 모델, 함수형 상태 전이
-- **Python 430개 + Solidity 90개 테스트** — 총 520개, 89% 커버리지
+- **실시간 관전자 채팅** — WebSocket 기반 채팅 + 3개 AI 코멘테이터 페르소나 (`degen_0x`, `theorist_`, `casually__`), 서버 측 속도 제한, 목업 데이터 없음
+- **Python 392개 + Solidity 90개 테스트** — 총 482개, 84% 커버리지
 
 ## 🎮 작동 방식
 
@@ -209,6 +210,7 @@ src/                              # Python 백엔드
 ├── agents/                       # AI 성격 + OpenAI 클라이언트
 ├── players/                      # PlayerProtocol 구현체 (4가지 타입)
 ├── lobby/                        # 로비 매니저
+├── spectator/                    # AI 코멘테이터 (3 페르소나, 이벤트 트리거)
 ├── moltbook/                     # 외부 에이전트 API 클라이언트
 ├── betting/                      # 파리뮤추얼 풀 + AI 배당률
 ├── blockchain/                   # Web3 프로바이더 + V2 게이트웨이 (commit-reveal)
@@ -218,21 +220,37 @@ src/                              # Python 백엔드
 ├── storage/                      # aiosqlite + 리포지토리
 └── utils/                        # 로깅, 재시도, 에러
 
-frontend/                         # React 19 + TypeScript (플랫 구조)
+frontend/                         # React 19 + TypeScript (모듈화 구조)
 ├── src/
-│   ├── screens/                  # 화면별 파일 하나씩
+│   ├── screens/                  # 화면별 파일 (6개 화면)
 │   │   ├── LandingScreen.tsx     # 지갑 연결 + 닉네임 + 아바타 선택
 │   │   ├── LobbyScreen.tsx       # 플레이어 초상화 그리드 + 진행 바
-│   │   ├── GameScreen.tsx        # 보드 + ChatPanel + 오버레이 (역할 공개, Night Phase, Night Action)
-│   │   ├── SpectatorScreen.tsx   # 보드 + 베팅 터미널 (380px) + 관전자 채팅
+│   │   ├── GameScreen.tsx        # 보드 + ChatPanel + 오버레이
+│   │   ├── SpectatorScreen.tsx   # 보드 + 베팅 터미널 + 관전자 채팅
 │   │   ├── RevealScreen.tsx      # 3D 카드 플립 정체 공개
-│   │   └── GameOverScreen.tsx    # 승자 발표 + 컨페티 + 플레이어 명단
-│   ├── components/
-│   │   ├── GameComponents.tsx    # PlayerCard, GamePlayerCard, BettingStatusBar, EmoteMenu, ChatBoard, BettingPanel (스텁)
-│   │   └── UIComponents.tsx      # GlassCard, Button, Input
-│   ├── store.ts                  # 단일 useGameStore (Zustand) — 모든 상태
+│   │   └── GameOverScreen.tsx    # 승자 발표 + 컨페티
+│   ├── components/               # 추출된 UI 컴포넌트 (14개 파일)
+│   │   ├── shared/               # GameBackground, GameHeader, PhaseIndicator, PlayerGrid
+│   │   ├── BettingPanel.tsx      # 베팅 터미널 사이드바
+│   │   ├── ChatBoard.tsx         # 게임 채팅 메시지 + 입력
+│   │   ├── GamePlayerCard.tsx    # 초상화, 버블, 이모트가 있는 플레이어 카드
+│   │   ├── NightOverlay.tsx      # 밤 페이즈 풀스크린 오버레이
+│   │   ├── NightActionPanel.tsx  # 마피아/탐정 밤 행동 모달
+│   │   ├── RoleRevealModal.tsx   # 게임 시작 시 역할 공개
+│   │   ├── SpecChatPanel.tsx     # 실시간 관전자 채팅 (WebSocket + AI 봇)
+│   │   ├── GameComponents.tsx    # BettingStatusBar, EmoteMenu 등
+│   │   ├── UIComponents.tsx      # GlassCard, Button, Input
+│   │   └── ErrorBoundary.tsx     # React 에러 바운더리
+│   ├── store/                    # Zustand 스토어 (5개 슬라이스)
+│   │   ├── index.ts              # 통합 useGameStore
+│   │   ├── gameSlice.ts          # 게임 상태 + WS 이벤트 핸들링
+│   │   ├── bettingSlice.ts       # 베팅, 배당률, USDC 잔액
+│   │   ├── connectionSlice.ts    # WebSocket 라이프사이클
+│   │   ├── uiSlice.ts            # 관전자 플래그, 현재 액션
+│   │   └── chatSlice.ts          # 관전자 채팅 메시지 + 닉네임
 │   ├── websocket.ts              # 지수 백오프 재연결이 있는 WebSocket 클라이언트
-│   ├── types.ts                  # ScreenState, GamePhase, Role, Player, Message, Bet, BetType, AVATAR_IMAGES
+│   ├── types.ts                  # ScreenState, GamePhase, Role, Player, Message, Bet, BetType
+│   ├── types/events.ts           # ServerEvent + ClientEvent 유니온 타입
 │   ├── constants.ts              # AGENTS_DATA (7가지 성격), PHASE_GRADIENTS
 │   └── mappers.ts                # mapPhase, mapRole, mapWinner, buildPlayerFromName
 ├── vite.config.ts
@@ -246,7 +264,7 @@ contracts/                        # Solidity 스마트 컨트랙트
 - 모든 백엔드 모델은 `frozen=True` — 새 객체 생성, 절대 변경 안 함
 - 게임 상태 전이는 새로운 `GameState` 인스턴스 반환
 - 에이전트 메모리는 불변 롤링 윈도우 (최근 10개 이벤트)
-- 프론트엔드는 단일 Zustand 스토어 (`useGameStore`)로 모든 게임, 채팅, 베팅, 지갑, WebSocket 상태 통합
+- 프론트엔드는 5-슬라이스 Zustand 스토어 (`useGameStore`)로 게임, 채팅, 베팅, 연결, UI 상태 통합
 - WebSocket 자동 재연결 (exponential backoff)
 - 페이즈 적응형 UI (배경 그래디언트, 페이즈별 애니메이션 전환)
 - 블록체인/X402는 선택사항 — 지갑 연결 없이도 게임 가능
@@ -314,9 +332,9 @@ pytest tests/ -s
 ```
 
 **커버리지:**
-- **Python**: 430개 테스트 통과, 89% 커버리지
+- **Python**: 392개 테스트 통과, 84% 커버리지
 - **Solidity**: 90개 테스트 통과 (Hardhat — 34 V1 + 56 V2)
-- **합계**: 520개 테스트
+- **합계**: 482개 테스트
 
 ## 🔌 API & WebSocket
 
@@ -352,6 +370,11 @@ ws://localhost:8080/ws
   new_lobby         — 새 게임 로비 오픈 (게임 종료 10초 후)
   usdc_settlement   — USDC 정산 완료
 
+관전자 채팅 이벤트:
+  spec_chat_message — 관전자 채팅 메시지 (이름, 텍스트, isAi 플래그)
+  spec_chat_joined  — 관전자 채팅 닉네임 할당
+  spec_chat_error   — 속도 제한 또는 검증 오류
+
 플레이어 이벤트:
   action_request    — 휴먼 플레이어 차례 (발언/투표 + 타임아웃)
   identity_reveal   — 플레이어 타입 공개 (AI/인간)
@@ -363,6 +386,8 @@ ws://localhost:8080/ws
   action_response   — { type: "action_response", player_name, response }
   place_bet         — { type: "place_bet", bet_id, bet_type, target, amount_usdc }
   rejoin_lobby      — { type: "rejoin_lobby", name, avatar_index }
+  join_spec_chat    — { type: "join_spec_chat", name? } 관전자 접속 시 자동 전송
+  spec_chat         — { type: "spec_chat", text } 관전자 채팅 메시지 (200자 제한, 3초 속도 제한)
   ping              — { type: "ping" } 킵얼라이브 (25초 간격, 자동 전송)
 ```
 
@@ -382,7 +407,7 @@ ptw tests/
 
 ### 프로젝트 구조
 - `src/` — Python 백엔드 (API, 게임 엔진, AI 에이전트, 베팅, 블록체인)
-- `frontend/` — React 19 + TypeScript 소스 (6개 화면, 2개 컴포넌트 파일, 통합 스토어 1개)
+- `frontend/` — React 19 + TypeScript 소스 (6개 화면, 14개 컴포넌트 파일, 5-슬라이스 Zustand 스토어)
 - `static/` — Vite 빌드 출력 (프로덕션에서 FastAPI가 서빙)
 - `tests/` — 테스트 모음 (단위 + 통합 + 목)
 - `contracts/` — Solidity 스마트 컨트랙트
@@ -398,11 +423,13 @@ ptw tests/
 - `src/ai_bettor/client.py` — 자율 베팅 에이전트
 - `src/api/server.py` — FastAPI + WebSocket 서버
 - `frontend/src/App.tsx` — React 앱 루트 (ScreenState 열거형으로 화면 라우팅)
-- `frontend/src/store.ts` — 단일 Zustand 스토어 (게임 + 채팅 + 베팅 + 지갑 상태 전체)
+- `frontend/src/store/index.ts` — 5-슬라이스 Zustand 스토어 (게임, 베팅, 연결, UI, 채팅)
 - `frontend/src/websocket.ts` — 지수 백오프 재연결이 있는 WebSocket 클라이언트
 - `frontend/src/screens/GameScreen.tsx` — 보드 + 채팅 패널이 있는 메인 플레이어 화면
 - `frontend/src/screens/SpectatorScreen.tsx` — 베팅 터미널이 있는 관전자 뷰
-- `frontend/src/components/GameComponents.tsx` — PlayerCard, GamePlayerCard, ChatBoard, EmoteMenu, BettingStatusBar
+- `src/spectator/commentator.py` — AI 관전자 코멘테이터 (3 페르소나)
+- `frontend/src/components/SpecChatPanel.tsx` — 실시간 관전자 채팅 (WebSocket + AI 봇)
+- `frontend/src/components/GameComponents.tsx` — BettingStatusBar, EmoteMenu
 - `contracts/MafiaBettingV2.sol` — V2 온체인 베팅 컨트랙트 (commit-reveal, 4가지 베팅 타입)
 
 ## 🎯 승리 조건

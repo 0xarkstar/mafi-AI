@@ -166,11 +166,12 @@ graph TB
 | **src/api/** | FastAPI 서버 | `server.py`, `routes.py`, `ws_manager.py` |
 | **src/storage/** | 데이터베이스 레이어 | `database.py` (aiosqlite), `repositories/` |
 | **src/utils/** | 유틸리티 | `logger.py` (structlog), `retry.py`, `errors.py` |
+| **src/spectator/** | AI 관전자 코멘터리 | `commentator.py` — 3 AI 페르소나 (degen_0x, theorist_, casually__), 게임 이벤트 트리거 LLM 코멘트 |
 | **frontend/src/screens/** | 화면 단위 React 컴포넌트 | `LandingScreen.tsx`, `LobbyScreen.tsx`, `GameScreen.tsx`, `SpectatorScreen.tsx`, `RevealScreen.tsx`, `GameOverScreen.tsx` |
-| **frontend/src/components/** | 공유 UI 컴포넌트 | `GameComponents.tsx` (PlayerCard, GamePlayerCard, BettingStatusBar, EmoteMenu, ChatBoard), `UIComponents.tsx` (GlassCard, Button, Input) |
-| **frontend/src/store.ts** | 통합 Zustand 상태 | 게임, 채팅, 베팅, 지갑, WebSocket 상태를 모두 관리하는 단일 `useGameStore` |
+| **frontend/src/components/** | 14개 추출 UI 컴포넌트 + 4 공유 | `GamePlayerCard`, `ChatBoard`, `BettingPanel`, `SpecChatPanel`, `NightOverlay`, `NightActionPanel`, `RoleRevealModal`, `ErrorBoundary` 등 + `shared/` (GameBackground, GameHeader, PhaseIndicator, PlayerGrid) |
+| **frontend/src/store/** | 5-슬라이스 Zustand 스토어 | `gameSlice`, `bettingSlice`, `connectionSlice`, `uiSlice`, `chatSlice` — `index.ts`에서 합성 |
 | **frontend/src/websocket.ts** | WebSocket 클라이언트 | 지수 백오프 자동 재연결, 25초 ping keepalive |
-| **frontend/src/types.ts** | TypeScript 열거형 & 인터페이스 | `ScreenState`, `GamePhase`, `Role`, `Player`, `Message`, `Bet`, `BetType` |
+| **frontend/src/types/** | TypeScript 열거형 & 인터페이스 | `index.ts` (ScreenState, GamePhase, Role, Player 등), `events.ts` (ServerEvent 유니언 타입) |
 | **frontend/src/mappers.ts** | 백엔드 ↔ 프론트엔드 매핑 | `mapPhase`, `mapRole`, `mapWinner`, `buildPlayerFromName` |
 | **frontend/src/constants.ts** | 정적 데이터 | `AGENTS_DATA` (7 에이전트), `PHASE_GRADIENTS` |
 
@@ -344,9 +345,10 @@ sequenceDiagram
 1. 랜딩 화면으로 이동
 2. "Spectate Match" 클릭 (닉네임이나 아바타 불필요)
 3. `isSpectator = true`, 화면이 `ScreenState.SPECTATE`로 전환
-4. WebSocket 연결되지만 `join_lobby`는 전송하지 않음 — 관전자는 브로드캐스트 이벤트만 수신
+4. WebSocket 연결 후 자동으로 `join_spec_chat` 전송 — 서버가 관전자 이름 할당 (예: `Spectator_42`)
 5. 모든 게임 이벤트 수신 (phase_change, agent_message, vote_cast, elimination 등)
 6. 우측의 베팅 터미널에서 USDC 베팅 가능
+7. 좌측 하단 FAB으로 **실시간 관전자 채팅** 참여 — 다른 관전자 + AI 코멘테이터와 대화
 
 ### 관전자 화면 레이아웃
 
@@ -377,7 +379,17 @@ sequenceDiagram
 └─────────────────────────────────────────┴───────────────────────┘
 ```
 
-**관전자 채팅**: 좌측 하단 FAB으로 토글하는 플로팅 패널 (340×420px). 다른 시청자의 시뮬레이션 메시지 표시. 닫혀 있을 때 FAB에 읽지 않은 배지 표시.
+**관전자 채팅**: 좌측 하단 FAB으로 토글하는 플로팅 패널 (340×420px). **실제 WebSocket 기반** — 다른 관전자와 실시간 채팅 + AI 코멘테이터 봇 혼합. 닫혀 있을 때 FAB에 읽지 않은 배지 표시. 3초 rate limit 적용, 200자 제한.
+
+**AI 코멘테이터 (3 페르소나)**:
+
+| 이름 | 스타일 | 예시 |
+|------|--------|------|
+| `degen_0x` | 겜블러 슬랭 | "bruh odds just flipped hard, going all in citizens" |
+| `theorist_` | 음모론자 | "did anyone notice how Viktor paused before speaking? classic tell" |
+| `casually__` | Gen-Z | "lol that elimination was so predictable" |
+
+AI 봇은 게임 이벤트 (phase_change, elimination, game_over, odds_update) 발생 시 2-8초 딜레이 후 코멘트 생성. `🤖` 아이콘과 시안색 메시지 버블로 구분. 5초 쿨다운으로 스팸 방지.
 
 ---
 
@@ -471,7 +483,7 @@ GPT-4o-mini가 매 페이즈 전환 시 게임 상태 분석:
 
 ## WebSocket 이벤트 맵
 
-### 서버 → 클라이언트 이벤트 (16개 이벤트)
+### 서버 → 클라이언트 이벤트 (19개 이벤트)
 
 | 이벤트 | 데이터 필드 | 트리거 | UI 효과 |
 |-------|-------------|---------|-----------|
@@ -491,8 +503,11 @@ GPT-4o-mini가 매 페이즈 전환 시 게임 상태 분석:
 | **usdc_settlement** | `bet_id`, `won`, `payout` | USDC 페이아웃 | 베팅 상태 → 'won'/'lost', usdcBalance 업데이트, 시스템 메시지 |
 | **new_lobby** | `message` | 새 게임 로비 오픈 (10초 쿨다운 후) | 시스템 메시지: "새 게임 로비가 열렸습니다!" |
 | **error** | `message` | 서버 오류 | ChatBoard에 오류 시스템 메시지 |
+| **spec_chat_message** | `name`, `text`, `is_ai` | 관전자/AI 코멘테이터 채팅 | SpecChatPanel에 메시지 추가, AI 메시지는 `🤖` 아이콘 + 시안색 버블 |
+| **spec_chat_joined** | `name` | 관전자 채팅 참가 | `specChatName` 설정 (본인 이름 식별) |
+| **spec_chat_error** | `message` | rate limit 또는 이름 없음 | 관전자 채팅 에러 표시 |
 
-### 클라이언트 → 서버 이벤트 (5개 이벤트)
+### 클라이언트 → 서버 이벤트 (7개 이벤트)
 
 | 이벤트 | 데이터 필드 | 트리거 | 목적 |
 |-------|-------------|---------|---------|
@@ -501,6 +516,8 @@ GPT-4o-mini가 매 페이즈 전환 시 게임 상태 분석:
 | **place_bet** | `type: "place_bet"`, `bet_id`, `bet_type`, `target`, `amount_usdc` | 베팅 패널에서 "Place Bet" 클릭 | WebSocket을 통해 USDC 베팅 |
 | **rejoin_lobby** | `type: "rejoin_lobby"`, `name`, `avatar_index` | Game Over 화면에서 "Play Again" 클릭 | 다음 게임 로비에 재참가 |
 | **ping** | `type: "ping"` | 25초 간격 (자동) | WebSocket 유지 — 서버는 `{type: "pong"}`으로 응답 (클라이언트가 무시) |
+| **join_spec_chat** | `type: "join_spec_chat"` | 관전자 접속 시 자동 전송 (`joinAsSpectator` onOpen) | 관전자 채팅 등록 + 이름 할당 |
+| **spec_chat** | `type: "spec_chat"`, `text` | 관전자 채팅 입력 전송 | 관전자 채팅 메시지 브로드캐스트 |
 
 ---
 
@@ -623,7 +640,7 @@ graph TB
     Spectate --> SBoard[게임 보드 flex-1]
     Spectate --> BettingTerminal[베팅 터미널 380px<br/>실시간 배당률 + 베팅 하기 + 내 베팅 + 게임 로그]
     Spectate --> SpecChatFAB[관전자 채팅 FAB<br/>좌측 하단, 읽지 않은 배지]
-    Spectate --> SpecChatPanel[관전자 채팅 패널<br/>340×420px 팝업, 시뮬레이션 메시지]
+    Spectate --> SpecChatPanel[관전자 채팅 패널<br/>340×420px 팝업, 실시간 WebSocket 채팅 + AI 봇]
 
     Reveal --> RevealCards[RevealCard × 7<br/>클릭 시 3D 플립]
     RevealCards --> FrontFace[앞면: 초상화 + 이름 + 탭하여 공개]
@@ -644,55 +661,71 @@ graph TB
 
 ---
 
-## 상태 관리 (통합 Zustand 스토어 1개)
+## 상태 관리 (5-슬라이스 Zustand 스토어)
 
-프론트엔드는 **단일 Zustand 스토어** (`store.ts`)를 사용하여 모든 게임, UI, WebSocket, 베팅, 지갑 상태를 하나의 `useGameStore` 훅으로 관리합니다.
+프론트엔드는 **5-슬라이스 Zustand 스토어** (`store/index.ts`)를 사용하여 게임, UI, WebSocket, 베팅, 채팅, 연결 상태를 `StateCreator` 합성을 통해 하나의 `useGameStore` 훅으로 관리합니다.
 
 ```typescript
-interface GameState {
-  // 화면 라우팅
-  screen: ScreenState;        // LANDING | LOBBY | GAME | SPECTATE | REVEAL | GAME_OVER
+// store/index.ts — 5개 슬라이스 합성
+type StoreState = GameSlice & BettingSlice & ConnectionSlice & UISlice & ChatSlice;
 
-  // 게임 상태
-  phase: GamePhase;           // DAY_DISCUSSION | DAY_VOTE | NIGHT | REVEAL
+// gameSlice.ts — 핵심 게임 상태 + WS 이벤트 핸들러
+interface GameSlice {
+  screen: ScreenState;
+  phase: GamePhase;
   round: number;
   players: Player[];
   winner: 'Mafia' | 'Citizens' | null;
-  activeEmotes: Record<string, string>;  // playerId → emoji (3초 후 자동 제거)
-
-  // 채팅 / 메시지
-  messages: Message[];        // 채팅 + 시스템 + 제거 + game_over 통합 로그
-
-  // 베팅 상태
-  bets: Bet[];                // 칩 베팅 (로컬 전용)
-  usdcBets: USDCBet[];        // 로컬 추적 USDC 베팅
-  usdcBalance: number;        // 시작 잔액 50.0 USDC
-
-  // 플레이어 정보
+  activeEmotes: Record<string, string>;
+  messages: Message[];
   nickname: string;
-  avatarIndex: number | null;
-
-  // WebSocket 통합
-  connectionStatus: 'disconnected' | 'connecting' | 'connected';
-  gameId: string | null;
-  playerName: string;
-  currentAction: ActionRequest | null;  // 서버에서 온 pending action_request
-  odds: OddsData | null;               // 최신 odds_update 데이터
   isSpectator: boolean;
-
-  // 액션 (스토어 메서드)
-  connectAndJoin: (nickname: string, avatarIndex: number) => void;
-  joinAsSpectator: () => void;
+  currentAction: ActionRequest | null;
+  odds: OddsData | null;
   handleWSEvent: (event: any) => void;
-  submitActionResponse: (response: string) => void;
   addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void;
-  placeBet: (amount: number, target: 'Mafia' | 'Citizens') => void;
-  placeBetUSDC: (betType: BetType, target: string, amount: number) => void;
   triggerEmote: (playerId: string, emote: string) => void;
   triggerReveal: () => void;
   endGame: () => void;
-  resetGame: () => void;
   playAgain: () => void;
+  resetGame: () => void;
+}
+
+// bettingSlice.ts — 칩 + USDC 베팅
+interface BettingSlice {
+  bets: Bet[];
+  usdcBets: USDCBet[];
+  usdcBalance: number;
+  placeBet: (amount: number, target: 'Mafia' | 'Citizens') => void;
+  placeBetUSDC: (betType: BetType, target: string, amount: number) => void;
+}
+
+// connectionSlice.ts — WebSocket 라이프사이클
+interface ConnectionSlice {
+  connectionStatus: ConnectionStatus;
+  gameId: string | null;
+  playerName: string;
+  avatarIndex: number | null;
+  connectAndJoin: (nickname: string, avatarIndex: number) => void;
+  joinAsSpectator: () => void;
+  submitActionResponse: (response: string) => void;
+}
+
+// uiSlice.ts — 모달, 모바일 채팅, 활성 발화자
+interface UISlice {
+  showRoleReveal: boolean;
+  showMobileChat: boolean;
+  activeSpeakerId: string | null;
+  // ... 토글 메서드
+}
+
+// chatSlice.ts — 관전자 채팅 (실시간 WebSocket)
+interface ChatSlice {
+  specChatMessages: SpecChatMessage[];
+  specChatName: string | null;
+  addSpecChatMessage: (msg: Omit<SpecChatMessage, 'id' | 'time'>) => void;
+  setSpecChatName: (name: string) => void;
+  clearSpecChat: () => void;
 }
 ```
 
@@ -701,7 +734,7 @@ interface GameState {
 | 액션 | 스토어 변경 |
 |--------|-------------|
 | `connectAndJoin(nick, avatar)` | WebSocket 열기, `onOpen` 시 name + avatar_index와 함께 `join_lobby` 전송 |
-| `joinAsSpectator()` | `isSpectator = true, screen = SPECTATE`, WebSocket 열기 (`join_lobby` 없음) |
+| `joinAsSpectator()` | `isSpectator = true, screen = SPECTATE`, WebSocket 열기, `onOpen` 시 자동으로 `join_spec_chat` 전송 |
 | `handleWSEvent("lobby_joined")` | `screen = LOBBY, gameId = ...` |
 | `handleWSEvent("game_starting")` | `screen = GAME` (또는 `SPECTATE`), 플레이어 채우기 |
 | `handleWSEvent("phase_change")` | `phase` 업데이트, `alive_agents`에서 사망 플레이어 재계산 |
@@ -713,6 +746,8 @@ interface GameState {
 | `endGame()` | `screen = GAME_OVER` |
 | `playAgain()` | 게임 상태 리셋, `rejoin_lobby` WS 메시지 전송, `screen = LOBBY` |
 | `resetGame()` | WebSocket 연결 해제, 모든 상태 초기값으로 재설정, `screen = LANDING` |
+| `handleWSEvent("spec_chat_joined")` | `specChatName`에 서버가 할당한 관전자 이름 설정 |
+| `handleWSEvent("spec_chat_message")` | `specChatMessages[]`에 메시지 추가 (AI 메시지는 `isAi: true`) |
 
 ---
 

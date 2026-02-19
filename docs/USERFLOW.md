@@ -163,12 +163,13 @@ graph TB
 | **src/blockchain/** | Web3 integration | `provider.py` (AsyncWeb3 + POA), `gateway.py` (V2 commit-reveal, lock, settle) |
 | **src/x402/** | USDC payment protocol | `middleware.py` (402 Payment Required), `models.py` (frozen) |
 | **src/ai_bettor/** | Autonomous betting | `client.py` (WebSocket orchestrator), `analyzer.py` (LLM), `strategy.py`, `models.py` |
-| **src/api/** | FastAPI server | `server.py`, `routes.py`, `ws_manager.py` |
+| **src/spectator/** | AI spectator chat | `commentator.py` (3 personas: degen_0x, theorist_, casually__) — reacts to game events via LLM |
+| **src/api/** | FastAPI server | `server.py`, `routes.py`, `ws_manager.py`, `ws_handler.py` |
 | **src/storage/** | Database layer | `database.py` (aiosqlite), `repositories/` |
 | **src/utils/** | Utilities | `logger.py` (structlog), `retry.py`, `errors.py` |
 | **frontend/src/screens/** | Screen-level React components | `LandingScreen.tsx`, `LobbyScreen.tsx`, `GameScreen.tsx`, `SpectatorScreen.tsx`, `RevealScreen.tsx`, `GameOverScreen.tsx` |
-| **frontend/src/components/** | Shared UI components | `GameComponents.tsx` (PlayerCard, GamePlayerCard, BettingStatusBar, EmoteMenu, ChatBoard), `UIComponents.tsx` (GlassCard, Button, Input) |
-| **frontend/src/store.ts** | Unified Zustand state | Single `useGameStore` managing all game, chat, betting, wallet, and WebSocket state |
+| **frontend/src/components/** | UI components (14 files) | `GamePlayerCard.tsx`, `ChatBoard.tsx`, `BettingPanel.tsx`, `SpecChatPanel.tsx`, `NightOverlay.tsx`, `NightActionPanel.tsx`, `RoleRevealModal.tsx`, `GameComponents.tsx`, `UIComponents.tsx`, `ErrorBoundary.tsx`, `shared/` (4 files) |
+| **frontend/src/store/** | Zustand store (5 slices) | `index.ts` (combined), `gameSlice.ts`, `bettingSlice.ts`, `connectionSlice.ts`, `uiSlice.ts`, `chatSlice.ts` |
 | **frontend/src/websocket.ts** | WebSocket client | Auto-reconnect with exponential backoff, 25s ping keepalive |
 | **frontend/src/types.ts** | TypeScript enums & interfaces | `ScreenState`, `GamePhase`, `Role`, `Player`, `Message`, `Bet`, `BetType` |
 | **frontend/src/mappers.ts** | Backend ↔ frontend mapping | `mapPhase`, `mapRole`, `mapWinner`, `buildPlayerFromName` |
@@ -344,9 +345,10 @@ Spectators watch games in real-time and place bets without participating in game
 1. Navigate to landing screen
 2. Click "Spectate Match" (no nickname or avatar needed)
 3. `isSpectator = true`, screen transitions to `ScreenState.SPECTATE`
-4. WebSocket connects, but no `join_lobby` sent — spectators only receive broadcast events
+4. WebSocket connects; on open, auto-sends `join_spec_chat` (server assigns sanitized name like `spec_a1b2c3`)
 5. Receives all game events (phase_change, agent_message, vote_cast, elimination, etc.)
 6. Can place USDC bets via the right-side Betting Terminal
+7. Can chat with other spectators in real-time via SpecChatPanel (bottom-left FAB)
 
 ### Spectator Screen Layout
 
@@ -377,7 +379,17 @@ Spectators watch games in real-time and place bets without participating in game
 └─────────────────────────────────────────┴───────────────────────┘
 ```
 
-**Spectator Chat**: Floating panel (340×420px) toggled via bottom-left FAB. Shows simulated spectator messages from other viewers. Unread badge on FAB when closed.
+**Spectator Chat**: Floating panel (340×420px) toggled via bottom-left FAB. Real-time WebSocket chat with other spectators and 3 AI commentator bots. Messages are server-broadcast (no optimistic UI). AI messages shown with cyan styling and `Bot` icon. 200-char message limit, 3-second server-side rate limiting. Unread badge on FAB when closed.
+
+**AI Commentators** (3 personas, fire-and-forget via `asyncio.create_task`):
+
+| Name | Style | Example |
+|------|-------|---------|
+| `degen_0x` | Gambler slang | "bruh odds just flipped hard, going all in citizens" |
+| `theorist_` | Conspiracy theorist | "did anyone notice how Viktor paused before speaking? classic tell" |
+| `casually__` | Gen-Z casual | "lol that elimination was so predictable" |
+
+Triggered by: `phase_change`, `elimination`, `game_over`, `odds_update`. Random 2-8s delay, 5s cooldown between comments.
 
 ---
 
@@ -471,7 +483,7 @@ Broadcast via `odds_update` WebSocket event → updates `BettingStatusBar` and `
 
 ## WebSocket Event Map
 
-### Server → Client Events (16 events)
+### Server → Client Events (19 events)
 
 | Event | Data Fields | Trigger | UI Effect |
 |-------|-------------|---------|-----------|
@@ -490,9 +502,12 @@ Broadcast via `odds_update` WebSocket event → updates `BettingStatusBar` and `
 | **bet_rejected** | `reason` | Bet rejected | System error message in ChatBoard |
 | **usdc_settlement** | `bet_id`, `won`, `payout` | USDC payouts | Bet status → 'won'/'lost', usdcBalance updated, system message |
 | **new_lobby** | `message` | New game lobby opens (after 10s cooldown) | System message: "A new game lobby is open!" |
+| **spec_chat_message** | `name`, `text`, `isAi` | Spectator sends chat or AI commentator reacts | Message appended to `specChatMessages[]` in chatSlice; AI messages shown with cyan style + Bot icon |
+| **spec_chat_joined** | `name` | Spectator joins chat (auto on connect) | `specChatName` set in chatSlice; used for `isMe` detection |
+| **spec_chat_error** | `reason` | Rate limit or not joined | — (currently not displayed in UI) |
 | **error** | `message` | Server error | Error system message in ChatBoard |
 
-### Client → Server Events (5 events)
+### Client → Server Events (7 events)
 
 | Event | Data Fields | Trigger | Purpose |
 |-------|-------------|---------|---------|
@@ -500,6 +515,8 @@ Broadcast via `odds_update` WebSocket event → updates `BettingStatusBar` and `
 | **action_response** | `type: "action_response"`, `player_name`, `response` | Statement typed / player card clicked / night action selected | Send player decision to server |
 | **place_bet** | `type: "place_bet"`, `bet_id`, `bet_type`, `target`, `amount_usdc` | "Place Bet" clicked in betting panel | Place USDC bet via WebSocket |
 | **rejoin_lobby** | `type: "rejoin_lobby"`, `name`, `avatar_index` | "Play Again" clicked on Game Over screen | Rejoin next game lobby |
+| **join_spec_chat** | `type: "join_spec_chat"`, `name?` | Auto-sent when spectator WebSocket opens | Join spectator chat, get assigned a sanitized name (16 char max, alphanumeric) |
+| **spec_chat** | `type: "spec_chat"`, `text` | Spectator types message + hits Send | Broadcast chat message (200 char max, 3s server rate limit) |
 | **ping** | `type: "ping"` | 25-second interval (automatic) | Keep WebSocket alive — server responds with `{type: "pong"}` (ignored by client) |
 
 ---
@@ -623,7 +640,7 @@ graph TB
     Spectate --> SBoard[Game Board flex-1]
     Spectate --> BettingTerminal[Betting Terminal 380px<br/>Live Odds + Place Bet + My Bets + Game Log]
     Spectate --> SpecChatFAB[Spectator Chat FAB<br/>bottom-left, unread badge]
-    Spectate --> SpecChatPanel[Spectator Chat Panel<br/>340×420px popup, simulated messages]
+    Spectate --> SpecChatPanel[Spectator Chat Panel<br/>340×420px popup, real-time WebSocket chat + AI bots]
 
     Reveal --> RevealCards[RevealCard × 7<br/>3D flip on click]
     RevealCards --> FrontFace[Front: Portrait + name + Tap to reveal]
@@ -644,55 +661,71 @@ graph TB
 
 ---
 
-## State Management (1 Unified Zustand Store)
+## State Management (5-Slice Zustand Store)
 
-The frontend uses a **single Zustand store** (`store.ts`) that combines all game, UI, WebSocket, betting, and wallet state into one `useGameStore` hook.
+The frontend uses a **5-slice Zustand store** (`store/index.ts`) that composes game, UI, WebSocket, betting, chat, and connection state into one `useGameStore` hook via `StateCreator` composition.
 
 ```typescript
-interface GameState {
-  // Screen routing
-  screen: ScreenState;        // LANDING | LOBBY | GAME | SPECTATE | REVEAL | GAME_OVER
+// store/index.ts — composed from 5 slices
+type StoreState = GameSlice & BettingSlice & ConnectionSlice & UISlice & ChatSlice;
 
-  // Game state
-  phase: GamePhase;           // DAY_DISCUSSION | DAY_VOTE | NIGHT | REVEAL
+// gameSlice.ts — core game state + WS event handler
+interface GameSlice {
+  screen: ScreenState;
+  phase: GamePhase;
   round: number;
   players: Player[];
   winner: 'Mafia' | 'Citizens' | null;
-  activeEmotes: Record<string, string>;  // playerId → emoji (auto-cleared after 3s)
-
-  // Chat / messages
-  messages: Message[];        // unified log: chat + system + elimination + game_over
-
-  // Betting state
-  bets: Bet[];                // chip bets (local only)
-  usdcBets: USDCBet[];        // USDC bets tracked locally
-  usdcBalance: number;        // starts at 50.0 USDC
-
-  // Player info
+  activeEmotes: Record<string, string>;
+  messages: Message[];
   nickname: string;
-  avatarIndex: number | null;
-
-  // WebSocket integration
-  connectionStatus: 'disconnected' | 'connecting' | 'connected';
-  gameId: string | null;
-  playerName: string;
-  currentAction: ActionRequest | null;  // pending action_request from server
-  odds: OddsData | null;               // latest odds_update data
   isSpectator: boolean;
-
-  // Actions (store methods)
-  connectAndJoin: (nickname: string, avatarIndex: number) => void;
-  joinAsSpectator: () => void;
+  currentAction: ActionRequest | null;
+  odds: OddsData | null;
   handleWSEvent: (event: any) => void;
-  submitActionResponse: (response: string) => void;
   addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void;
-  placeBet: (amount: number, target: 'Mafia' | 'Citizens') => void;
-  placeBetUSDC: (betType: BetType, target: string, amount: number) => void;
   triggerEmote: (playerId: string, emote: string) => void;
   triggerReveal: () => void;
   endGame: () => void;
   playAgain: () => void;
   resetGame: () => void;
+}
+
+// bettingSlice.ts — chip + USDC betting
+interface BettingSlice {
+  bets: Bet[];
+  usdcBets: USDCBet[];
+  usdcBalance: number;
+  placeBet: (amount: number, target: 'Mafia' | 'Citizens') => void;
+  placeBetUSDC: (betType: BetType, target: string, amount: number) => void;
+}
+
+// connectionSlice.ts — WebSocket lifecycle
+interface ConnectionSlice {
+  connectionStatus: ConnectionStatus;
+  gameId: string | null;
+  playerName: string;
+  avatarIndex: number | null;
+  connectAndJoin: (nickname: string, avatarIndex: number) => void;
+  joinAsSpectator: () => void;
+  submitActionResponse: (response: string) => void;
+}
+
+// uiSlice.ts — modals, mobile chat, active speaker
+interface UISlice {
+  showRoleReveal: boolean;
+  showMobileChat: boolean;
+  activeSpeakerId: string | null;
+  // ... toggle methods
+}
+
+// chatSlice.ts — spectator chat (real-time WebSocket)
+interface ChatSlice {
+  specChatMessages: SpecChatMessage[];
+  specChatName: string | null;
+  addSpecChatMessage: (msg: Omit<SpecChatMessage, 'id' | 'time'>) => void;
+  setSpecChatName: (name: string) => void;
+  clearSpecChat: () => void;
 }
 ```
 
@@ -701,7 +734,7 @@ interface GameState {
 | Action | Store Change |
 |--------|-------------|
 | `connectAndJoin(nick, avatar)` | Opens WebSocket, sends `join_lobby` with name + avatar_index on `onOpen` |
-| `joinAsSpectator()` | `isSpectator = true, screen = SPECTATE`, opens WebSocket (no `join_lobby`) |
+| `joinAsSpectator()` | `isSpectator = true, screen = SPECTATE`, opens WebSocket, auto-sends `join_spec_chat` on `onOpen` |
 | `handleWSEvent("lobby_joined")` | `screen = LOBBY, gameId = ...` |
 | `handleWSEvent("game_starting")` | `screen = GAME` (or `SPECTATE`), players populated |
 | `handleWSEvent("phase_change")` | `phase` updated, dead players recalculated from `alive_agents` |
@@ -713,6 +746,8 @@ interface GameState {
 | `endGame()` | `screen = GAME_OVER` |
 | `playAgain()` | Resets game state, sends `rejoin_lobby` WS message, `screen = LOBBY` |
 | `resetGame()` | Disconnects WebSocket, resets all state to initial values, `screen = LANDING` |
+| `handleWSEvent("spec_chat_joined")` | `specChatName` set to assigned spectator name |
+| `handleWSEvent("spec_chat_message")` | Message appended to `specChatMessages[]` (AI messages have `isAi: true`) |
 
 ---
 
