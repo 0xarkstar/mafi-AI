@@ -26,23 +26,19 @@
   }
 }
 
-* {
-  margin: 0;
-  padding: 0;
-  box-sizing: border-box;
-}
+@layer base {
+  html,
+  body {
+    height: 100%;
+    font-family: 'Outfit', system-ui, -apple-system, sans-serif;
+    background-color: #030712;
+    color: rgba(255, 255, 255, 0.9);
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    overflow-x: hidden;
+  }
 
-html,
-body {
-  height: 100%;
-  font-family: 'Outfit', system-ui, -apple-system, sans-serif;
-  background-color: #030712;
-  color: rgba(255, 255, 255, 0.9);
-  -webkit-font-smoothing: antialiased;
-  -moz-osx-font-smoothing: grayscale;
-  overflow-x: hidden;
-}
-
-#root {
-  height: 100%;
+  #root {
+    height: 100%;
+  }
 }
