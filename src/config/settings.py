@@ -59,6 +59,9 @@ class Settings(BaseSettings):
     x402_usdc_address: str = "0x534b2f3A21130d7a60830c2Df862319e593943A3"
     x402_pay_to: str = ""  # Server wallet receiving USDC
 
+    # AI Spectator Commentator (optional)
+    ai_spectator_enabled: bool = True
+
     # AI Bettor (optional)
     ai_bettor_enabled: bool = False
     ai_bettor_private_key: SecretStr = SecretStr("")

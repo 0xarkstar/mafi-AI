@@ -56,7 +56,9 @@ export const createConnectionSlice: StateCreator<StoreState, [], [], ConnectionS
     connectWS(
       (data) => get().handleWSEvent(data),
       (status) => set({ connectionStatus: status }),
-      null,
+      () => {
+        sendWS({ type: 'join_spec_chat' });
+      },
     );
   },
 

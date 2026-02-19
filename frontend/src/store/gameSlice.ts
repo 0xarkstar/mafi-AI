@@ -77,6 +77,8 @@ export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set
       currentAction: null,
       odds: null,
       avatarIndex: null,
+      specChatMessages: [],
+      specChatName: null,
     });
   },
 
@@ -422,6 +424,20 @@ export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set
           text: 'A new game lobby is open! Click Play Again to join.',
           type: 'system',
         });
+        break;
+      }
+
+      case 'spec_chat_message': {
+        get().addSpecChatMessage({
+          name: data.name,
+          text: data.text,
+          isAi: data.isAi ?? false,
+        });
+        break;
+      }
+
+      case 'spec_chat_joined': {
+        get().setSpecChatName(data.name);
         break;
       }
 

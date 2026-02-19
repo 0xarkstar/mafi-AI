@@ -1,5 +1,6 @@
 """WebSocket endpoint and helpers."""
 
+import re
 import uuid
 from datetime import datetime
 
@@ -170,6 +171,51 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                         "type": "bet_rejected",
                         "data": {"reason": "Bet processing failed"},
                     })
+
+            elif data.get("type") == "join_spec_chat":
+                raw_name = data.get("name", "").strip()
+                # Sanitize: alphanumeric + underscore, max 16 chars
+                sanitized = re.sub(r"[^a-zA-Z0-9_]", "", raw_name)[:16]
+                if not sanitized:
+                    sanitized = f"spec_{str(uuid.uuid4())[:6]}"
+                # Avoid collisions with existing spectator names
+                base = sanitized
+                counter = 1
+                while ws_manager.spectator_sessions.get(sanitized) is not None:
+                    sanitized = f"{base}_{counter}"
+                    counter += 1
+                ws_manager.register_spectator(sanitized, ws)
+                await ws.send_json({
+                    "type": "spec_chat_joined",
+                    "data": {"name": sanitized},
+                })
+
+            elif data.get("type") == "spec_chat":
+                text = data.get("text", "").strip()[:200]
+                if not text:
+                    continue
+                if not ws_manager.check_rate_limit(ws):
+                    await ws.send_json({
+                        "type": "spec_chat_error",
+                        "data": {"reason": "Rate limited — wait a few seconds"},
+                    })
+                    continue
+                sender = ws_manager.get_spectator_name(ws)
+                if not sender:
+                    await ws.send_json({
+                        "type": "spec_chat_error",
+                        "data": {"reason": "Join spectator chat first"},
+                    })
+                    continue
+                # Broadcast to all connected clients
+                await ws_manager.broadcast(
+                    WSEvent(
+                        event_type="spec_chat_message",
+                        data={"name": sender, "text": text, "isAi": False},
+                        game_id="",
+                        timestamp=datetime.now().isoformat(),
+                    )
+                )
 
             elif data.get("type") == "ping":
                 await ws.send_json({"type": "pong"})

@@ -3,14 +3,16 @@ import { createGameSlice, GameSlice } from './gameSlice';
 import { createBettingSlice, BettingSlice } from './bettingSlice';
 import { createConnectionSlice, ConnectionSlice } from './connectionSlice';
 import { createUISlice, UISlice } from './uiSlice';
+import { createChatSlice, ChatSlice } from './chatSlice';
 
-export type StoreState = GameSlice & BettingSlice & ConnectionSlice & UISlice;
+export type StoreState = GameSlice & BettingSlice & ConnectionSlice & UISlice & ChatSlice;
 
 export const useGameStore = create<StoreState>()((...args) => ({
   ...createGameSlice(...args),
   ...createBettingSlice(...args),
   ...createConnectionSlice(...args),
   ...createUISlice(...args),
+  ...createChatSlice(...args),
 }));
 
 // Selectors

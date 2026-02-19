@@ -18,6 +18,8 @@ class WSManager:
         self.active_connections: set[WebSocket] = set()
         self.player_sessions: dict[str, WebSocket] = {}
         self.player_response_futures: dict[str, asyncio.Future] = {}
+        self.spectator_sessions: dict[str, WebSocket] = {}
+        self._rate_limits: dict[int, float] = {}
 
     async def connect(self, ws: WebSocket) -> None:
         """Accept and register a new WebSocket connection.
@@ -45,6 +47,18 @@ class WSManager:
                 break
         if player_name:
             self.unregister_player(player_name)
+
+        # Remove from spectator sessions
+        spec_name = None
+        for name, spec_ws in list(self.spectator_sessions.items()):
+            if spec_ws == ws:
+                spec_name = name
+                break
+        if spec_name:
+            self.spectator_sessions.pop(spec_name, None)
+
+        # Clean up rate limit entry
+        self._rate_limits.pop(id(ws), None)
 
         log.info("ws_disconnected", total=len(self.active_connections))
 
@@ -116,6 +130,50 @@ class WSManager:
         """
         self.player_response_futures[name] = future
         log.debug("response_future_set", name=name)
+
+    def register_spectator(self, name: str, ws: WebSocket) -> None:
+        """Register a WebSocket as a spectator chat participant.
+
+        Args:
+            name: Spectator display name.
+            ws: WebSocket connection.
+        """
+        self.spectator_sessions[name] = ws
+        log.info("spectator_registered", name=name, total_spectators=len(self.spectator_sessions))
+
+    def get_spectator_name(self, ws: WebSocket) -> str | None:
+        """Look up spectator name by WebSocket connection.
+
+        Args:
+            ws: WebSocket connection.
+
+        Returns:
+            Spectator name or None.
+        """
+        for name, spec_ws in self.spectator_sessions.items():
+            if spec_ws == ws:
+                return name
+        return None
+
+    def check_rate_limit(self, ws: WebSocket, min_interval: float = 3.0) -> bool:
+        """Check if a WebSocket is allowed to send (rate limiting).
+
+        Args:
+            ws: WebSocket connection.
+            min_interval: Minimum seconds between messages.
+
+        Returns:
+            True if allowed, False if rate-limited.
+        """
+        import time
+
+        ws_id = id(ws)
+        now = time.monotonic()
+        last = self._rate_limits.get(ws_id, 0.0)
+        if now - last < min_interval:
+            return False
+        self._rate_limits[ws_id] = now
+        return True
 
     def clear_sessions(self) -> None:
         """Remove all player sessions (between games)."""

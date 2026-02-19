@@ -3,6 +3,7 @@
 import argparse
 import asyncio
 import time
+from datetime import datetime
 
 import uvicorn
 
@@ -36,6 +37,13 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     # Create LLM client and betting manager
     llm_client = LLMClient(settings)
     betting_manager = BettingManager(llm_client, game_id)
+
+    # Create AI spectator commentator if enabled
+    commentator = None
+    if settings.ai_spectator_enabled:
+        from src.spectator.commentator import SpectatorCommentator
+        commentator = SpectatorCommentator(llm_client)
+        log.info("ai_spectator_commentator_enabled")
 
     # Create lobby manager
     lobby_manager = LobbyManager()
@@ -100,6 +108,30 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     print(f"WebSocket: ws://localhost:{settings.port}/ws")
     print("="*60 + "\n")
 
+    # Broadcast wrapper that also feeds AI commentator
+    async def broadcast_spec_chat(name: str, text: str, is_ai: bool) -> None:
+        """Broadcast a spectator chat message to all clients."""
+        await ws_manager.broadcast(
+            WSEvent(
+                event_type="spec_chat_message",
+                data={"name": name, "text": text, "isAi": is_ai},
+                game_id="",
+                timestamp=datetime.now().isoformat(),
+            )
+        )
+
+    async def broadcast_with_commentary(event: WSEvent) -> None:
+        """Broadcast game event and trigger AI commentary."""
+        await ws_manager.broadcast(event)
+        if commentator is not None:
+            asyncio.create_task(
+                commentator.on_game_event(
+                    event.event_type,
+                    event.data,
+                    broadcast_spec_chat,
+                )
+            )
+
     # Continuous game loop
     async def game_loop():
         """Continuous game loop: lobby → game → reset → lobby."""
@@ -128,7 +160,6 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
             round_game_id = str(uuid.uuid4())
 
             # Broadcast updated lobby status
-            from datetime import datetime
             await ws_manager.broadcast(
                 WSEvent(
                     event_type="lobby_status",
@@ -141,10 +172,10 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
             log.info("game_starting", player_count=len(players))
             print(f"\n[>] Starting game with {len(players)} players...")
 
-            # Create engine
+            # Create engine — use commentary wrapper if AI spectator enabled
             engine = GameEngine(
                 players,
-                ws_manager.broadcast,
+                broadcast_with_commentary,
                 betting_manager,
                 round_game_id,
                 blockchain_gateway,

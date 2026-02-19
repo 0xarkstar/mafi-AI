@@ -15,6 +15,8 @@ export type ServerEvent =
   | { type: 'action_request'; data: { player_name: string; action_type: string; prompt: string; options?: string[]; timeout: number; context?: Record<string, unknown> } }
   | { type: 'usdc_settlement'; data: { bet_id: string; won: boolean; payout: number } }
   | { type: 'new_lobby'; data: { message: string } }
+  | { type: 'spec_chat_joined'; data: { name: string } }
+  | { type: 'spec_chat_error'; data: { reason: string } }
   | { type: 'pong' }
   | { type: 'error'; message: string }
   // Broadcast event format (event_type instead of type)
@@ -26,4 +28,6 @@ export type ClientEvent =
   | { type: 'rejoin_lobby'; name: string; avatar_index?: number | null }
   | { type: 'action_response'; player_name: string; response: string }
   | { type: 'place_bet'; bet_type: string; target: string; amount_usdc: number; bet_id?: string; round?: number }
+  | { type: 'join_spec_chat'; name?: string }
+  | { type: 'spec_chat'; text: string }
   | { type: 'ping' };
