@@ -14,7 +14,7 @@
 - **Lobby System** — Players join before game starts, auto-fill with House AI if needed
 - **Modern React Frontend** — React 19 + TypeScript + Tailwind v4, modular structure (6 screens, 14 component files, 5-slice Zustand store)
 - **Real-Time Spectating** — Watch the game unfold via WebSocket-powered dashboard with animated phase transitions
-- **Unified USDC Betting** — All betting through `POST /api/bets` endpoint — smart contract (V2) on BSC Testnet, X402 protocol on Monad Testnet
+- **Unified USDC Betting (X402)** — All betting through `POST /api/bets` with X402 USDC payment on BSC Testnet (XUSD via Unibase) and Monad Testnet
 - **Dynamic Odds** — Pari-mutuel betting pool with AI-powered odds (5% house edge), blended 70% AI + 30% market
 - **AI Bettor** — Server-side autonomous "house gambler" that watches games via WebSocket and bets via X402 (same layer as House AI)
 - **Identity Betting** — Bet on whether players are AI or human (settled in REVEAL phase)
@@ -80,9 +80,9 @@ House AI and AI Bettor are both server-internal — the "house side." House AI i
 
 Moltbook Agent uses a **dual-connection** model: **Connection 1** — plays the game via Moltbook DM API (statements, votes, night actions), **Connection 2** — places bets via `POST /api/bets` with X402 USDC payment. The `wallet_address` returned at lobby join is used for both betting and settlement.
 
-### Betting (Unified USDC)
-- **Single endpoint** — All bets via `POST /api/bets` with USDC payment
-- **Dual-chain** — Smart contract betting (V2) on BSC Testnet, X402 protocol on Monad Testnet
+### Betting (Unified X402 USDC)
+- **Single endpoint** — All bets via `POST /api/bets` with X402 USDC payment
+- **Dual-chain X402** — BSC Testnet (XUSD via Unibase facilitator) + Monad Testnet (native USDC via Monad facilitator)
 - **Pari-mutuel pool** — All bets pooled, 95% distributed to winners (5% house edge)
 - **4 bet types** — `side_win`, `next_elimination`, `is_mafia`, `is_ai_or_human`
 - **Early bet bonus** — Round 0: 1.5x weight, Round 1: 1.2x (incentivizes early speculation)
@@ -141,21 +141,26 @@ cd frontend && npm run dev
 
 Vite dev server at `http://localhost:5173` proxies API/WebSocket to the backend at `:8080`.
 
-## ⛓️ Blockchain Setup (Optional)
+## ⛓️ Blockchain & X402 Setup (Optional)
 
-On-chain settlement uses USDC. Two chains supported with different betting mechanisms:
+On-chain settlement uses USDC via the X402 payment protocol on both chains:
 
-| Chain | Betting Mechanism | USDC Settlement |
-|-------|------------------|-----------------|
-| **BSC Testnet** | Smart contract (V2) — MetaMask → MafiaBettingV2 | Direct ERC-20 transfer |
-| **Monad Testnet** | X402 protocol — HTTP 402 → facilitator → USDC | EIP-3009 transferWithAuthorization |
+| Chain | X402 Facilitator | Settlement Token | EIP-3009 |
+|-------|-----------------|-----------------|:--------:|
+| **BSC Testnet** | [Unibase](https://x402.unibase.com) (`api.x402.unibase.com`) | XUSD (Wrapped USDC) | Yes |
+| **Monad Testnet** | Monad (`x402-facilitator.molandak.org`) | Native USDC | Yes |
 
 ### BSC Testnet Setup
 ```bash
 npm install
 cp .env.example .env
 # Add your PRIVATE_KEY (with tBNB for gas) to .env
+
+# Deploy V2 betting contract
 npm run deploy-v2:bsc-testnet
+
+# Deploy XUSD (EIP-3009 wrapped USDC for x402)
+npm run deploy-xusd:bsc-testnet
 ```
 
 Configure `.env` for BSC:
@@ -165,9 +170,17 @@ BLOCKCHAIN_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
 BLOCKCHAIN_CHAIN_ID=97
 BLOCKCHAIN_CONTRACT_ADDRESS=0x44755E8C746Dc1819a0e8c74503AFC106FC800CB
 BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
+
+X402_ENABLED=true
+X402_FACILITATOR_URL=https://api.x402.unibase.com
+X402_NETWORK=eip155:97
+X402_USDC_ADDRESS=0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c
+X402_PAY_TO=0x...your-server-wallet
 ```
 
-### Monad Testnet Setup (with X402)
+> **Note**: BSC Testnet's official USDC lacks EIP-3009. We deployed XUSD — an EIP-3009 compatible wrapped stablecoin matching [Unibase's XUSD spec](https://x402.unibase.com) — to enable x402 settlement on BSC.
+
+### Monad Testnet Setup
 ```bash
 npm run deploy-v2:testnet
 ```
@@ -182,32 +195,34 @@ BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
 
 X402_ENABLED=true
 X402_FACILITATOR_URL=https://x402-facilitator.molandak.org
+X402_NETWORK=eip155:10143
 X402_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3
 X402_PAY_TO=0x...your-server-wallet
 ```
 
 ### How It Works
 1. Server creates game on-chain (oracle transaction)
-2. Bettors place USDC bets via `POST /api/bets` (V2 contract on BSC, X402 on Monad)
-3. AI game plays off-chain (fast, free)
-4. Server settles result — USDC transferred to winners' wallets
+2. Bettors place USDC bets via `POST /api/bets` with X402 payment
+3. X402 facilitator verifies cryptographic payment proof and settles via EIP-3009
+4. AI game plays off-chain (fast, free)
+5. Server settles result — USDC transferred to winners' wallets
 
-**Key**: Game logic is 100% off-chain. Only USDC moves on-chain.
+**Key**: Game logic is 100% off-chain. Only USDC moves on-chain via X402.
 
 ## 🔗 Multi-Chain Deployment
 
 ### BSC Testnet (Good Vibes Only: OpenClaw Edition)
 ```bash
-npm run deploy-v2:bsc-testnet
+npm run deploy-v2:bsc-testnet    # V2 betting contract
+npm run deploy-xusd:bsc-testnet  # XUSD (EIP-3009 for x402)
 ```
-Deploys MafiaBettingV2 with official BSC Testnet USDC to BSC Testnet (Chain ID 97).
 
 **Live Deployment:**
 | Contract | Address | Explorer |
 |----------|---------|----------|
 | **MafiaBettingV2** | `0x44755E8C746Dc1819a0e8c74503AFC106FC800CB` | [BscScan](https://testnet.bscscan.com/address/0x44755E8C746Dc1819a0e8c74503AFC106FC800CB) |
+| **XUSD (x402)** | `0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c` | [BscScan](https://testnet.bscscan.com/address/0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c) |
 | **USDC (official)** | `0x64544969ed7EBf5f083679233325356EbE738930` | [BscScan](https://testnet.bscscan.com/token/0x64544969ed7EBf5f083679233325356EbE738930) |
-| **Deploy tx** | `0x60e8b342...097833880b` | [BscScan](https://testnet.bscscan.com/tx/0x60e8b342d2feffe27ada05082e9a74d2dca0fe580b64dd6be7939b097833880b) |
 
 ### Monad Testnet (Moltiverse Hackathon)
 ```bash

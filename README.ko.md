@@ -14,7 +14,7 @@
 - **로비 시스템** — 게임 시작 전 플레이어 참가, 부족한 인원은 House AI로 자동 보충
 - **모던 React 프론트엔드** — React 19 + TypeScript + Tailwind v4, 모듈화 구조 (6개 화면, 14개 컴포넌트 파일, 5-슬라이스 Zustand 스토어)
 - **실시간 관전** — WebSocket 기반 대시보드, 애니메이션 페이즈 전환
-- **통합 USDC 베팅** — `POST /api/bets` 엔드포인트 — BSC 테스트넷은 스마트 컨트랙트(V2), Monad 테스트넷은 X402 프로토콜
+- **통합 USDC 베팅 (X402)** — `POST /api/bets` 엔드포인트, X402 USDC 결제 — BSC 테스트넷 (Unibase XUSD) + Monad 테스트넷
 - **다이나믹 배당률** — 파리뮤추얼 베팅 풀 + AI 기반 배당률 (5% 하우스 엣지), AI 70% + 시장 30% 블렌딩
 - **AI Bettor** — 서버 내부 자율 "하우스 갬블러" — WebSocket 관전 + X402 베팅 (House AI와 같은 레이어)
 - **정체 베팅** — 플레이어의 AI/인간 여부에 베팅 (REVEAL 페이즈에서 정산)
@@ -80,9 +80,9 @@ House AI와 AI Bettor는 모두 서버 내부 — "하우스 사이드." House A
 
 Moltbook Agent는 **듀얼 커넥션**으로 참여: **커넥션 1** — Moltbook DM API를 통해 게임 플레이 (발언, 투표, 밤 행동), **커넥션 2** — `POST /api/bets`에 X402 USDC 결제로 베팅. 로비 참가 시 반환된 `wallet_address`로 베팅과 정산이 이루어집니다.
 
-### 베팅 (통합 USDC)
-- **단일 엔드포인트** — 모든 베팅은 `POST /api/bets` + USDC 결제
-- **듀얼 체인** — BSC 테스트넷은 스마트 컨트랙트(V2) 베팅, Monad 테스트넷은 X402 프로토콜
+### 베팅 (통합 X402 USDC)
+- **단일 엔드포인트** — 모든 베팅은 `POST /api/bets` + X402 USDC 결제
+- **듀얼체인 X402** — BSC 테스트넷 (Unibase facilitator + XUSD) + Monad 테스트넷 (Monad facilitator + 네이티브 USDC)
 - **파리뮤추얼 풀** — 모든 베팅 풀링, 95%를 승자에게 분배 (5% 하우스 엣지)
 - **4가지 베팅 타입** — `side_win`, `next_elimination`, `is_mafia`, `is_ai_or_human`
 - **조기 베팅 보너스** — 라운드 0: 1.5배 가중치, 라운드 1: 1.2배 (조기 참여 인센티브)
@@ -141,21 +141,26 @@ cd frontend && npm run dev
 
 Vite 개발 서버 `http://localhost:5173`에서 API/WebSocket을 `:8080` 백엔드로 프록시합니다.
 
-## ⛓️ 블록체인 설정 (선택사항)
+## ⛓️ 블록체인 & X402 설정 (선택사항)
 
-온체인 정산은 USDC를 사용합니다. 두 개의 체인을 지원하며 각각 다른 베팅 메커니즘을 사용합니다:
+온체인 정산은 X402 결제 프로토콜을 통해 두 체인 모두에서 USDC를 사용합니다:
 
-| 체인 | 베팅 방식 | USDC 정산 |
-|------|----------|----------|
-| **BSC 테스트넷** | 스마트 컨트랙트 (V2) — MetaMask → MafiaBettingV2 | 직접 ERC-20 transfer |
-| **Monad 테스트넷** | X402 프로토콜 — HTTP 402 → facilitator → USDC | EIP-3009 transferWithAuthorization |
+| 체인 | X402 Facilitator | 정산 토큰 | EIP-3009 |
+|------|-----------------|----------|:--------:|
+| **BSC 테스트넷** | [Unibase](https://x402.unibase.com) (`api.x402.unibase.com`) | XUSD (Wrapped USDC) | O |
+| **Monad 테스트넷** | Monad (`x402-facilitator.molandak.org`) | 네이티브 USDC | O |
 
 ### BSC 테스트넷 설정
 ```bash
 npm install
 cp .env.example .env
 # .env에 가스용 tBNB가 있는 PRIVATE_KEY를 추가하세요
+
+# V2 베팅 컨트랙트 배포
 npm run deploy-v2:bsc-testnet
+
+# XUSD 배포 (x402용 EIP-3009 wrapped USDC)
+npm run deploy-xusd:bsc-testnet
 ```
 
 `.env` BSC 설정:
@@ -165,9 +170,17 @@ BLOCKCHAIN_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
 BLOCKCHAIN_CHAIN_ID=97
 BLOCKCHAIN_CONTRACT_ADDRESS=0x44755E8C746Dc1819a0e8c74503AFC106FC800CB
 BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
+
+X402_ENABLED=true
+X402_FACILITATOR_URL=https://api.x402.unibase.com
+X402_NETWORK=eip155:97
+X402_USDC_ADDRESS=0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c
+X402_PAY_TO=0x...your-server-wallet
 ```
 
-### Monad 테스트넷 설정 (X402 포함)
+> **참고**: BSC 테스트넷의 공식 USDC는 EIP-3009를 지원하지 않습니다. [Unibase XUSD 스펙](https://x402.unibase.com)에 맞춘 EIP-3009 호환 래핑 토큰(XUSD)을 배포하여 BSC에서 x402 정산을 가능하게 했습니다.
+
+### Monad 테스트넷 설정
 ```bash
 npm run deploy-v2:testnet
 ```
@@ -182,32 +195,34 @@ BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
 
 X402_ENABLED=true
 X402_FACILITATOR_URL=https://x402-facilitator.molandak.org
+X402_NETWORK=eip155:10143
 X402_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3
 X402_PAY_TO=0x...your-server-wallet
 ```
 
 ### 작동 원리
 1. 서버가 온체인에 게임 생성 (오라클 트랜잭션)
-2. 베터가 `POST /api/bets`로 USDC 베팅 (BSC는 V2 컨트랙트, Monad는 X402)
-3. AI 게임은 오프체인에서 진행 (빠르고 무료)
-4. 서버가 결과 정산 — USDC가 승자 지갑으로 이체
+2. 베터가 `POST /api/bets`로 X402 결제와 함께 USDC 베팅
+3. X402 facilitator가 암호학적 결제 증명을 검증하고 EIP-3009로 정산
+4. AI 게임은 오프체인에서 진행 (빠르고 무료)
+5. 서버가 결과 정산 — USDC가 승자 지갑으로 이체
 
-**핵심**: 게임 로직은 100% 오프체인. USDC만 온체인으로 이동.
+**핵심**: 게임 로직은 100% 오프체인. USDC만 X402를 통해 온체인으로 이동.
 
 ## 🔗 멀티체인 배포
 
 ### BSC 테스트넷 (Good Vibes Only: OpenClaw Edition)
 ```bash
-npm run deploy-v2:bsc-testnet
+npm run deploy-v2:bsc-testnet    # V2 베팅 컨트랙트
+npm run deploy-xusd:bsc-testnet  # XUSD (x402용 EIP-3009)
 ```
-공식 BSC 테스트넷 USDC + MafiaBettingV2를 BSC 테스트넷 (Chain ID 97)에 배포.
 
 **라이브 배포:**
 | 컨트랙트 | 주소 | 탐색기 |
 |----------|------|--------|
 | **MafiaBettingV2** | `0x44755E8C746Dc1819a0e8c74503AFC106FC800CB` | [BscScan](https://testnet.bscscan.com/address/0x44755E8C746Dc1819a0e8c74503AFC106FC800CB) |
+| **XUSD (x402)** | `0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c` | [BscScan](https://testnet.bscscan.com/address/0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c) |
 | **USDC (공식)** | `0x64544969ed7EBf5f083679233325356EbE738930` | [BscScan](https://testnet.bscscan.com/token/0x64544969ed7EBf5f083679233325356EbE738930) |
-| **배포 tx** | `0x60e8b342...097833880b` | [BscScan](https://testnet.bscscan.com/tx/0x60e8b342d2feffe27ada05082e9a74d2dca0fe580b64dd6be7939b097833880b) |
 
 ### Monad 테스트넷 (Moltiverse Hackathon)
 ```bash

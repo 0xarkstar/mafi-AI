@@ -1,0 +1,21 @@
+{
+  "network": "bscTestnet",
+  "chainId": 97,
+  "deployer": "0x79E88288AC11b0Cdb53182Ee1C43016cAa82a1A0",
+  "xusd": "0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c",
+  "xusdNote": "EIP-3009 compatible Wrapped USDC for x402 settlement (18 decimals, open mint)",
+  "domainName": "Wrapped USDC",
+  "domainVersion": "2",
+  "domainSeparator": "0xbb23b00040b2c462e89d99db492f74233f53e5c3ddfd4bca736593b17199f9c1",
+  "deployTxHash": "0x8e501884189d0c8961a62ab06d39770e9bb5b85e338a81ecb1cfbc0d46b3f1c2",
+  "mintTxHash": "0x3b3d1aed82cbac67685790da638bf96c4524de8585fca378b9cad3f88a682e0b",
+  "timestamp": "2026-02-19T11:19:12.431Z",
+  "x402Config": {
+    "facilitatorUrl": "https://api.x402.unibase.com",
+    "network": "eip155:97",
+    "assetAddress": "0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c",
+    "tokenName": "Wrapped USDC",
+    "tokenVersion": "2",
+    "tokenDecimals": 18
+  }
+}
