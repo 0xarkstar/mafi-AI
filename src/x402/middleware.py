@@ -62,6 +62,9 @@ class X402Middleware(BaseHTTPMiddleware):
                 # Network format: eip155:10143 (Monad testnet Chain ID)
                 from x402 import Network, Money, AssetAmount
 
+                token_decimals = settings.x402_token_decimals
+                min_amount = 10 ** token_decimals  # 1 token in smallest units
+
                 self.x402_server.register(
                     method="POST",
                     route_pattern="/api/bets",
@@ -72,9 +75,9 @@ class X402Middleware(BaseHTTPMiddleware):
                                 AssetAmount(
                                     asset=Money(
                                         contract=settings.x402_usdc_address,
-                                        decimals=6,  # USDC has 6 decimals
+                                        decimals=token_decimals,
                                     ),
-                                    amount=1_000_000,  # 1 USDC minimum (1e6 smallest units)
+                                    amount=min_amount,  # 1 token minimum
                                 )
                             ],
                             "payTo": settings.x402_pay_to,

@@ -264,6 +264,7 @@ class TestX402Settings:
         assert settings.x402_facilitator_url == "https://x402-facilitator.molandak.org"
         assert settings.x402_network == "eip155:10143"
         assert settings.x402_usdc_address == "0x534b2f3A21130d7a60830c2Df862319e593943A3"
+        assert settings.x402_token_decimals == 6
         assert settings.x402_pay_to == ""
 
     def test_settings_ai_bettor_fields_exist(self):

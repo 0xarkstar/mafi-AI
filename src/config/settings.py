@@ -53,10 +53,13 @@ class Settings(BaseSettings):
     blockchain_contract_address: str = ""
 
     # X402 Open Betting Protocol (optional)
+    # BSC Testnet: facilitator=api.x402.unibase.com, network=eip155:97, XUSD (18 dec)
+    # Monad Testnet: facilitator=x402-facilitator.molandak.org, network=eip155:10143, USDC (6 dec)
     x402_enabled: bool = False
     x402_facilitator_url: str = "https://x402-facilitator.molandak.org"
     x402_network: str = "eip155:10143"  # Monad testnet
     x402_usdc_address: str = "0x534b2f3A21130d7a60830c2Df862319e593943A3"
+    x402_token_decimals: int = 6  # USDC=6, XUSD(BSC)=18
     x402_pay_to: str = ""  # Server wallet receiving USDC
 
     # AI Spectator Commentator (optional)

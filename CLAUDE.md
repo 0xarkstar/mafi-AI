@@ -60,9 +60,10 @@ Blockchain variables (optional - for on-chain betting):
 
 X402 Open Betting variables (optional - for USDC betting):
 - `X402_ENABLED=false`
-- `X402_FACILITATOR_URL=https://x402-facilitator.molandak.org`
-- `X402_NETWORK=eip155:10143` (Monad testnet)
-- `X402_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3`
+- `X402_FACILITATOR_URL=https://x402-facilitator.molandak.org` (Monad) or `https://api.x402.unibase.com` (BSC)
+- `X402_NETWORK=eip155:10143` (Monad testnet) or `eip155:97` (BSC testnet)
+- `X402_USDC_ADDRESS=0x534b2f3A21130d7a60830c2Df862319e593943A3` (Monad) or `0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c` (BSC XUSD)
+- `X402_TOKEN_DECIMALS=6` (USDC=6, XUSD on BSC=18)
 - `X402_PAY_TO=0xyour-server-wallet`
 
 AI Bettor variables (optional - for autonomous betting):
