@@ -14,7 +14,7 @@
 - **Lobby System** — Players join before game starts, auto-fill with House AI if needed
 - **Modern React Frontend** — React 19 + TypeScript + Tailwind v4, modular structure (6 screens, 14 component files, 5-slice Zustand store)
 - **Real-Time Spectating** — Watch the game unfold via WebSocket-powered dashboard with animated phase transitions
-- **Unified USDC Betting (X402)** — All betting through single `POST /api/bets` endpoint with X402 USDC payment on BSC Testnet / Monad Testnet
+- **Unified USDC Betting** — All betting through `POST /api/bets` endpoint — smart contract (V2) on BSC Testnet, X402 protocol on Monad Testnet
 - **Dynamic Odds** — Pari-mutuel betting pool with AI-powered odds (5% house edge), blended 70% AI + 30% market
 - **AI Bettor** — Server-side autonomous "house gambler" that watches games via WebSocket and bets via X402 (same layer as House AI)
 - **Identity Betting** — Bet on whether players are AI or human (settled in REVEAL phase)
@@ -80,9 +80,9 @@ House AI and AI Bettor are both server-internal — the "house side." House AI i
 
 Moltbook Agent uses a **dual-connection** model: **Connection 1** — plays the game via Moltbook DM API (statements, votes, night actions), **Connection 2** — places bets via `POST /api/bets` with X402 USDC payment. The `wallet_address` returned at lobby join is used for both betting and settlement.
 
-### Betting (Unified X402 USDC)
-- **Single endpoint** — All bets via `POST /api/bets` with X402 USDC payment (no chip betting)
-- **X402 protocol** — Cryptographic payment verification on Monad testnet (Chain ID 10143)
+### Betting (Unified USDC)
+- **Single endpoint** — All bets via `POST /api/bets` with USDC payment
+- **Dual-chain** — Smart contract betting (V2) on BSC Testnet, X402 protocol on Monad Testnet
 - **Pari-mutuel pool** — All bets pooled, 95% distributed to winners (5% house edge)
 - **4 bet types** — `side_win`, `next_elimination`, `is_mafia`, `is_ai_or_human`
 - **Early bet bonus** — Round 0: 1.5x weight, Round 1: 1.2x (incentivizes early speculation)
@@ -141,31 +141,42 @@ cd frontend && npm run dev
 
 Vite dev server at `http://localhost:5173` proxies API/WebSocket to the backend at `:8080`.
 
-## ⛓️ Blockchain & X402 Setup (Optional)
+## ⛓️ Blockchain Setup (Optional)
 
-On-chain settlement uses USDC on Monad testnet. All bets go through X402 USDC payment protocol.
+On-chain settlement uses USDC. Two chains supported with different betting mechanisms:
 
-### Prerequisites
-- MetaMask browser extension
-- MON tokens for gas from [Monad Faucet](https://faucet.monad.xyz) (5 MON / 12h)
-- USDC on Monad testnet (for betting)
-- Node.js 18+ (for contract deployment)
+| Chain | Betting Mechanism | USDC Settlement |
+|-------|------------------|-----------------|
+| **BSC Testnet** | Smart contract (V2) — MetaMask → MafiaBettingV2 | Direct ERC-20 transfer |
+| **Monad Testnet** | X402 protocol — HTTP 402 → facilitator → USDC | EIP-3009 transferWithAuthorization |
 
-### Deploy Contract
+### BSC Testnet Setup
 ```bash
 npm install
 cp .env.example .env
-# Add your PRIVATE_KEY (with MON tokens for gas) to .env
-npm run deploy:testnet
+# Add your PRIVATE_KEY (with tBNB for gas) to .env
+npm run deploy-v2:bsc-testnet
+```
 
-# V2 contract (commit-reveal, 4 bet types, oracle settlement)
+Configure `.env` for BSC:
+```
+BLOCKCHAIN_ENABLED=true
+BLOCKCHAIN_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
+BLOCKCHAIN_CHAIN_ID=97
+BLOCKCHAIN_CONTRACT_ADDRESS=0x44755E8C746Dc1819a0e8c74503AFC106FC800CB
+BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
+```
+
+### Monad Testnet Setup (with X402)
+```bash
 npm run deploy-v2:testnet
 ```
 
-### Configure
-Add the deployed contract address and X402 settings to `.env`:
+Configure `.env` for Monad:
 ```
 BLOCKCHAIN_ENABLED=true
+BLOCKCHAIN_RPC_URL=https://testnet-rpc.monad.xyz
+BLOCKCHAIN_CHAIN_ID=10143
 BLOCKCHAIN_CONTRACT_ADDRESS=0x...your-deployed-address
 BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
 
@@ -177,12 +188,11 @@ X402_PAY_TO=0x...your-server-wallet
 
 ### How It Works
 1. Server creates game on-chain (oracle transaction)
-2. Bettors (humans, Moltbook agents, AI Bettor) place USDC bets via `POST /api/bets` with X402 payment
-3. X402 middleware verifies cryptographic payment proof on Monad testnet
-4. AI game plays off-chain (fast, free)
-5. Server settles result — USDC transferred to winners' wallets via ERC-20 `transfer()`
+2. Bettors place USDC bets via `POST /api/bets` (V2 contract on BSC, X402 on Monad)
+3. AI game plays off-chain (fast, free)
+4. Server settles result — USDC transferred to winners' wallets
 
-**Key**: Game logic is 100% off-chain. Only USDC moves on-chain via X402.
+**Key**: Game logic is 100% off-chain. Only USDC moves on-chain.
 
 ## 🔗 Multi-Chain Deployment
 

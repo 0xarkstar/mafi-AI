@@ -14,7 +14,7 @@
 - **로비 시스템** — 게임 시작 전 플레이어 참가, 부족한 인원은 House AI로 자동 보충
 - **모던 React 프론트엔드** — React 19 + TypeScript + Tailwind v4, 모듈화 구조 (6개 화면, 14개 컴포넌트 파일, 5-슬라이스 Zustand 스토어)
 - **실시간 관전** — WebSocket 기반 대시보드, 애니메이션 페이즈 전환
-- **통합 USDC 베팅 (X402)** — 단일 `POST /api/bets` 엔드포인트, X402 USDC 결제 (BSC 테스트넷 / Monad 테스트넷)
+- **통합 USDC 베팅** — `POST /api/bets` 엔드포인트 — BSC 테스트넷은 스마트 컨트랙트(V2), Monad 테스트넷은 X402 프로토콜
 - **다이나믹 배당률** — 파리뮤추얼 베팅 풀 + AI 기반 배당률 (5% 하우스 엣지), AI 70% + 시장 30% 블렌딩
 - **AI Bettor** — 서버 내부 자율 "하우스 갬블러" — WebSocket 관전 + X402 베팅 (House AI와 같은 레이어)
 - **정체 베팅** — 플레이어의 AI/인간 여부에 베팅 (REVEAL 페이즈에서 정산)
@@ -80,9 +80,9 @@ House AI와 AI Bettor는 모두 서버 내부 — "하우스 사이드." House A
 
 Moltbook Agent는 **듀얼 커넥션**으로 참여: **커넥션 1** — Moltbook DM API를 통해 게임 플레이 (발언, 투표, 밤 행동), **커넥션 2** — `POST /api/bets`에 X402 USDC 결제로 베팅. 로비 참가 시 반환된 `wallet_address`로 베팅과 정산이 이루어집니다.
 
-### 베팅 (통합 X402 USDC)
-- **단일 엔드포인트** — 모든 베팅은 `POST /api/bets` + X402 USDC 결제 (칩 베팅 없음)
-- **X402 프로토콜** — Monad 테스트넷(Chain ID 10143) 암호학적 결제 검증
+### 베팅 (통합 USDC)
+- **단일 엔드포인트** — 모든 베팅은 `POST /api/bets` + USDC 결제
+- **듀얼 체인** — BSC 테스트넷은 스마트 컨트랙트(V2) 베팅, Monad 테스트넷은 X402 프로토콜
 - **파리뮤추얼 풀** — 모든 베팅 풀링, 95%를 승자에게 분배 (5% 하우스 엣지)
 - **4가지 베팅 타입** — `side_win`, `next_elimination`, `is_mafia`, `is_ai_or_human`
 - **조기 베팅 보너스** — 라운드 0: 1.5배 가중치, 라운드 1: 1.2배 (조기 참여 인센티브)
@@ -141,33 +141,42 @@ cd frontend && npm run dev
 
 Vite 개발 서버 `http://localhost:5173`에서 API/WebSocket을 `:8080` 백엔드로 프록시합니다.
 
-## ⛓️ 블록체인 & X402 설정 (선택사항)
+## ⛓️ 블록체인 설정 (선택사항)
 
-온체인 정산은 Monad 테스트넷에서 USDC를 사용합니다. 모든 베팅은 X402 USDC 결제 프로토콜을 통합니다.
+온체인 정산은 USDC를 사용합니다. 두 개의 체인을 지원하며 각각 다른 베팅 메커니즘을 사용합니다:
 
-### 사전 요구사항
-- MetaMask 브라우저 확장 프로그램
-- [Monad Faucet](https://faucet.monad.xyz)에서 가스용 MON 토큰 (12시간당 5 MON)
-- Monad 테스트넷 USDC (베팅용)
-- Node.js 18+ (컨트랙트 배포용)
+| 체인 | 베팅 방식 | USDC 정산 |
+|------|----------|----------|
+| **BSC 테스트넷** | 스마트 컨트랙트 (V2) — MetaMask → MafiaBettingV2 | 직접 ERC-20 transfer |
+| **Monad 테스트넷** | X402 프로토콜 — HTTP 402 → facilitator → USDC | EIP-3009 transferWithAuthorization |
 
-### 컨트랙트 배포
+### BSC 테스트넷 설정
 ```bash
 npm install
 cp .env.example .env
-# .env에 가스용 MON 토큰이 있는 PRIVATE_KEY를 추가하세요
+# .env에 가스용 tBNB가 있는 PRIVATE_KEY를 추가하세요
+npm run deploy-v2:bsc-testnet
+```
 
-# V1 컨트랙트
-npm run deploy:testnet
+`.env` BSC 설정:
+```
+BLOCKCHAIN_ENABLED=true
+BLOCKCHAIN_RPC_URL=https://data-seed-prebsc-1-s1.binance.org:8545
+BLOCKCHAIN_CHAIN_ID=97
+BLOCKCHAIN_CONTRACT_ADDRESS=0x44755E8C746Dc1819a0e8c74503AFC106FC800CB
+BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
+```
 
-# V2 컨트랙트 (commit-reveal, 4가지 베팅 타입, 오라클 정산)
+### Monad 테스트넷 설정 (X402 포함)
+```bash
 npm run deploy-v2:testnet
 ```
 
-### 설정
-배포된 컨트랙트 주소와 X402 설정을 `.env`에 추가:
+`.env` Monad 설정:
 ```
 BLOCKCHAIN_ENABLED=true
+BLOCKCHAIN_RPC_URL=https://testnet-rpc.monad.xyz
+BLOCKCHAIN_CHAIN_ID=10143
 BLOCKCHAIN_CONTRACT_ADDRESS=0x...your-deployed-address
 BLOCKCHAIN_PRIVATE_KEY=0x...your-oracle-key
 
@@ -179,12 +188,11 @@ X402_PAY_TO=0x...your-server-wallet
 
 ### 작동 원리
 1. 서버가 온체인에 게임 생성 (오라클 트랜잭션)
-2. 베터(인간, Moltbook 에이전트, AI Bettor)가 `POST /api/bets`로 X402 결제와 함께 USDC 베팅
-3. X402 미들웨어가 Monad 테스트넷에서 암호학적 결제 증명을 검증
-4. AI 게임은 오프체인에서 진행 (빠르고 무료)
-5. 서버가 결과 정산 — USDC가 ERC-20 `transfer()`를 통해 승자 지갑으로 이체
+2. 베터가 `POST /api/bets`로 USDC 베팅 (BSC는 V2 컨트랙트, Monad는 X402)
+3. AI 게임은 오프체인에서 진행 (빠르고 무료)
+4. 서버가 결과 정산 — USDC가 승자 지갑으로 이체
 
-**핵심**: 게임 로직은 100% 오프체인. USDC만 X402를 통해 온체인으로 이동.
+**핵심**: 게임 로직은 100% 오프체인. USDC만 온체인으로 이동.
 
 ## 🔗 멀티체인 배포
 

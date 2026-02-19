@@ -318,7 +318,7 @@ export const BettingPanel = ({ players, odds, usdcBalance, usdcBets, messages, p
       <div className="px-4 py-3 border-t border-white/5 bg-black/40 text-center shrink-0">
         <div className="flex items-center justify-center gap-2 text-[9px] text-white/20 font-mono tracking-wider">
           <Zap className="w-3 h-3" />
-          Powered by X402 Protocol on Monad
+          On-Chain Betting · BSC & Monad Testnet
         </div>
       </div>
     </div>
