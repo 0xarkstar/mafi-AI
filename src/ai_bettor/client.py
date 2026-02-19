@@ -67,9 +67,9 @@ class AIBettorClient:
         self.current_game_id: str | None = None
         self.current_phase = "lobby"
         self.current_round = 0
-        self.alive_agents: list[str] = []
-        self.dead_agents: list[str] = []
-        self.recent_events: list[str] = []
+        self.alive_agents: tuple[str, ...] = ()
+        self.dead_agents: tuple[str, ...] = ()
+        self.recent_events: tuple[str, ...] = ()
         self.current_odds: dict[str, Decimal] = {}
 
         self._running = False
@@ -132,7 +132,7 @@ class AIBettorClient:
         if event_type == "game_started":
             self._reset_game_state(game_id)
             self.current_phase = data.get("phase", "lobby")
-            self.alive_agents = list(data.get("alive_agents", []))
+            self.alive_agents = tuple(data.get("alive_agents", []))
             self._add_event(f"Game started with {len(self.alive_agents)} players")
 
         elif event_type == "phase_change":
@@ -160,9 +160,9 @@ class AIBettorClient:
             eliminated = data.get("agent")
             if eliminated:
                 if eliminated in self.alive_agents:
-                    self.alive_agents.remove(eliminated)
+                    self.alive_agents = tuple(a for a in self.alive_agents if a != eliminated)
                 if eliminated not in self.dead_agents:
-                    self.dead_agents.append(eliminated)
+                    self.dead_agents = (*self.dead_agents, eliminated)
                 self._add_event(f"{eliminated} was eliminated")
 
         elif event_type == "agent_message":
@@ -205,15 +205,15 @@ class AIBettorClient:
         self.current_game_id = game_id
         self.current_phase = "lobby"
         self.current_round = 0
-        self.alive_agents = []
-        self.dead_agents = []
-        self.recent_events = []
+        self.alive_agents = ()
+        self.dead_agents = ()
+        self.recent_events = ()
         self.current_odds = {}
         logger.info("game_state_reset", game_id=game_id)
 
     def _add_event(self, event: str):
         """Add event to recent events (rolling window of 10)."""
-        self.recent_events.append(event)
+        self.recent_events = (*self.recent_events, event)
         if len(self.recent_events) > 10:
             self.recent_events = self.recent_events[-10:]
 

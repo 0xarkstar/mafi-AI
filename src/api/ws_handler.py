@@ -123,6 +123,7 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                         player.set_response(response)
                         log.info("human_response_routed", name=player_name)
                     else:
+                        log.warning("action_response_no_player", name=player_name)
                         ws_manager.resolve_response(player_name, response)
                 else:
                     ws_manager.resolve_response(player_name, response)
@@ -164,9 +165,10 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                             "data": {"reason": "Invalid bet parameters"},
                         })
                 except Exception as exc:
+                    log.error("ws_bet_error", error=str(exc))
                     await ws.send_json({
                         "type": "bet_rejected",
-                        "data": {"reason": str(exc)},
+                        "data": {"reason": "Bet processing failed"},
                     })
 
             elif data.get("type") == "ping":

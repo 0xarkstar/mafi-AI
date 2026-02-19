@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import random
 
 from src.config.constants import PlayerType
@@ -56,11 +57,18 @@ class MoltbookAgentPlayer:
             Agent response or random choice on timeout/error.
         """
         # Send DM with prompt
-        success = await self.moltbook_client.send_dm(
-            agent_id=self.agent_id,
-            message=prompt,
-            api_key=self.api_key,
-        )
+        try:
+            success = await asyncio.wait_for(
+                self.moltbook_client.send_dm(
+                    agent_id=self.agent_id,
+                    message=prompt,
+                    api_key=self.api_key,
+                ),
+                timeout=self.timeout,
+            )
+        except asyncio.TimeoutError:
+            log.warning("moltbook_send_timeout", name=self.name, timeout=self.timeout)
+            return random.choice(candidates)
 
         if not success:
             log.warning("moltbook_send_failed", name=self.name)
@@ -119,11 +127,18 @@ Make a discussion statement to the group (under 100 words).
 """
 
         # Send DM with prompt
-        success = await self.moltbook_client.send_dm(
-            agent_id=self.agent_id,
-            message=prompt,
-            api_key=self.api_key,
-        )
+        try:
+            success = await asyncio.wait_for(
+                self.moltbook_client.send_dm(
+                    agent_id=self.agent_id,
+                    message=prompt,
+                    api_key=self.api_key,
+                ),
+                timeout=self.timeout,
+            )
+        except asyncio.TimeoutError:
+            log.warning("moltbook_send_timeout", name=self.name)
+            return "I'm carefully observing everyone's behavior."
 
         if not success:
             log.warning("moltbook_send_failed", name=self.name)

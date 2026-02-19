@@ -515,7 +515,10 @@ src/
 ├── engine/
 │   ├── __init__.py
 │   ├── game_engine.py           # State machine orchestrator
-│   ├── phase_handlers.py        # Night/Day/Vote/Reveal logic
+│   ├── phase_handlers.py        # Re-export shim for backward compat
+│   ├── phase_night.py           # Night phase handler
+│   ├── phase_day.py             # Day discussion phase handler
+│   ├── phase_vote.py            # Day vote phase handler
 │   ├── role_assigner.py         # Random role assignment
 │   └── win_checker.py           # Win condition evaluation
 ├── agents/
@@ -533,6 +536,9 @@ src/
 ├── lobby/                       # NEW: Lobby management
 │   ├── __init__.py
 │   └── manager.py               # LobbyManager for game setup
+├── cli/
+│   ├── __init__.py
+│   └── terminal.py              # Terminal mode CLI (print_event, run_terminal_mode)
 ├── moltbook/                    # NEW: External agent integration
 │   ├── __init__.py
 │   └── client.py                # Moltbook API client
@@ -597,6 +603,12 @@ frontend/                        # React + TypeScript frontend (Vite)
 │   ├── App.tsx                  # Main app with routing
 │   ├── components/
 │   │   ├── shared/              # Reusable: GameBackground, GameHeader, PhaseIndicator, PlayerGrid
+│   │   ├── BettingPanel.tsx     # Betting sidebar (extracted from SpectatorScreen)
+│   │   ├── SpecChatPanel.tsx    # Spectator chat (extracted from SpectatorScreen)
+│   │   ├── NightOverlay.tsx     # Night phase overlay (extracted from GameScreen)
+│   │   ├── NightActionPanel.tsx # Night action UI (extracted from GameScreen)
+│   │   ├── RoleRevealModal.tsx  # Role reveal modal (extracted from GameScreen)
+│   │   ├── ErrorBoundary.tsx    # React error boundary
 │   │   ├── GameComponents.tsx   # BettingStatusBar, etc.
 │   │   ├── GamePlayerCard.tsx   # Player card with avatar, emotes
 │   │   ├── ChatBoard.tsx        # Chat panel
@@ -609,6 +621,8 @@ frontend/                        # React + TypeScript frontend (Vite)
 │   │   └── events.ts            # ServerEvent union type
 │   ├── mappers.ts               # Server→client data mappers
 │   ├── constants.ts             # Avatar data, agent configs
+│   ├── constants/
+│   │   └── timing.ts            # Shared timing constants (TIMING)
 │   └── websocket.ts             # WebSocket connection manager
 └── static/                      # Compiled: index.html, assets/, images/
 
@@ -639,10 +653,10 @@ pyproject.toml                   # Dependencies, pytest config
 - **Async Support** — pytest-asyncio for all async code
 
 ### Test Counts
-- **Python**: 371 tests passing
+- **Python**: 392 tests passing
 - **Solidity**: 90 tests passing (Hardhat — 34 V1 + 56 V2)
-- **Total**: 461 tests
-- **Coverage**: 88%
+- **Total**: 482 tests
+- **Coverage**: 84%
 
 ### Running Tests
 ```bash

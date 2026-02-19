@@ -200,6 +200,13 @@ agent_name: 0.X
                     prob = float(value)
 
                 # Clamp to valid range
+                if prob < 0.0 or prob > 1.0:
+                    log.warning(
+                        "odds_value_clamped",
+                        name=name,
+                        original=prob,
+                        clamped=max(0.0, min(1.0, prob)),
+                    )
                 odds[name] = max(0.0, min(1.0, prob))
             except ValueError:
                 continue
@@ -208,5 +215,11 @@ agent_name: 0.X
         if not odds:
             log.warning("odds_parse_failed", text=text)
             odds = {"mafia_win": 0.5, "citizen_win": 0.5}
+
+        # Ensure required keys exist
+        if "mafia_win" not in odds or "citizen_win" not in odds:
+            log.warning("odds_missing_keys", keys=list(odds.keys()))
+            odds.setdefault("mafia_win", 0.5)
+            odds.setdefault("citizen_win", 0.5)
 
         return odds

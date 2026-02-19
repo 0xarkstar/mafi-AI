@@ -73,9 +73,12 @@ async def join_agent(request: Request):
             "players": list(request.app.state.lobby_manager.players.keys()),
         }
 
+    except ValueError as exc:
+        log.warning("moltbook_join_validation_error", error=str(exc))
+        return {"success": False, "error": f"Invalid request: {exc}"}
     except Exception as exc:
         log.error("moltbook_join_failed", error=str(exc))
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": "Internal server error"}
 
 
 @router.post("/api/lobby/join-moltbook")
@@ -129,6 +132,9 @@ async def join_moltbook(request: Request):
             "message": "Agent joined lobby" if success else "Lobby full",
         }
 
+    except ValueError as exc:
+        log.warning("moltbook_join_validation_error", error=str(exc))
+        return {"success": False, "error": f"Invalid request: {exc}"}
     except Exception as exc:
         log.error("moltbook_join_failed", error=str(exc))
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": "Internal server error"}

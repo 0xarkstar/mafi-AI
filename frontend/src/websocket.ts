@@ -1,5 +1,6 @@
 import type { ConnectionStatus } from './types';
 import type { ServerEvent, ClientEvent } from './types/events';
+import { TIMING } from './constants/timing';
 
 let ws: WebSocket | null = null;
 let pingInterval: ReturnType<typeof setInterval> | null = null;
@@ -8,8 +9,6 @@ let reconnectAttempts = 0;
 let messageHandler: ((data: ServerEvent) => void) | null = null;
 let statusHandler: ((status: ConnectionStatus) => void) | null = null;
 let onOpenCallback: (() => void) | null = null;
-
-const MAX_RECONNECT_DELAY = 10000;
 
 function getWSUrl(): string {
   const proto = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
@@ -29,7 +28,7 @@ function cleanup() {
 
 function scheduleReconnect() {
   if (reconnectTimeout) return;
-  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), MAX_RECONNECT_DELAY);
+  const delay = Math.min(1000 * Math.pow(2, reconnectAttempts), TIMING.MAX_RECONNECT_DELAY);
   reconnectAttempts++;
   statusHandler?.('connecting');
   reconnectTimeout = setTimeout(() => {
@@ -66,12 +65,12 @@ function connect(
     reconnectAttempts = 0;
     statusHandler?.('connected');
 
-    // Keepalive ping every 25s
+    // Keepalive ping
     pingInterval = setInterval(() => {
       if (ws?.readyState === WebSocket.OPEN) {
         ws.send(JSON.stringify({ type: 'ping' }));
       }
-    }, 25000);
+    }, TIMING.WEBSOCKET_PING_INTERVAL);
 
     onOpenCallback?.();
   };
@@ -82,8 +81,10 @@ function connect(
       // Ignore pong responses
       if ('type' in data && data.type === 'pong') return;
       messageHandler?.(data);
-    } catch {
-      // Ignore non-JSON messages
+    } catch (error) {
+      if (import.meta.env.DEV) {
+        console.error('[WS] Message parsing failed:', error);
+      }
     }
   };
 

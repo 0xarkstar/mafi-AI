@@ -573,6 +573,55 @@ Integrate shared components (GameBackground, GameHeader, PhaseIndicator, PlayerG
 
 ---
 
+## Code Quality Refactoring — 2026-02-19
+
+### Goal
+Comprehensive code quality refactoring: security fixes, backend file splits, frontend component extraction. Zero behavior change.
+
+### Phase 1: Critical & Security Fixes — COMPLETE
+- Team: p-impl-security (sonnet)
+- 5 fixes: AI Bettor immutability (list→tuple), X402 amount extraction, WebSocket validation, API error handling, blockchain gateway bounds
+- Report: docs/pipeline/P1_SECURITY_FIXES.md
+
+### Phase 2: Backend Refactoring — COMPLETE
+- Team: p-impl-backend (sonnet)
+- main.py split → main.py + cli/terminal.py
+- phase_handlers.py (384L) → phase_night.py + phase_day.py + phase_vote.py + re-export shim
+- LLM _parse_odds robustness (clamping warnings, missing key defaults)
+- Moltbook Agent send_dm timeout (asyncio.wait_for)
+- Game engine blockchain_lock_failed → log.error
+- 21 new tests (test_llm_client.py, test_bet_routes.py)
+- Report: docs/pipeline/P2_BACKEND_REFACTOR.md
+
+### Phase 3: Frontend Refactoring — COMPLETE
+- Team: p-impl-frontend (sonnet)
+- SpectatorScreen (573→155L) → BettingPanel.tsx + SpecChatPanel.tsx
+- GameScreen (310→165L) → NightOverlay.tsx + NightActionPanel.tsx + RoleRevealModal.tsx
+- ErrorBoundary.tsx added, App.tsx wrapped
+- constants/timing.ts centralized (6 magic numbers replaced)
+- WebSocket error logging (DEV mode)
+- Bet input client validation
+- XSS check: no dangerouslySetInnerHTML found
+- Report: docs/pipeline/P3_FRONTEND_REFACTOR.md
+
+### Phase 4: Verification & Documentation — COMPLETE
+- Team: p-qa (sonnet)
+- 392 Python tests, all passing, 84% coverage
+- Frontend build: PASS (0 TypeScript errors)
+- CLAUDE.md updated (file structure, test counts)
+- QA verdict: PASS
+- Report: docs/pipeline/QA_REPORT_REFACTOR.md
+
+### Test Results
+- **392 Python tests**, all passing (84% coverage)
+- **90 Hardhat tests** (unchanged)
+- **482 total tests**
+- **Frontend**: 0 TypeScript errors, npm run build ✅
+
+## Pipeline Complete
+
+---
+
 ## Phase 3: Bug Fixes, Coverage Improvement, Feature Completion — 2026-02-18
 
 ### Goal

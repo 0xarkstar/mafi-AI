@@ -328,7 +328,7 @@ class TestWebSocket:
             response = websocket.receive_json()
 
         assert response["type"] == "bet_rejected"
-        assert "Pool closed" in response["data"]["reason"]
+        assert response["data"]["reason"] == "Bet processing failed"
 
 
 class TestRootEndpoint:

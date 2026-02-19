@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import { GamePhase } from '../types';
+import { TIMING } from '../constants/timing';
 
 /**
  * Returns true for 3 seconds when phase transitions to NIGHT.
@@ -11,7 +12,7 @@ export function useNightOverlay(phase: GamePhase): boolean {
   useEffect(() => {
     if (phase === GamePhase.NIGHT) {
       setShowNightOverlay(true);
-      const timer = setTimeout(() => setShowNightOverlay(false), 3000);
+      const timer = setTimeout(() => setShowNightOverlay(false), TIMING.NIGHT_OVERLAY_DURATION);
       return () => clearTimeout(timer);
     }
   }, [phase]);

@@ -435,9 +435,9 @@ async def test_client_build_observation():
     client.current_game_id = "game123"
     client.current_phase = "day_discussion"
     client.current_round = 2
-    client.alive_agents = ["alice", "bob"]
-    client.dead_agents = ["charlie"]
-    client.recent_events = ["Event 1", "Event 2"]
+    client.alive_agents = ("alice", "bob")
+    client.dead_agents = ("charlie",)
+    client.recent_events = ("Event 1", "Event 2")
     client.current_odds = {"alice": Decimal("2.5")}
 
     observation = client._build_observation()
@@ -479,8 +479,8 @@ async def test_client_reset_game_state():
     # Set some state
     client.current_game_id = "old-game"
     client.current_phase = "day_vote"
-    client.alive_agents = ["alice"]
-    client.recent_events = ["old event"]
+    client.alive_agents = ("alice",)
+    client.recent_events = ("old event",)
 
     # Reset
     client._reset_game_state("new-game")
@@ -488,9 +488,9 @@ async def test_client_reset_game_state():
     assert client.current_game_id == "new-game"
     assert client.current_phase == "lobby"
     assert client.current_round == 0
-    assert client.alive_agents == []
-    assert client.dead_agents == []
-    assert client.recent_events == []
+    assert client.alive_agents == ()
+    assert client.dead_agents == ()
+    assert client.recent_events == ()
     assert client.current_odds == {}
 
 
@@ -537,7 +537,7 @@ async def test_client_handle_game_started_event():
 
     assert client.current_game_id == "game123"
     assert client.current_phase == "night"
-    assert client.alive_agents == ["alice", "bob", "charlie"]
+    assert client.alive_agents == ("alice", "bob", "charlie")
     assert len(client.recent_events) == 1
 
 
@@ -551,7 +551,7 @@ async def test_client_handle_elimination_event():
         budget_usdc=Decimal("100.00"),
     )
 
-    client.alive_agents = ["alice", "bob", "charlie"]
+    client.alive_agents = ("alice", "bob", "charlie")
 
     event = {
         "event_type": "elimination",

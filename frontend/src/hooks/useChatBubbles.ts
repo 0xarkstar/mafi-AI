@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { Message } from '../types';
+import { TIMING } from '../constants/timing';
 
 /**
  * Manages chat bubbles above player cards.
@@ -29,7 +30,7 @@ export function useChatBubbles(messages: Message[]): Record<string, string> {
             return newState;
           });
           delete bubbleTimers.current[senderId];
-        }, 5000);
+        }, TIMING.CHAT_BUBBLE_DURATION);
       }
     }
   }, [messages]);

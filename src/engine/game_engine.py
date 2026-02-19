@@ -124,7 +124,7 @@ class GameEngine:
                 await self.blockchain_gateway.lock_betting(self.state.game_id)
                 log.info("blockchain_betting_locked", game_id=self.state.game_id)
             except Exception as exc:
-                log.warning("blockchain_lock_failed", error=str(exc))
+                log.error("blockchain_lock_failed", error=str(exc))
 
         # Settle side-win bets (calculate payouts only)
         payouts = {}

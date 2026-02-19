@@ -164,9 +164,18 @@ class X402Middleware(BaseHTTPMiddleware):
             # VerifyResponse fields: is_valid, invalid_reason, payer
             payer_address = verify_result.payer or "unknown"
 
-            # Amount is enforced by payment requirements (minimum 1 USDC)
-            # Use 1 USDC as default since middleware enforces this minimum
-            amount_usdc = Decimal("1")
+            # Read actual bet amount from request body
+            try:
+                body = await request.json()
+                body_amount = body.get("amount_usdc")
+                if body_amount is not None and float(body_amount) > 0:
+                    amount_usdc = Decimal(str(body_amount))
+                else:
+                    logger.warning("x402_missing_amount_in_body", path=path)
+                    amount_usdc = Decimal("1")  # Fallback to minimum
+            except Exception:
+                logger.warning("x402_body_parse_failed", path=path)
+                amount_usdc = Decimal("1")  # Fallback to minimum
 
             # tx_hash is available from SettleResponse.transaction after settlement
             # Set placeholder; updated after settle below

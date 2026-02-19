@@ -146,6 +146,13 @@ class BlockchainGateway:
         role_hash = compute_role_hash(role_map)
         game_id_bytes = uuid_to_bytes32(game_id)
 
+        # Validate amounts before conversion
+        for amount in amounts:
+            if amount < Decimal("0"):
+                raise ValueError(f"Settlement amount cannot be negative: {amount}")
+            if amount > Decimal("1000000"):  # 1M USDC cap
+                raise ValueError(f"Settlement amount exceeds maximum: {amount}")
+
         # Convert amounts to raw USDC (6 decimals)
         raw_amounts = [int(amount * Decimal("1000000")) for amount in amounts]
 

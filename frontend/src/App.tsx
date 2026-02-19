@@ -7,6 +7,7 @@ import { SpectatorScreen } from './screens/SpectatorScreen';
 import { RevealScreen } from './screens/RevealScreen';
 import { GameOverScreen } from './screens/GameOverScreen';
 import { AnimatePresence, motion } from 'framer-motion';
+import { ErrorBoundary } from './components/ErrorBoundary';
 
 const App = () => {
   const { screen } = useGameStore();
@@ -31,20 +32,22 @@ const App = () => {
   };
 
   return (
-    <div className="bg-background text-white min-h-screen font-sans selection:bg-gold/30 selection:text-gold-light">
-      <AnimatePresence mode="wait">
-        <motion.div
+    <ErrorBoundary>
+      <div className="bg-background text-white min-h-screen font-sans selection:bg-gold/30 selection:text-gold-light">
+        <AnimatePresence mode="wait">
+          <motion.div
             key={screen}
             initial={{ opacity: 0 }}
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
             transition={{ duration: 0.5 }}
             className="w-full h-full"
-        >
+          >
             {renderScreen()}
-        </motion.div>
-      </AnimatePresence>
-    </div>
+          </motion.div>
+        </AnimatePresence>
+      </div>
+    </ErrorBoundary>
   );
 };
 

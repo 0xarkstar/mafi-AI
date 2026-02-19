@@ -65,6 +65,9 @@ async def place_bet(request: Request):
             else {},
         }
 
+    except ValueError as exc:
+        log.warning("bet_validation_error", error=str(exc))
+        return {"success": False, "error": f"Invalid bet: {exc}"}
     except Exception as exc:
         log.error("bet_placement_error", error=str(exc))
-        return {"success": False, "error": str(exc)}
+        return {"success": False, "error": "Internal server error"}

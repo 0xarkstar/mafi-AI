@@ -1,10 +1,13 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../store';
-import { GamePhase, Role } from '../types';
+import { GamePhase } from '../types';
 import { BettingStatusBar } from '../components/GameComponents';
 import { ChatBoard } from '../components/ChatBoard';
 import { Button } from '../components/UIComponents';
+import { NightOverlay } from '../components/NightOverlay';
+import { NightActionPanel } from '../components/NightActionPanel';
+import { RoleRevealModal } from '../components/RoleRevealModal';
 import { useChatBubbles } from '../hooks/useChatBubbles';
 import { useCountdown } from '../hooks/useCountdown';
 import { useNightOverlay } from '../hooks/useNightOverlay';
@@ -13,7 +16,8 @@ import { GameBackground } from '../components/shared/GameBackground';
 import { GameHeader } from '../components/shared/GameHeader';
 import { PhaseIndicator } from '../components/shared/PhaseIndicator';
 import { PlayerGrid } from '../components/shared/PlayerGrid';
-import { Moon, EyeOff, MessageSquare, Shield, Sword, Eye as EyeIcon, Target, AlertCircle } from 'lucide-react';
+import { TIMING } from '../constants/timing';
+import { MessageSquare, EyeOff, AlertCircle } from 'lucide-react';
 
 export const GameScreen = () => {
   const { players, phase, round, triggerReveal, messages, activeEmotes, currentAction, submitActionResponse } = useGameStore();
@@ -32,13 +36,13 @@ export const GameScreen = () => {
   // Track active speaker separately from chat bubbles
   useEffect(() => {
     if (messages.length > 0) {
-        const lastMsg = messages[messages.length - 1]!;
-        if (lastMsg.type === 'chat') {
-            const senderId = lastMsg.senderId;
-            setActiveSpeakerId(senderId);
-            if (activeSpeakerTimerRef.current) clearTimeout(activeSpeakerTimerRef.current);
-            activeSpeakerTimerRef.current = setTimeout(() => setActiveSpeakerId(null), 3000);
-        }
+      const lastMsg = messages[messages.length - 1]!;
+      if (lastMsg.type === 'chat') {
+        const senderId = lastMsg.senderId;
+        setActiveSpeakerId(senderId);
+        if (activeSpeakerTimerRef.current) clearTimeout(activeSpeakerTimerRef.current);
+        activeSpeakerTimerRef.current = setTimeout(() => setActiveSpeakerId(null), TIMING.ACTIVE_SPEAKER_TIMEOUT);
+      }
     }
   }, [messages]);
 
@@ -58,164 +62,27 @@ export const GameScreen = () => {
     }
   };
 
-  // Handle night action target selection
-  const handleNightAction = (targetName: string) => {
-    if (!currentAction || currentAction.actionType !== 'night_action') return;
-    submitActionResponse(targetName);
-  };
-
+  const humanPlayer = players.find(p => !p.isAi);
   const showVoteButtons = currentAction?.actionType === 'vote';
   const showNightActionUI = currentAction?.actionType === 'night_action' && phase === GamePhase.NIGHT;
 
   return (
     <GameBackground phase={phase}>
 
-      {/* Night Overlay */}
-      <AnimatePresence>
-        {showNightOverlay && (
-            <motion.div
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-                className="absolute inset-0 z-50 flex items-center justify-center bg-black text-center"
-            >
-                <div className="space-y-6 relative">
-                    <div className="absolute inset-0 bg-indigo-500/20 blur-[100px] rounded-full" />
-                    <motion.div
-                        animate={{ rotate: 360, scale: [1, 1.1, 1] }}
-                        transition={{ duration: 3, ease: "circOut" }}
-                        className="relative z-10"
-                    >
-                        <Moon className="w-32 h-32 text-indigo-400 drop-shadow-[0_0_50px_rgba(129,140,248,0.5)]" />
-                    </motion.div>
-                    <motion.h2
-                        initial={{ y: 50, opacity: 0 }}
-                        animate={{ y: 0, opacity: 1 }}
-                        className="text-5xl font-extrabold text-white tracking-[0.3em] relative z-10"
-                    >
-                        NIGHT PHASE
-                    </motion.h2>
-                </div>
-            </motion.div>
-        )}
-      </AnimatePresence>
+      <NightOverlay show={showNightOverlay} />
 
-      {/* Night Action Overlay (for Mafia/Detective) */}
-      <AnimatePresence>
-        {showNightActionUI && currentAction && (
-          <motion.div
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-            className="absolute inset-0 z-[80] flex items-center justify-center bg-black/80 backdrop-blur-sm"
-          >
-            <motion.div
-              initial={{ scale: 0.8, opacity: 0 }}
-              animate={{ scale: 1, opacity: 1 }}
-              className="flex flex-col items-center gap-6 text-center max-w-md px-6"
-            >
-              <AlertCircle className="w-12 h-12 text-indigo-400" />
-              <h3 className="text-2xl font-bold text-white">{currentAction.prompt}</h3>
-              <div className="flex flex-wrap gap-3 justify-center">
-                {currentAction.options.map((name) => (
-                  <motion.button
-                    key={name}
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => handleNightAction(name)}
-                    className="px-6 py-3 bg-indigo-500/20 border border-indigo-500/50 rounded-xl text-indigo-300 font-bold hover:bg-indigo-500/30 transition-colors"
-                  >
-                    <Target className="w-4 h-4 inline mr-2" />
-                    {name}
-                  </motion.button>
-                ))}
-              </div>
-              <div className={`text-sm font-mono ${timeLeft <= 10 ? 'text-red-400 animate-pulse' : 'text-white/40'}`}>
-                {timeLeft}s remaining
-              </div>
-            </motion.div>
-          </motion.div>
-        )}
-      </AnimatePresence>
+      <NightActionPanel
+        show={showNightActionUI}
+        currentAction={currentAction}
+        timeLeft={timeLeft}
+        onAction={(targetName) => submitActionResponse(targetName)}
+      />
 
-      {/* Role Reveal Modal */}
-      <AnimatePresence>
-        {showRoleReveal && (() => {
-            const humanPlayer = players.find(p => !p.isAi);
-            const role = humanPlayer?.role;
-            const roleConfig = role === Role.MAFIA
-                ? { label: 'MAFIA', desc: 'Eliminate citizens without being caught. Vote strategically during the day.', color: 'text-red-500', border: 'border-red-500', bg: 'bg-red-500/10', glow: 'rgba(239,68,68,0.4)', icon: <Sword className="w-16 h-16" /> }
-                : role === Role.DETECTIVE
-                ? { label: 'DETECTIVE', desc: 'Investigate one player each night to learn their true identity.', color: 'text-blue-400', border: 'border-blue-400', bg: 'bg-blue-500/10', glow: 'rgba(96,165,250,0.4)', icon: <EyeIcon className="w-16 h-16" /> }
-                : { label: 'CITIZEN', desc: 'Find and vote out the Mafia before they eliminate everyone.', color: 'text-green-400', border: 'border-green-400', bg: 'bg-green-500/10', glow: 'rgba(74,222,128,0.4)', icon: <Shield className="w-16 h-16" /> };
-            return (
-                <motion.div
-                    initial={{ opacity: 0 }}
-                    animate={{ opacity: 1 }}
-                    exit={{ opacity: 0 }}
-                    className="absolute inset-0 z-[100] flex items-center justify-center bg-black/90 backdrop-blur-sm"
-                >
-                    <motion.div
-                        initial={{ scale: 0.7, opacity: 0, y: 30 }}
-                        animate={{ scale: 1, opacity: 1, y: 0 }}
-                        exit={{ scale: 0.8, opacity: 0 }}
-                        transition={{ type: 'spring', stiffness: 200, damping: 20 }}
-                        className="flex flex-col items-center gap-6 text-center max-w-sm px-6"
-                    >
-                        <motion.div
-                            initial={{ scale: 0 }}
-                            animate={{ scale: 1 }}
-                            transition={{ delay: 0.3, type: 'spring', stiffness: 300 }}
-                            className="text-xs font-bold uppercase tracking-[0.3em] text-white/40"
-                        >
-                            Your Role
-                        </motion.div>
-
-                        <motion.div
-                            initial={{ scale: 0, rotate: -180 }}
-                            animate={{ scale: 1, rotate: 0 }}
-                            transition={{ delay: 0.5, type: 'spring', stiffness: 200, damping: 15 }}
-                            className={`w-28 h-28 rounded-full ${roleConfig.border} border-2 ${roleConfig.bg} flex items-center justify-center ${roleConfig.color}`}
-                            style={{ boxShadow: `0 0 60px ${roleConfig.glow}` }}
-                        >
-                            {roleConfig.icon}
-                        </motion.div>
-
-                        <motion.h2
-                            initial={{ y: 20, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{ delay: 0.8 }}
-                            className={`text-5xl font-black tracking-[0.2em] ${roleConfig.color}`}
-                            style={{ textShadow: `0 0 30px ${roleConfig.glow}` }}
-                        >
-                            {roleConfig.label}
-                        </motion.h2>
-
-                        <motion.p
-                            initial={{ y: 20, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{ delay: 1.0 }}
-                            className="text-white/50 text-sm leading-relaxed max-w-[280px]"
-                        >
-                            {roleConfig.desc}
-                        </motion.p>
-
-                        <motion.button
-                            initial={{ y: 20, opacity: 0 }}
-                            animate={{ y: 0, opacity: 1 }}
-                            transition={{ delay: 1.3 }}
-                            whileHover={{ scale: 1.05 }}
-                            whileTap={{ scale: 0.95 }}
-                            onClick={() => setShowRoleReveal(false)}
-                            className={`mt-4 px-10 py-3 rounded-full ${roleConfig.border} border ${roleConfig.bg} ${roleConfig.color} font-bold text-sm uppercase tracking-widest hover:bg-white/10 transition-colors`}
-                        >
-                            Start Game
-                        </motion.button>
-                    </motion.div>
-                </motion.div>
-            );
-        })()}
-      </AnimatePresence>
+      <RoleRevealModal
+        show={showRoleReveal}
+        role={humanPlayer?.role}
+        onDismiss={() => setShowRoleReveal(false)}
+      />
 
       {/* Header */}
       <GameHeader
@@ -251,58 +118,58 @@ export const GameScreen = () => {
       {/* Main Layout */}
       <main className="flex-1 flex overflow-hidden relative z-[2]">
 
-         {/* Center: The Board (Player Grid) */}
-         <div className="flex-1 h-full relative p-4 lg:p-10 flex flex-col items-center justify-center z-40 pointer-events-none overflow-visible">
+        {/* Center: The Board (Player Grid) */}
+        <div className="flex-1 h-full relative p-4 lg:p-10 flex flex-col items-center justify-center z-40 pointer-events-none overflow-visible">
 
-            {/* Floating Betting Status Bar */}
-            <BettingStatusBar />
+          {/* Floating Betting Status Bar */}
+          <BettingStatusBar />
 
-            {/* Players Grid Layout */}
-            <PlayerGrid
-              players={players}
-              activeSpeakerId={activeSpeakerId}
-              chatBubbles={chatBubbles}
-              activeEmotes={activeEmotes}
-              onVote={handleVote}
-              showVoteButton={showVoteButtons}
-            />
+          {/* Players Grid Layout */}
+          <PlayerGrid
+            players={players}
+            activeSpeakerId={activeSpeakerId}
+            chatBubbles={chatBubbles}
+            activeEmotes={activeEmotes}
+            onVote={handleVote}
+            showVoteButton={showVoteButtons}
+          />
 
-            {/* Mobile chat toggle */}
-            <div className="absolute bottom-6 left-6 z-40 pointer-events-auto md:hidden">
-                <motion.button
-                    whileHover={{ scale: 1.05 }}
-                    whileTap={{ scale: 0.95 }}
-                    onClick={() => setIsChatOpen(!isChatOpen)}
-                    className={`w-14 h-14 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(0,0,0,0.5)] border transition-all duration-300 ${
-                        isChatOpen
-                        ? 'bg-gold border-white text-black'
-                        : 'bg-[#1e293b] border-white/20 text-white hover:border-gold/50 hover:text-gold'
-                    }`}
-                >
-                    <MessageSquare className="w-6 h-6" />
-                </motion.button>
-            </div>
-         </div>
+          {/* Mobile chat toggle */}
+          <div className="absolute bottom-6 left-6 z-40 pointer-events-auto md:hidden">
+            <motion.button
+              whileHover={{ scale: 1.05 }}
+              whileTap={{ scale: 0.95 }}
+              onClick={() => setIsChatOpen(!isChatOpen)}
+              className={`w-14 h-14 rounded-full flex items-center justify-center shadow-[0_0_30px_rgba(0,0,0,0.5)] border transition-all duration-300 ${
+                isChatOpen
+                  ? 'bg-gold border-white text-black'
+                  : 'bg-[#1e293b] border-white/20 text-white hover:border-gold/50 hover:text-gold'
+              }`}
+            >
+              <MessageSquare className="w-6 h-6" />
+            </motion.button>
+          </div>
+        </div>
 
-         {/* Right: Fixed Chat Panel */}
-         <div className="hidden md:flex w-[340px] shrink-0 h-full border-l border-white/5 z-50">
-             <ChatBoard />
-         </div>
+        {/* Right: Fixed Chat Panel */}
+        <div className="hidden md:flex w-[340px] shrink-0 h-full border-l border-white/5 z-50">
+          <ChatBoard />
+        </div>
 
-         {/* Mobile Chat Drawer */}
-         <AnimatePresence>
-             {isChatOpen && (
-                 <motion.div
-                    initial={{ x: 400, opacity: 0 }}
-                    animate={{ x: 0, opacity: 1 }}
-                    exit={{ x: 400, opacity: 0 }}
-                    transition={{ type: "spring", stiffness: 300, damping: 30 }}
-                    className="md:hidden absolute top-0 right-0 bottom-0 w-full z-50"
-                 >
-                     <ChatBoard onClose={() => setIsChatOpen(false)} />
-                 </motion.div>
-             )}
-         </AnimatePresence>
+        {/* Mobile Chat Drawer */}
+        <AnimatePresence>
+          {isChatOpen && (
+            <motion.div
+              initial={{ x: 400, opacity: 0 }}
+              animate={{ x: 0, opacity: 1 }}
+              exit={{ x: 400, opacity: 0 }}
+              transition={{ type: 'spring', stiffness: 300, damping: 30 }}
+              className="md:hidden absolute top-0 right-0 bottom-0 w-full z-50"
+            >
+              <ChatBoard onClose={() => setIsChatOpen(false)} />
+            </motion.div>
+          )}
+        </AnimatePresence>
       </main>
     </GameBackground>
   );
