@@ -1,0 +1,10 @@
+{
+  "network": "bscTestnet",
+  "chainId": 97,
+  "deployer": "0x79E88288AC11b0Cdb53182Ee1C43016cAa82a1A0",
+  "usdc": "0x64544969ed7EBf5f083679233325356EbE738930",
+  "usdcNote": "Official BSC Testnet USDC (18 decimals, from BNB Chain faucet)",
+  "mafiaBettingV2": "0x44755E8C746Dc1819a0e8c74503AFC106FC800CB",
+  "deployTxHash": "0x60e8b342d2feffe27ada05082e9a74d2dca0fe580b64dd6be7939b097833880b",
+  "timestamp": "2026-02-18T20:36:08.372Z"
+}

@@ -190,7 +190,14 @@ X402_PAY_TO=0x...your-server-wallet
 ```bash
 npm run deploy-v2:bsc-testnet
 ```
-Deploys MafiaBettingV2 with official BSC Testnet USDC to BSC Testnet (Chain ID 97). See `deployment-bsc.json` for addresses.
+Deploys MafiaBettingV2 with official BSC Testnet USDC to BSC Testnet (Chain ID 97).
+
+**Live Deployment:**
+| Contract | Address | Explorer |
+|----------|---------|----------|
+| **MafiaBettingV2** | `0x44755E8C746Dc1819a0e8c74503AFC106FC800CB` | [BscScan](https://testnet.bscscan.com/address/0x44755E8C746Dc1819a0e8c74503AFC106FC800CB) |
+| **USDC (official)** | `0x64544969ed7EBf5f083679233325356EbE738930` | [BscScan](https://testnet.bscscan.com/token/0x64544969ed7EBf5f083679233325356EbE738930) |
+| **Deploy tx** | `0x60e8b342...097833880b` | [BscScan](https://testnet.bscscan.com/tx/0x60e8b342d2feffe27ada05082e9a74d2dca0fe580b64dd6be7939b097833880b) |
 
 ### Monad Testnet (Moltiverse Hackathon)
 ```bash

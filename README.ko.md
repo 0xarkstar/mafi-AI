@@ -192,7 +192,14 @@ X402_PAY_TO=0x...your-server-wallet
 ```bash
 npm run deploy-v2:bsc-testnet
 ```
-공식 BSC 테스트넷 USDC + MafiaBettingV2를 BSC 테스트넷 (Chain ID 97)에 배포. 주소는 `deployment-bsc.json` 참고.
+공식 BSC 테스트넷 USDC + MafiaBettingV2를 BSC 테스트넷 (Chain ID 97)에 배포.
+
+**라이브 배포:**
+| 컨트랙트 | 주소 | 탐색기 |
+|----------|------|--------|
+| **MafiaBettingV2** | `0x44755E8C746Dc1819a0e8c74503AFC106FC800CB` | [BscScan](https://testnet.bscscan.com/address/0x44755E8C746Dc1819a0e8c74503AFC106FC800CB) |
+| **USDC (공식)** | `0x64544969ed7EBf5f083679233325356EbE738930` | [BscScan](https://testnet.bscscan.com/token/0x64544969ed7EBf5f083679233325356EbE738930) |
+| **배포 tx** | `0x60e8b342...097833880b` | [BscScan](https://testnet.bscscan.com/tx/0x60e8b342d2feffe27ada05082e9a74d2dca0fe580b64dd6be7939b097833880b) |
 
 ### Monad 테스트넷 (Moltiverse Hackathon)
 ```bash
