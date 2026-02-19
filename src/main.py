@@ -132,6 +132,8 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
                 )
             )
 
+    from src.engine.game_engine import GameEngine
+
     # Continuous game loop
     async def game_loop():
         """Continuous game loop: lobby → game → reset → lobby."""
