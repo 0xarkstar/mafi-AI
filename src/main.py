@@ -55,7 +55,10 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
             from src.blockchain.gateway import BlockchainGateway
             from src.blockchain.provider import BlockchainProvider
 
+            import os
+            raw_env = os.environ.get("BLOCKCHAIN_PRIVATE_KEY", "")
             pk = settings.blockchain_private_key.get_secret_value()
+            log.info("blockchain_key_debug", env_present=bool(raw_env), env_len=len(raw_env), pydantic_len=len(pk))
             if not pk:
                 log.warning("blockchain_private_key_missing", msg="BLOCKCHAIN_ENABLED=true but no private key set")
             else:
