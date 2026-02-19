@@ -8,16 +8,6 @@ from pydantic import BaseModel, Field
 from src.config.constants import Phase, Role
 
 
-class GameConfig(BaseModel, frozen=True):
-    """Game configuration parameters."""
-
-    total_players: int = 7
-    mafia_count: int = 2
-    detective_count: int = 1
-    betting_window_seconds: int = 30
-    starting_chips: int = 1000
-
-
 class RoundResult(BaseModel, frozen=True):
     """Result of a single game round."""
 

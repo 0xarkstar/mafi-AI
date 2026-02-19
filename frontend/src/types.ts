@@ -32,19 +32,6 @@ export interface Player {
   trait: string;
 }
 
-// Individual character avatar images
-export const AVATAR_IMAGES = [
-  '/images/character_1.png',
-  '/images/character_2.png',
-  '/images/character_3.png',
-  '/images/character_4.png',
-  '/images/character_5.png',
-  '/images/character_6.png',
-  '/images/character_7.png',
-  '/images/character_8.png',
-] as const;
-export const AVATAR_COUNT = AVATAR_IMAGES.length;
-
 export interface Message {
   id: string;
   senderId: string; // 'system' or playerId

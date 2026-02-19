@@ -6,7 +6,6 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 from fastapi.testclient import TestClient
 
-from src.api import routes
 from src.api.server import create_app
 from src.api.ws_manager import WSManager
 from src.betting.manager import BettingManager
@@ -99,8 +98,8 @@ class TestHealthCheck:
     def test_health_shows_game_inactive(self, client):
         """Test health endpoint shows game_active=False when no game."""
         # Reset game state
-        routes.set_game_state(None)
-        routes.set_game_active(False)
+        client.app.state.current_game = None
+        client.app.state.game_active = False
 
         response = client.get("/api/health")
 
@@ -112,8 +111,8 @@ class TestHealthCheck:
 
     def test_health_shows_game_active(self, client, sample_game_state):
         """Test health endpoint shows game_active=True with game_id."""
-        routes.set_game_state(sample_game_state)
-        routes.set_game_active(True)
+        client.app.state.current_game = sample_game_state
+        client.app.state.game_active = True
 
         response = client.get("/api/health")
 
@@ -129,7 +128,7 @@ class TestGameEndpoint:
 
     def test_get_game_not_found(self, client):
         """Test GET /api/games/{game_id} returns 404 when no game active."""
-        routes.set_game_state(None)
+        client.app.state.current_game = None
 
         response = client.get("/api/games/test-game-123")
 
@@ -138,7 +137,7 @@ class TestGameEndpoint:
 
     def test_get_game_wrong_id(self, client, sample_game_state):
         """Test GET /api/games/{game_id} returns 404 for wrong game_id."""
-        routes.set_game_state(sample_game_state)
+        client.app.state.current_game = sample_game_state
 
         response = client.get("/api/games/wrong-game-id")
 
@@ -147,7 +146,7 @@ class TestGameEndpoint:
 
     def test_get_game_success(self, client, sample_game_state):
         """Test GET /api/games/{game_id} returns game state."""
-        routes.set_game_state(sample_game_state)
+        client.app.state.current_game = sample_game_state
 
         response = client.get("/api/games/test-game-123")
 
@@ -184,7 +183,7 @@ class TestGameEndpoint:
             winner=None,
         )
 
-        routes.set_game_state(game_state)
+        client.app.state.current_game = game_state
 
         response = client.get("/api/games/test-game-456")
 
@@ -200,7 +199,7 @@ class TestOddsEndpoint:
 
     def test_get_odds_no_game(self, client):
         """Test GET /api/odds returns message when no odds available."""
-        routes.set_betting_manager(None)
+        client.app.state.betting_manager = None
 
         response = client.get("/api/odds")
 
@@ -211,7 +210,7 @@ class TestOddsEndpoint:
     def test_get_odds_no_board(self, client, betting_manager):
         """Test GET /api/odds returns message when manager has no odds_board."""
         betting_manager.odds_board = None
-        routes.set_betting_manager(betting_manager)
+        client.app.state.betting_manager = betting_manager
 
         response = client.get("/api/odds")
 
@@ -225,7 +224,7 @@ class TestOddsEndpoint:
         # Update odds to populate odds_board
         await betting_manager.update_odds(sample_game_state)
 
-        routes.set_betting_manager(betting_manager)
+        client.app.state.betting_manager = betting_manager
 
         response = client.get("/api/odds")
 
@@ -267,7 +266,7 @@ class TestWebSocket:
 
     def test_ws_place_bet_confirmed(self, client, betting_manager):
         """Test WS place_bet returns bet_confirmed on success."""
-        routes.set_betting_manager(betting_manager)
+        client.app.state.betting_manager = betting_manager
 
         # Mock place_bet to return a bet
         mock_bet = MagicMock()
@@ -295,7 +294,7 @@ class TestWebSocket:
 
     def test_ws_place_bet_rejected(self, client, betting_manager):
         """Test WS place_bet returns bet_rejected when bet fails."""
-        routes.set_betting_manager(betting_manager)
+        client.app.state.betting_manager = betting_manager
         betting_manager.place_bet = MagicMock(return_value=None)
 
         with client.websocket_connect("/ws") as websocket:
@@ -314,7 +313,7 @@ class TestWebSocket:
 
     def test_ws_place_bet_exception(self, client, betting_manager):
         """Test WS place_bet returns bet_rejected on exception."""
-        routes.set_betting_manager(betting_manager)
+        client.app.state.betting_manager = betting_manager
         betting_manager.place_bet = MagicMock(side_effect=Exception("Pool closed"))
 
         with client.websocket_connect("/ws") as websocket:

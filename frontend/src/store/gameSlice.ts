@@ -1,111 +1,124 @@
-import { create } from 'zustand';
-import { ScreenState, GamePhase, Player, Message, Bet, USDCBet, BetType, ConnectionStatus, ActionRequest, OddsData } from './types';
-import { AGENTS_DATA } from './constants';
-import { connectWS, sendWS, disconnectWS } from './websocket';
-import { mapPhase, mapRole, mapWinner, buildPlayerFromName } from './mappers';
-
-interface GameState {
-  screen: ScreenState;
-  phase: GamePhase;
-  nickname: string;
-  players: Player[];
-  messages: Message[];
-  bets: Bet[];
-  usdcBets: USDCBet[];
-  usdcBalance: number;
-  round: number;
-  winner: 'Mafia' | 'Citizens' | null;
-  activeEmotes: Record<string, string>;
-  isSpectator: boolean;
-
-  // WebSocket state
-  connectionStatus: ConnectionStatus;
-  gameId: string | null;
-  playerName: string;
-  currentAction: ActionRequest | null;
-  odds: OddsData | null;
-  avatarIndex: number | null;
-
-  // Actions
-  connectAndJoin: (nickname: string, avatarIndex: number) => void;
-  joinAsSpectator: () => void;
-  addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void;
-  placeBet: (amount: number, target: 'Mafia' | 'Citizens') => void;
-  placeBetUSDC: (betType: BetType, target: string, amount: number) => void;
-  submitActionResponse: (response: string) => void;
-  setPhase: (phase: GamePhase) => void;
-  resetGame: () => void;
-  playAgain: () => void;
-  triggerReveal: () => void;
-  endGame: () => void;
-  triggerEmote: (playerId: string, emote: string) => void;
-  handleWSEvent: (event: any) => void;
-}
+import { StateCreator } from 'zustand';
+import { ScreenState, GamePhase, Player, Message } from '../types';
+import type { ServerEvent } from '../types/events';
+import { AGENTS_DATA } from '../constants';
+import { disconnectWS, sendWS } from '../websocket';
+import { mapPhase, mapRole, mapWinner, buildPlayerFromName } from '../mappers';
+import type { StoreState } from './index';
 
 // Module-level timeout tracking (outside Zustand state — must be serializable)
 let gameOverTimeoutId: ReturnType<typeof setTimeout> | null = null;
 const emoteTimeoutIds = new Map<string, ReturnType<typeof setTimeout>>();
 
-export const useGameStore = create<GameState>((set, get) => ({
+export interface GameSlice {
+  screen: ScreenState;
+  phase: GamePhase;
+  players: Player[];
+  messages: Message[];
+  round: number;
+  winner: 'Mafia' | 'Citizens' | null;
+  activeEmotes: Record<string, string>;
+
+  setPhase: (phase: GamePhase) => void;
+  addMessage: (msg: Omit<Message, 'id' | 'timestamp'>) => void;
+  resetGame: () => void;
+  playAgain: () => void;
+  triggerReveal: () => void;
+  endGame: () => void;
+  triggerEmote: (playerId: string, emote: string) => void;
+  handleWSEvent: (event: ServerEvent) => void;
+}
+
+export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set, get) => ({
   screen: ScreenState.LANDING,
   phase: GamePhase.DAY_DISCUSSION,
-  nickname: '',
   players: [],
   messages: [],
-  bets: [],
-  usdcBets: [],
-  usdcBalance: 50.0,
   round: 1,
   winner: null,
   activeEmotes: {},
-  isSpectator: false,
 
-  // WebSocket state
-  connectionStatus: 'disconnected',
-  gameId: null,
-  playerName: '',
-  currentAction: null,
-  odds: null,
-  avatarIndex: null,
-
-  connectAndJoin: (nickname, avatarIndex) => {
-    set({
-      connectionStatus: 'connecting',
-      playerName: nickname,
-      nickname,
-      avatarIndex,
-    });
-    connectWS(
-      (data) => get().handleWSEvent(data),
-      (status) => set({ connectionStatus: status }),
-      () => {
-        sendWS({ type: 'join_lobby', name: nickname, avatar_index: avatarIndex });
-      },
-    );
+  setPhase: (phase) => {
+    set({ phase });
   },
 
-  joinAsSpectator: () => {
+  triggerReveal: () => {
     set({
-      isSpectator: true,
-      connectionStatus: 'connecting',
-      screen: ScreenState.SPECTATE,
-      phase: GamePhase.DAY_DISCUSSION,
-      round: 1,
-      messages: [{
-        id: 'sys-start',
-        senderId: 'system',
-        senderName: 'System',
-        text: 'You are spectating. Place your bets!',
-        timestamp: Date.now(),
-        type: 'system',
-      }],
+      screen: ScreenState.REVEAL,
+      phase: GamePhase.REVEAL,
     });
+  },
 
-    connectWS(
-      (data) => get().handleWSEvent(data),
-      (status) => set({ connectionStatus: status }),
-      null, // no onOpen callback — spectators don't join lobby
-    );
+  endGame: () => {
+    set({ screen: ScreenState.GAME_OVER });
+  },
+
+  resetGame: () => {
+    disconnectWS();
+    if (gameOverTimeoutId) { clearTimeout(gameOverTimeoutId); gameOverTimeoutId = null; }
+    emoteTimeoutIds.forEach((id) => clearTimeout(id));
+    emoteTimeoutIds.clear();
+    set({
+      screen: ScreenState.LANDING,
+      phase: GamePhase.DAY_DISCUSSION,
+      players: [],
+      messages: [],
+      bets: [],
+      usdcBets: [],
+      usdcBalance: 50.0,
+      round: 1,
+      winner: null,
+      activeEmotes: {},
+      isSpectator: false,
+      connectionStatus: 'disconnected',
+      gameId: null,
+      playerName: '',
+      nickname: '',
+      currentAction: null,
+      odds: null,
+      avatarIndex: null,
+    });
+  },
+
+  playAgain: () => {
+    if (gameOverTimeoutId) { clearTimeout(gameOverTimeoutId); gameOverTimeoutId = null; }
+    const state = get();
+    set({
+      screen: ScreenState.LOBBY,
+      phase: GamePhase.DAY_DISCUSSION,
+      players: [],
+      messages: [],
+      bets: [],
+      usdcBets: [],
+      round: 1,
+      winner: null,
+      currentAction: null,
+      odds: null,
+    });
+    sendWS({ type: 'rejoin_lobby', name: state.playerName, avatar_index: state.avatarIndex });
+  },
+
+  triggerEmote: (playerId, emote) => {
+    set((state) => ({ activeEmotes: { ...state.activeEmotes, [playerId]: emote } }));
+    const existing = emoteTimeoutIds.get(playerId);
+    if (existing) clearTimeout(existing);
+    emoteTimeoutIds.set(playerId, setTimeout(() => {
+      emoteTimeoutIds.delete(playerId);
+      set((state) => {
+        const newEmotes = { ...state.activeEmotes };
+        delete newEmotes[playerId];
+        return { activeEmotes: newEmotes };
+      });
+    }, 3000));
+  },
+
+  addMessage: (msg) => {
+    const newMessage: Message = {
+      ...msg,
+      id: Math.random().toString(36).substr(2, 9),
+      timestamp: Date.now(),
+    };
+    set((state) => ({ messages: [...state.messages, newMessage] }));
   },
 
   handleWSEvent: (event) => {
@@ -113,12 +126,14 @@ export const useGameStore = create<GameState>((set, get) => ({
 
     // Broadcasts come as { event_type, data, game_id, timestamp }
     // Targeted come as { type, action_type, ... }
-    const eventType = event.event_type || event.type;
-    const data = event.data || event;
+    const eventType = 'event_type' in event
+      ? (event as { event_type: string }).event_type
+      : (event as { type: string }).type;
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const data = ('data' in event ? (event as { data: any }).data : event) as any;
 
     switch (eventType) {
       case 'lobby_status': {
-        // Support both structured (new) and flat (legacy) formats
         const rawPlayers = data.players || [];
         const existingPlayers = state.players;
 
@@ -150,7 +165,7 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
 
       case 'lobby_joined': {
-        if (data.success === false) break; // server rejected join
+        if (data.success === false) break;
         set({
           gameId: data.game_id || null,
           screen: ScreenState.LOBBY,
@@ -165,7 +180,6 @@ export const useGameStore = create<GameState>((set, get) => ({
           ? (state.isSpectator ? ScreenState.SPECTATE : ScreenState.GAME)
           : state.screen;
 
-        // Build player list from game_starting data if players array is incomplete
         let players = state.players;
         const startingPlayers: { name: string; player_type: string }[] = data.players || [];
         if (startingPlayers.length > 0 && players.length < startingPlayers.length) {
@@ -202,7 +216,6 @@ export const useGameStore = create<GameState>((set, get) => ({
         const newPhase = mapPhase(data.phase);
         const round = data.round ?? state.round;
 
-        // Update alive/dead from alive_agents if provided
         let players = state.players;
         if (data.alive_agents) {
           const aliveSet = new Set<string>(data.alive_agents);
@@ -212,7 +225,6 @@ export const useGameStore = create<GameState>((set, get) => ({
           }));
         }
 
-        // If we were in LOBBY and phase changed, transition to GAME screen
         const screen = (state.screen === ScreenState.LOBBY || state.screen === ScreenState.LANDING)
           ? (state.isSpectator ? ScreenState.SPECTATE : ScreenState.GAME)
           : state.screen;
@@ -222,10 +234,9 @@ export const useGameStore = create<GameState>((set, get) => ({
           round,
           players,
           screen,
-          currentAction: null, // clear any pending action on phase change
+          currentAction: null,
         });
 
-        // Add a system message for phase transitions
         const phaseLabel = data.phase?.replace(/_/g, ' ').toUpperCase() || newPhase;
         get().addMessage({
           senderId: 'system',
@@ -266,7 +277,6 @@ export const useGameStore = create<GameState>((set, get) => ({
         const reason = data.reason === 'killed_at_night' ? 'was killed during the night' : 'was voted out';
         const roleText = data.role ? ` (${data.role})` : '';
 
-        // Mark player as dead
         set((s) => ({
           players: s.players.map((p) =>
             p.name === elimName ? { ...p, isDead: true } : p,
@@ -306,7 +316,6 @@ export const useGameStore = create<GameState>((set, get) => ({
           ),
         }));
 
-        // When all revealed, transition to reveal screen
         if (data.all_revealed) {
           set({ screen: ScreenState.REVEAL });
         }
@@ -324,7 +333,6 @@ export const useGameStore = create<GameState>((set, get) => ({
           type: 'game_over',
         });
 
-        // Safety: if no identity_reveal transitions to REVEAL within 15s, go to GAME_OVER directly
         if (gameOverTimeoutId) clearTimeout(gameOverTimeoutId);
         gameOverTimeoutId = setTimeout(() => {
           gameOverTimeoutId = null;
@@ -338,7 +346,7 @@ export const useGameStore = create<GameState>((set, get) => ({
 
       case 'action_request': {
         if (state.isSpectator) break;
-        const updates: Partial<GameState> = {
+        const updates: Partial<StoreState> = {
           currentAction: {
             actionType: data.action_type,
             prompt: data.prompt,
@@ -348,7 +356,6 @@ export const useGameStore = create<GameState>((set, get) => ({
           },
         };
 
-        // Set human player's role from context (first action_request reveals role)
         const contextRole = data.context?.role;
         if (contextRole) {
           const mapped = mapRole(contextRole);
@@ -362,7 +369,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
 
       case 'bet_confirmed': {
-        // Update the matching bet status to confirmed
         const betId: string = data.bet_id;
         set((s) => ({
           usdcBets: s.usdcBets.map((b) =>
@@ -389,7 +395,6 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
 
       case 'usdc_settlement': {
-        // Update bet status based on settlement
         const settledBetId: string = data.bet_id;
         const won: boolean = data.won ?? false;
         const payout: number = data.payout ?? 0;
@@ -431,130 +436,4 @@ export const useGameStore = create<GameState>((set, get) => ({
       }
     }
   },
-
-  submitActionResponse: (response) => {
-    const state = get();
-    sendWS({
-      type: 'action_response',
-      player_name: state.playerName,
-      response,
-    });
-    set({ currentAction: null });
-  },
-
-  addMessage: (msg) => {
-    const newMessage: Message = {
-      ...msg,
-      id: Math.random().toString(36).substr(2, 9),
-      timestamp: Date.now(),
-    };
-    set((state) => ({ messages: [...state.messages, newMessage] }));
-  },
-
-  placeBet: (amount, target) => {
-    const newBet: Bet = {
-      id: Math.random().toString(36).substr(2, 9),
-      amount,
-      target,
-      status: 'pending',
-    };
-    set((state) => ({
-      bets: [...state.bets, newBet],
-    }));
-  },
-
-  placeBetUSDC: (betType, target, amount) => {
-    const newBet: USDCBet = {
-      id: Math.random().toString(36).substr(2, 9),
-      betType,
-      target,
-      amountUSDC: amount,
-      timestamp: Date.now(),
-      status: 'pending',
-    };
-    set((state) => ({
-      usdcBets: [...state.usdcBets, newBet],
-      usdcBalance: state.usdcBalance - amount,
-    }));
-    sendWS({
-      type: 'place_bet',
-      bet_id: newBet.id,
-      bet_type: betType,
-      target,
-      amount_usdc: amount,
-    });
-  },
-
-  setPhase: (phase) => {
-    set({ phase });
-  },
-
-  triggerReveal: () => {
-    set({
-      screen: ScreenState.REVEAL,
-      phase: GamePhase.REVEAL,
-    });
-  },
-
-  endGame: () => {
-    set({ screen: ScreenState.GAME_OVER });
-  },
-
-  resetGame: () => {
-    disconnectWS();
-    if (gameOverTimeoutId) { clearTimeout(gameOverTimeoutId); gameOverTimeoutId = null; }
-    emoteTimeoutIds.forEach((id) => clearTimeout(id));
-    emoteTimeoutIds.clear();
-    set({
-      screen: ScreenState.LANDING,
-      phase: GamePhase.DAY_DISCUSSION,
-      players: [],
-      messages: [],
-      bets: [],
-      usdcBets: [],
-      usdcBalance: 50.0,
-      round: 1,
-      winner: null,
-      activeEmotes: {},
-      isSpectator: false,
-      connectionStatus: 'disconnected',
-      gameId: null,
-      playerName: '',
-      currentAction: null,
-      odds: null,
-      avatarIndex: null,
-    });
-  },
-
-  playAgain: () => {
-    if (gameOverTimeoutId) { clearTimeout(gameOverTimeoutId); gameOverTimeoutId = null; }
-    const state = get();
-    set({
-      screen: ScreenState.LOBBY,
-      phase: GamePhase.DAY_DISCUSSION,
-      players: [],
-      messages: [],
-      bets: [],
-      usdcBets: [],
-      round: 1,
-      winner: null,
-      currentAction: null,
-      odds: null,
-    });
-    sendWS({ type: 'rejoin_lobby', name: state.playerName, avatar_index: state.avatarIndex });
-  },
-
-  triggerEmote: (playerId, emote) => {
-    set((state) => ({ activeEmotes: { ...state.activeEmotes, [playerId]: emote } }));
-    const existing = emoteTimeoutIds.get(playerId);
-    if (existing) clearTimeout(existing);
-    emoteTimeoutIds.set(playerId, setTimeout(() => {
-      emoteTimeoutIds.delete(playerId);
-      set((state) => {
-        const newEmotes = { ...state.activeEmotes };
-        delete newEmotes[playerId];
-        return { activeEmotes: newEmotes };
-      });
-    }, 3000));
-  },
-}));
+});

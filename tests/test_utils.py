@@ -1,82 +1,13 @@
-"""Tests for utility modules: errors, retry, logger."""
+"""Tests for utility modules: retry, logger."""
 
-import asyncio
 import random
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock
 
 import openai
 import pytest
 
-from src.utils.errors import (
-    AgentError,
-    APIError,
-    BettingError,
-    ConfigError,
-    GameError,
-    MafiaAIError,
-    PhaseError,
-    StorageError,
-)
 from src.utils.logger import get_logger, setup_logging
 from src.utils.retry import _calculate_delay, async_retry
-
-
-class TestErrorHierarchy:
-    """Tests for custom exception hierarchy."""
-
-    def test_base_error(self):
-        """Test MafiaAIError with message and hint."""
-        err = MafiaAIError("test error", hint="try again")
-        assert err.message == "test error"
-        assert err.hint == "try again"
-        assert str(err) == "test error"
-
-    def test_base_error_no_hint(self):
-        """Test MafiaAIError without hint."""
-        err = MafiaAIError("simple error")
-        assert err.hint is None
-
-    def test_config_error_is_base(self):
-        """Test ConfigError inherits from MafiaAIError."""
-        err = ConfigError("bad config")
-        assert isinstance(err, MafiaAIError)
-
-    def test_game_error_is_base(self):
-        """Test GameError inherits from MafiaAIError."""
-        err = GameError("game failed")
-        assert isinstance(err, MafiaAIError)
-
-    def test_phase_error_is_game_error(self):
-        """Test PhaseError inherits from GameError."""
-        err = PhaseError("invalid phase")
-        assert isinstance(err, GameError)
-        assert isinstance(err, MafiaAIError)
-
-    def test_agent_error_is_base(self):
-        """Test AgentError inherits from MafiaAIError."""
-        err = AgentError("agent crashed")
-        assert isinstance(err, MafiaAIError)
-
-    def test_api_error_is_agent_error(self):
-        """Test APIError inherits from AgentError."""
-        err = APIError("api failed")
-        assert isinstance(err, AgentError)
-        assert isinstance(err, MafiaAIError)
-
-    def test_betting_error_is_base(self):
-        """Test BettingError inherits from MafiaAIError."""
-        err = BettingError("bad bet")
-        assert isinstance(err, MafiaAIError)
-
-    def test_storage_error_is_base(self):
-        """Test StorageError inherits from MafiaAIError."""
-        err = StorageError("db down")
-        assert isinstance(err, MafiaAIError)
-
-    def test_raise_and_catch(self):
-        """Test raising and catching hierarchy."""
-        with pytest.raises(MafiaAIError):
-            raise PhaseError("wrong phase", hint="check state machine")
 
 
 class TestRetry:

@@ -1,5 +1,18 @@
 import { Player } from './types';
 
+// Individual character avatar images
+export const AVATAR_IMAGES = [
+  '/images/character_1.png',
+  '/images/character_2.png',
+  '/images/character_3.png',
+  '/images/character_4.png',
+  '/images/character_5.png',
+  '/images/character_6.png',
+  '/images/character_7.png',
+  '/images/character_8.png',
+] as const;
+export const AVATAR_COUNT = AVATAR_IMAGES.length;
+
 // Agent data matching backend personalities (src/agents/personalities.py)
 // Names MUST match exactly: Viktor, Luna, Rex, Sage, Nova, Iris, Blaze
 export const AGENTS_DATA: Omit<Player, 'id' | 'role' | 'isDead'>[] = [

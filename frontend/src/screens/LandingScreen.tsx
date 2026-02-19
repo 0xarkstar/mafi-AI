@@ -1,7 +1,7 @@
 import { useState, useMemo } from 'react';
 import { motion } from 'framer-motion';
 import { useGameStore } from '../store';
-import { AVATAR_IMAGES } from '../types';
+import { AVATAR_IMAGES } from '../constants';
 import { Button, Input } from '../components/UIComponents';
 import { Gamepad2, Eye, HelpCircle } from 'lucide-react';
 

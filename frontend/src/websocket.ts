@@ -1,10 +1,11 @@
 import type { ConnectionStatus } from './types';
+import type { ServerEvent, ClientEvent } from './types/events';
 
 let ws: WebSocket | null = null;
 let pingInterval: ReturnType<typeof setInterval> | null = null;
 let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
 let reconnectAttempts = 0;
-let messageHandler: ((data: any) => void) | null = null;
+let messageHandler: ((data: ServerEvent) => void) | null = null;
 let statusHandler: ((status: ConnectionStatus) => void) | null = null;
 let onOpenCallback: (() => void) | null = null;
 
@@ -40,7 +41,7 @@ function scheduleReconnect() {
 }
 
 function connect(
-  onMessage: (data: any) => void,
+  onMessage: (data: ServerEvent) => void,
   onStatus?: ((status: ConnectionStatus) => void) | null,
   onOpen?: (() => void) | null,
 ) {
@@ -77,9 +78,9 @@ function connect(
 
   ws.onmessage = (event) => {
     try {
-      const data = JSON.parse(event.data);
+      const data = JSON.parse(event.data) as ServerEvent;
       // Ignore pong responses
-      if (data.type === 'pong') return;
+      if ('type' in data && data.type === 'pong') return;
       messageHandler?.(data);
     } catch {
       // Ignore non-JSON messages
@@ -99,7 +100,7 @@ function connect(
 }
 
 export function connectWS(
-  onMessage: (data: any) => void,
+  onMessage: (data: ServerEvent) => void,
   onStatus?: ((status: ConnectionStatus) => void) | null,
   onOpen?: (() => void) | null,
 ) {
@@ -107,7 +108,7 @@ export function connectWS(
   connect(onMessage, onStatus, onOpen);
 }
 
-export function sendWS(data: object) {
+export function sendWS(data: ClientEvent) {
   if (ws?.readyState === WebSocket.OPEN) {
     ws.send(JSON.stringify(data));
   }

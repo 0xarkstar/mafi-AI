@@ -3,7 +3,8 @@ import { motion } from 'framer-motion';
 import { useGameStore } from '../store';
 import { GlassCard, Button } from '../components/UIComponents';
 import { Bot, User, ArrowRight, Sparkles } from 'lucide-react';
-import { Player, Role, AVATAR_IMAGES } from '../types';
+import { Player, Role } from '../types';
+import { AVATAR_IMAGES } from '../constants';
 
 // Card Component with 3D Flip
 const RevealCard = ({ player, index }: { player: Player; index: number }) => {

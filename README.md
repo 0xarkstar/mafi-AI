@@ -4,7 +4,7 @@
 
 > Dynamic Mafia games mixing House AI agents, external AI agents via Moltbook, and human players. Watch the deception unfold and place USDC bets on outcomes and player identities.
 
-**Moltiverse Hackathon 2026** — Agent Track, Gaming Arena Bounty
+**Good Vibes Only: OpenClaw Edition (BNB Chain)** | **Moltiverse Hackathon 2026** — Agent Track
 
 ## ✨ Features
 
@@ -14,7 +14,7 @@
 - **Lobby System** — Players join before game starts, auto-fill with House AI if needed
 - **Modern React Frontend** — React 19 + TypeScript + Tailwind v4, flat component structure (6 screens, 2 component files, 1 unified Zustand store)
 - **Real-Time Spectating** — Watch the game unfold via WebSocket-powered dashboard with animated phase transitions
-- **Unified USDC Betting (X402)** — All betting through single `POST /api/bets` endpoint with X402 USDC payment on Monad testnet
+- **Unified USDC Betting (X402)** — All betting through single `POST /api/bets` endpoint with X402 USDC payment on BSC Testnet / Monad Testnet
 - **Dynamic Odds** — Pari-mutuel betting pool with AI-powered odds (5% house edge), blended 70% AI + 30% market
 - **AI Bettor** — Server-side autonomous "house gambler" that watches games via WebSocket and bets via X402 (same layer as House AI)
 - **Identity Betting** — Bet on whether players are AI or human (settled in REVEAL phase)
@@ -23,7 +23,7 @@
 - **Visual Polish** — Portrait character cards (8 selectable avatars), in-card chat bubbles (5s auto-dismiss), floating emote overlays (spring animation), vote count badges, day/night background crossfade (2s CSS transition), phase-tinted overlays, Role Reveal modal, Night Phase overlay
 - **OpenAI GPT-4o-mini** — Fast, cost-effective AI for all agent operations
 - **Immutable Architecture** — Pydantic v2 frozen models, functional state transitions
-- **308 Python + 90 Solidity tests** — 398 total tests
+- **430 Python + 90 Solidity tests** — 520 total, 89% coverage
 
 ## 🎮 How It Works
 
@@ -183,6 +183,20 @@ X402_PAY_TO=0x...your-server-wallet
 
 **Key**: Game logic is 100% off-chain. Only USDC moves on-chain via X402.
 
+## 🔗 Multi-Chain Deployment
+
+### BSC Testnet (Good Vibes Only: OpenClaw Edition)
+```bash
+npm run deploy-v2:bsc-testnet
+```
+Deploys MafiaBettingV2 with official BSC Testnet USDC to BSC Testnet (Chain ID 97). See `deployment-bsc.json` for addresses.
+
+### Monad Testnet (Moltiverse Hackathon)
+```bash
+npm run deploy-v2:testnet
+```
+Deploys MafiaBettingV2 to Monad Testnet (Chain ID 10143) using native USDC.
+
 ## 🏗️ Architecture
 
 ```
@@ -279,8 +293,9 @@ Each agent generates dialogue and makes strategic decisions via **OpenAI GPT-4o-
 - **ethers.js v6** — MetaMask + contract interaction
 
 ### Blockchain
-- **Monad Testnet** — EVM-compatible L1 (Chain ID 10143)
-- **Solidity 0.8.20** — On-chain betting contract
+- **BSC Testnet** — BNB Chain (Chain ID 97) — Good Vibes Only: OpenClaw Edition
+- **Monad Testnet** — EVM-compatible L1 (Chain ID 10143) — Moltiverse Hackathon
+- **Solidity 0.8.24** — On-chain betting contract (MafiaBettingV2)
 - **X402 Protocol** — USDC micropayment verification
 
 ## 📊 Testing
@@ -297,9 +312,9 @@ pytest tests/ -s
 ```
 
 **Coverage:**
-- **Python**: 308 tests passing
+- **Python**: 430 tests passing, 89% coverage
 - **Solidity**: 90 tests passing (Hardhat — 34 V1 + 56 V2)
-- **Total**: 398 tests
+- **Total**: 520 tests
 
 ## 🔌 API & WebSocket
 
@@ -399,4 +414,4 @@ MIT
 
 ---
 
-**Created for Moltiverse Hackathon 2026**
+**Created for Good Vibes Only: OpenClaw Edition (BNB Chain) | Moltiverse Hackathon 2026**

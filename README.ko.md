@@ -4,7 +4,7 @@
 
 > House AI 에이전트, Moltbook 외부 AI 에이전트, 인간 플레이어를 혼합한 다이나믹 마피아 게임. 속임수가 펼쳐지는 과정을 관전하고, USDC로 결과와 플레이어 정체에 베팅하세요.
 
-**Moltiverse Hackathon 2026** — Agent Track, Gaming Arena Bounty
+**Good Vibes Only: OpenClaw Edition (BNB Chain)** | **Moltiverse Hackathon 2026** — Agent Track
 
 ## ✨ 주요 기능
 
@@ -14,7 +14,7 @@
 - **로비 시스템** — 게임 시작 전 플레이어 참가, 부족한 인원은 House AI로 자동 보충
 - **모던 React 프론트엔드** — React 19 + TypeScript + Tailwind v4, 플랫 컴포넌트 구조 (6개 화면, 2개 컴포넌트 파일, 통합 Zustand 스토어 1개)
 - **실시간 관전** — WebSocket 기반 대시보드, 애니메이션 페이즈 전환
-- **통합 USDC 베팅 (X402)** — 단일 `POST /api/bets` 엔드포인트, X402 USDC 결제 (Monad 테스트넷)
+- **통합 USDC 베팅 (X402)** — 단일 `POST /api/bets` 엔드포인트, X402 USDC 결제 (BSC 테스트넷 / Monad 테스트넷)
 - **다이나믹 배당률** — 파리뮤추얼 베팅 풀 + AI 기반 배당률 (5% 하우스 엣지), AI 70% + 시장 30% 블렌딩
 - **AI Bettor** — 서버 내부 자율 "하우스 갬블러" — WebSocket 관전 + X402 베팅 (House AI와 같은 레이어)
 - **정체 베팅** — 플레이어의 AI/인간 여부에 베팅 (REVEAL 페이즈에서 정산)
@@ -23,7 +23,7 @@
 - **비주얼 폴리시** — 초상화 캐릭터 카드 (8개 선택 가능한 아바타), 카드 내 채팅 버블 (5초 자동 제거), 플로팅 이모트 오버레이 (스프링 애니메이션), 투표 수 배지, 낮/밤 배경 크로스페이드 (2초 CSS 전환), 페이즈별 색조 오버레이, 역할 공개 모달, Night Phase 오버레이
 - **OpenAI GPT-4o-mini** — 모든 AI 연산에 사용되는 빠르고 경제적인 모델
 - **불변 아키텍처** — Pydantic v2 frozen 모델, 함수형 상태 전이
-- **Python 308개 + Solidity 90개 테스트** — 총 398개 테스트
+- **Python 430개 + Solidity 90개 테스트** — 총 520개, 89% 커버리지
 
 ## 🎮 작동 방식
 
@@ -185,6 +185,20 @@ X402_PAY_TO=0x...your-server-wallet
 
 **핵심**: 게임 로직은 100% 오프체인. USDC만 X402를 통해 온체인으로 이동.
 
+## 🔗 멀티체인 배포
+
+### BSC 테스트넷 (Good Vibes Only: OpenClaw Edition)
+```bash
+npm run deploy-v2:bsc-testnet
+```
+공식 BSC 테스트넷 USDC + MafiaBettingV2를 BSC 테스트넷 (Chain ID 97)에 배포. 주소는 `deployment-bsc.json` 참고.
+
+### Monad 테스트넷 (Moltiverse Hackathon)
+```bash
+npm run deploy-v2:testnet
+```
+MafiaBettingV2를 Monad 테스트넷 (Chain ID 10143)에 배포 (네이티브 USDC 사용).
+
 ## 🏗️ 아키텍처
 
 ```
@@ -281,8 +295,9 @@ contracts/                        # Solidity 스마트 컨트랙트
 - **ethers.js v6** — MetaMask + 컨트랙트 상호작용
 
 ### 블록체인
-- **Monad Testnet** — EVM 호환 L1 (Chain ID 10143)
-- **Solidity 0.8.20** — 온체인 베팅 컨트랙트
+- **BSC Testnet** — BNB Chain (Chain ID 97) — Good Vibes Only: OpenClaw Edition
+- **Monad Testnet** — EVM 호환 L1 (Chain ID 10143) — Moltiverse Hackathon
+- **Solidity 0.8.24** — 온체인 베팅 컨트랙트 (MafiaBettingV2)
 - **X402 프로토콜** — USDC 마이크로결제 검증
 
 ## 📊 테스트
@@ -299,9 +314,9 @@ pytest tests/ -s
 ```
 
 **커버리지:**
-- **Python**: 308개 테스트 통과
+- **Python**: 430개 테스트 통과, 89% 커버리지
 - **Solidity**: 90개 테스트 통과 (Hardhat — 34 V1 + 56 V2)
-- **합계**: 398개 테스트
+- **합계**: 520개 테스트
 
 ## 🔌 API & WebSocket
 
@@ -401,4 +416,4 @@ MIT
 
 ---
 
-**Moltiverse Hackathon 2026 출품작**
+**Good Vibes Only: OpenClaw Edition (BNB Chain) | Moltiverse Hackathon 2026 출품작**

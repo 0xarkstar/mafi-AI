@@ -6,7 +6,6 @@ import time
 
 import uvicorn
 
-from src.api.routes import set_betting_manager, set_game_active, set_game_state
 from src.api.server import create_app
 from src.api.ws_manager import WSManager
 from src.config.settings import load_settings
@@ -143,9 +142,6 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     # Create lobby manager
     lobby_manager = LobbyManager()
 
-    # Set betting manager in routes module
-    set_betting_manager(betting_manager)
-
     # Initialize blockchain if enabled
     blockchain_gateway = None
     if settings.blockchain_enabled:
@@ -272,17 +268,17 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
                 )
             )
 
-            set_game_active(True)
+            app.state.game_active = True
 
             try:
                 final_state = await engine.run_game()
-                set_game_state(final_state)
+                app.state.current_game = final_state
                 log.info("game_completed", winner=final_state.winner)
                 print(f"\n[OK] Game completed! Winner: {final_state.winner}")
             except Exception as exc:
                 log.exception("game_error", error=str(exc))
             finally:
-                set_game_active(False)
+                app.state.game_active = False
 
             # Cooldown before new lobby
             print("[...] New lobby opening in 10 seconds...")

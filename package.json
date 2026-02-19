@@ -8,7 +8,8 @@
     "deploy:testnet": "npx hardhat run scripts/deploy.js --network monadTestnet",
     "deploy:local": "npx hardhat run scripts/deploy.js --network hardhat",
     "deploy-v2:testnet": "npx hardhat run scripts/deploy-v2.js --network monadTestnet",
-    "deploy-v2:local": "npx hardhat run scripts/deploy-v2.js --network hardhat"
+    "deploy-v2:local": "npx hardhat run scripts/deploy-v2.js --network hardhat",
+    "deploy-v2:bsc-testnet": "npx hardhat run scripts/deploy-v2-bsc.js --network bscTestnet"
   },
   "devDependencies": {
     "@nomicfoundation/hardhat-toolbox": "^5.0.0",

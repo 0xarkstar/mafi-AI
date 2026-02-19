@@ -66,172 +66,10 @@ class GameEngine:
             winner = check_winner(self.state.alive_agents, self.state.role_map)
 
             if winner:
-                # Game over
                 self.state = self.state.model_copy(
                     update={"phase": Phase.GAME_OVER, "winner": winner}
                 )
-
-                # Lock betting on-chain before settlement
-                if self.blockchain_gateway:
-                    try:
-                        await self.blockchain_gateway.lock_betting(self.state.game_id)
-                        log.info("blockchain_betting_locked", game_id=self.state.game_id)
-                    except Exception as exc:
-                        log.warning("blockchain_lock_failed", error=str(exc))
-
-                # Settle bets if betting is enabled (calculate payouts only)
-                payouts = {}
-                if self.betting_manager:
-                    payouts = self.betting_manager.settle(winner)
-                    log.info("bets_settled", num_payouts=len(payouts))
-
-                await self.event_callback(
-                    WSEvent(
-                        event_type="game_over",
-                        data={
-                            "winner": winner,
-                            "rounds": self.state.round_number,
-                            "alive_agents": list(self.state.alive_agents),
-                            "payouts": {
-                                session_id: float(payout)
-                                for session_id, payout in payouts.items()
-                            },
-                        },
-                        game_id=self.state.game_id,
-                        timestamp=datetime.now().isoformat(),
-                    )
-                )
-
-                log.info("game_over", winner=winner, rounds=self.state.round_number)
-
-                # Transition to REVEAL phase to show player identities
-                self.state = self.state.model_copy(update={"phase": Phase.REVEAL})
-
-                # Broadcast identity reveals
-                player_items = list(self.players.items())
-                for idx, (name, player) in enumerate(player_items):
-                    is_last = idx == len(player_items) - 1
-                    await self.event_callback(
-                        WSEvent(
-                            event_type="identity_reveal",
-                            data={
-                                "player_name": name,
-                                "name": name,
-                                "player_type": player.player_type.value,
-                                "role": self.state.role_map[name].value,
-                                "all_revealed": is_last,
-                            },
-                            game_id=self.state.game_id,
-                            timestamp=datetime.now().isoformat(),
-                        )
-                    )
-
-                # Settle identity bets
-                identity_payouts = {}
-                if self.betting_manager:
-                    identity_payouts = self.betting_manager.settle_identity_bets(self.players)
-                    log.info("identity_bets_settled", num_payouts=len(identity_payouts))
-
-                    # Combine payouts from both side_win and identity bets
-                    combined_payouts = payouts.copy()
-                    for address, amount in identity_payouts.items():
-                        if address in combined_payouts:
-                            combined_payouts[address] += amount
-                        else:
-                            combined_payouts[address] = amount
-
-                    # Settle payouts on-chain or via direct USDC transfer
-                    if combined_payouts:
-                        if self.blockchain_gateway:
-                            # V2 on-chain settlement (pull-payment via claimPayout)
-                            try:
-                                winners = list(combined_payouts.keys())
-                                amounts = [
-                                    Decimal(str(amt))
-                                    for amt in combined_payouts.values()
-                                ]
-                                tx_hash = await self.blockchain_gateway.settle_game(
-                                    self.state.game_id,
-                                    self.state.role_map,
-                                    winners,
-                                    amounts,
-                                )
-                                log.info(
-                                    "v2_settlement_complete",
-                                    tx_hash=tx_hash,
-                                    num_winners=len(winners),
-                                )
-                                await self.event_callback(
-                                    WSEvent(
-                                        event_type="blockchain_settlement",
-                                        data={
-                                            "tx_hash": tx_hash,
-                                            "winners": winners,
-                                        },
-                                        game_id=self.state.game_id,
-                                        timestamp=datetime.now().isoformat(),
-                                    )
-                                )
-                            except Exception as exc:
-                                log.error(
-                                    "v2_settlement_failed",
-                                    error=str(exc),
-                                )
-                        else:
-                            # Legacy direct USDC push (no V2 contract)
-                            from src.config.settings import load_settings
-
-                            settings = load_settings()
-
-                            if settings.settlement_enabled:
-                                try:
-                                    from src.betting.settlement import USDCSettlement
-                                    from src.blockchain.provider import (
-                                        create_web3_provider,
-                                    )
-
-                                    w3 = await create_web3_provider(
-                                        settings.blockchain_rpc_url,
-                                        settings.blockchain_chain_id,
-                                    )
-                                    settlement = USDCSettlement(
-                                        w3=w3,
-                                        usdc_address=settings.x402_usdc_address,
-                                        private_key=settings.settlement_private_key.get_secret_value(),
-                                    )
-                                    transfer_results = (
-                                        await settlement.settle_payouts(
-                                            combined_payouts
-                                        )
-                                    )
-                                    log.info(
-                                        "usdc_settlement_complete",
-                                        num_transfers=len(transfer_results),
-                                    )
-                                    await self.event_callback(
-                                        WSEvent(
-                                            event_type="usdc_settlement",
-                                            data={
-                                                "transfers": transfer_results,
-                                            },
-                                            game_id=self.state.game_id,
-                                            timestamp=datetime.now().isoformat(),
-                                        )
-                                    )
-                                except Exception as exc:
-                                    log.error(
-                                        "usdc_settlement_failed",
-                                        error=str(exc),
-                                    )
-                            else:
-                                log.info(
-                                    "usdc_settlement_disabled",
-                                    total_payouts=float(
-                                        sum(combined_payouts.values())
-                                    ),
-                                )
-
-                log.info("reveal_phase_complete", player_count=len(self.players))
+                await self._handle_game_over(winner)
                 break
 
             # Execute phase
@@ -277,6 +115,152 @@ class GameEngine:
                 )
 
         return self.state
+
+    async def _handle_game_over(self, winner: str) -> None:
+        """Orchestrate game-over: lock betting, settle, reveal, and pay out."""
+        # Lock betting on-chain before settlement
+        if self.blockchain_gateway:
+            try:
+                await self.blockchain_gateway.lock_betting(self.state.game_id)
+                log.info("blockchain_betting_locked", game_id=self.state.game_id)
+            except Exception as exc:
+                log.warning("blockchain_lock_failed", error=str(exc))
+
+        # Settle side-win bets (calculate payouts only)
+        payouts = {}
+        if self.betting_manager:
+            payouts = self.betting_manager.settle(winner)
+            log.info("bets_settled", num_payouts=len(payouts))
+
+        await self._broadcast_game_over(winner, payouts)
+        combined_payouts = await self._broadcast_reveals(payouts)
+
+        if combined_payouts:
+            await self._settle_payouts(combined_payouts)
+
+        log.info("reveal_phase_complete", player_count=len(self.players))
+
+    async def _broadcast_game_over(self, winner: str, payouts: dict) -> None:
+        """Broadcast the game_over event to all spectators."""
+        await self.event_callback(
+            WSEvent(
+                event_type="game_over",
+                data={
+                    "winner": winner,
+                    "rounds": self.state.round_number,
+                    "alive_agents": list(self.state.alive_agents),
+                    "payouts": {
+                        session_id: float(payout)
+                        for session_id, payout in payouts.items()
+                    },
+                },
+                game_id=self.state.game_id,
+                timestamp=datetime.now().isoformat(),
+            )
+        )
+        log.info("game_over", winner=winner, rounds=self.state.round_number)
+
+    async def _broadcast_reveals(self, payouts: dict) -> dict:
+        """Broadcast identity reveals and settle identity bets.
+
+        Returns:
+            Combined payouts dict (side_win + identity), or empty dict if no betting.
+        """
+        self.state = self.state.model_copy(update={"phase": Phase.REVEAL})
+
+        player_items = list(self.players.items())
+        for idx, (name, player) in enumerate(player_items):
+            is_last = idx == len(player_items) - 1
+            await self.event_callback(
+                WSEvent(
+                    event_type="identity_reveal",
+                    data={
+                        "player_name": name,
+                        "name": name,
+                        "player_type": player.player_type.value,
+                        "role": self.state.role_map[name].value,
+                        "all_revealed": is_last,
+                    },
+                    game_id=self.state.game_id,
+                    timestamp=datetime.now().isoformat(),
+                )
+            )
+
+        if not self.betting_manager:
+            return {}
+
+        identity_payouts = self.betting_manager.settle_identity_bets(self.players)
+        log.info("identity_bets_settled", num_payouts=len(identity_payouts))
+
+        combined_payouts = payouts.copy()
+        for address, amount in identity_payouts.items():
+            if address in combined_payouts:
+                combined_payouts[address] += amount
+            else:
+                combined_payouts[address] = amount
+
+        return combined_payouts
+
+    async def _settle_payouts(self, combined_payouts: dict) -> None:
+        """Settle combined payouts via V2 blockchain or legacy USDC transfer."""
+        if self.blockchain_gateway:
+            # V2 on-chain settlement (pull-payment via claimPayout)
+            try:
+                winners = list(combined_payouts.keys())
+                amounts = [Decimal(str(amt)) for amt in combined_payouts.values()]
+                tx_hash = await self.blockchain_gateway.settle_game(
+                    self.state.game_id,
+                    self.state.role_map,
+                    winners,
+                    amounts,
+                )
+                log.info("v2_settlement_complete", tx_hash=tx_hash, num_winners=len(winners))
+                await self.event_callback(
+                    WSEvent(
+                        event_type="blockchain_settlement",
+                        data={"tx_hash": tx_hash, "winners": winners},
+                        game_id=self.state.game_id,
+                        timestamp=datetime.now().isoformat(),
+                    )
+                )
+            except Exception as exc:
+                log.error("v2_settlement_failed", error=str(exc))
+        else:
+            # Legacy direct USDC push (no V2 contract)
+            from src.config.settings import load_settings
+
+            settings = load_settings()
+            if settings.settlement_enabled:
+                try:
+                    from src.betting.settlement import USDCSettlement
+                    from src.blockchain.provider import create_web3_provider
+
+                    w3 = await create_web3_provider(
+                        settings.blockchain_rpc_url,
+                        settings.blockchain_chain_id,
+                    )
+                    settlement = USDCSettlement(
+                        w3=w3,
+                        usdc_address=settings.x402_usdc_address,
+                        private_key=settings.settlement_private_key.get_secret_value(),
+                    )
+                    transfer_results = await settlement.settle_payouts(combined_payouts)
+                    log.info("usdc_settlement_complete", num_transfers=len(transfer_results))
+                    await self.event_callback(
+                        WSEvent(
+                            event_type="usdc_settlement",
+                            data={"transfers": transfer_results},
+                            game_id=self.state.game_id,
+                            timestamp=datetime.now().isoformat(),
+                        )
+                    )
+                except Exception as exc:
+                    log.error("usdc_settlement_failed", error=str(exc))
+            else:
+                log.info(
+                    "usdc_settlement_disabled",
+                    total_payouts=float(sum(combined_payouts.values())),
+                )
 
     async def _initialize_game(self) -> None:
         """Initialize game state and agents."""

@@ -475,6 +475,104 @@ Fix 4 remaining issues: frontend betting not wired, V1 dead code, AI Bettor can'
 
 ---
 
+## Comprehensive Refactoring Pipeline — 2026-02-19
+
+### Goal
+Transform codebase from 6.9/10 to 8.0+/10: dead code removal, bug fixes, backend/frontend restructuring. Zero behavior change.
+
+### P0 Design — COMPLETE
+- REFACTOR_DESIGN.md written
+- File Ownership Map: p-impl-backend (src/), p-impl-frontend (frontend/src/), p-test-writer (tests/)
+
+### P1 Implementation — COMPLETE
+- Started: 2026-02-19
+- Team: p-impl-backend (sonnet), p-impl-frontend (sonnet), test fixes by team-lead
+- Note: Team lead session crashed mid-pipeline. Recovered in new session — backend agent was stuck on permission approval, frontend agent completed autonomously.
+
+| Agent | Track | Status |
+|-------|-------|--------|
+| p-impl-backend | Phase 1A/1B + Phase 2 | ✅ Complete |
+| p-impl-frontend | Phase 1C/1D + Phase 3 | ✅ Complete |
+| team-lead (recovery) | Fix broken tests (was p-test-writer task) | ✅ Complete |
+
+**p-impl-frontend deliverables** (0 TypeScript errors, `npm run build` ✅):
+- Phase 1C: Removed ethers + recharts (45 packages), cleaned vite.config.ts, deleted null BettingPanel
+- Phase 1D: AVATAR_IMAGES/AVATAR_COUNT moved from types.ts → constants.ts (4 import sites updated)
+- Phase 3A: Extracted GamePlayerCard.tsx, ChatBoard.tsx; created shared/ (GameBackground, PhaseIndicator, GameHeader, PlayerGrid)
+- Phase 3B: Created 4 hooks (useChatBubbles, useCountdown, useNightOverlay, useActionTimeout)
+- Phase 3C: Sliced store.ts (560L) → store/ (gameSlice, bettingSlice, connectionSlice, uiSlice, index with 5 selectors)
+- Phase 3D: Created types/events.ts (ServerEvent 16 variants, ClientEvent 5 variants); typed websocket.ts
+
+See: docs/pipeline/REFACTOR_FRONTEND.md
+
+**p-impl-backend deliverables** (371 Python tests passing, 88% coverage):
+- Phase 1A: Deleted src/storage/ (5 files), src/utils/errors.py, GameConfig from models/game.py
+- Phase 1B: Fixed await-on-sync bug (server.py), removed oddsmaker mafia count leak
+- Phase 2A: Split server.py (560→90 lines) into validators.py, bet_routes.py, lobby_routes.py, ws_handler.py
+- Phase 2B: Extracted game_engine game-over into 4 private methods
+- Phase 2C: Replaced routes.py globals with app.state; updated main.py and test_api.py
+
+See: docs/pipeline/REFACTOR_BACKEND.md
+
+**Test fixes** (team-lead recovery):
+- Deleted tests/test_errors.py (21 tests), tests/test_storage.py (22 tests)
+- Cleaned test_utils.py (removed TestErrorHierarchy, 11 tests)
+- Updated test_api.py (12 tests: routes.set_* → client.app.state.*)
+
+### Test Results
+- **371 Python tests**, all passing (88% coverage)
+- **90 Hardhat tests** (unchanged)
+- **461 total tests**
+- **Frontend**: 0 TypeScript errors, npm run build ✅
+
+---
+
+## Refactoring Phase 2 — Shared Component Integration — 2026-02-19
+
+### Goal
+Integrate shared components (GameBackground, GameHeader, PhaseIndicator, PlayerGrid) into SpectatorScreen and GameScreen. Fix `as any` in gameSlice. Update CLAUDE.md stale references.
+
+### P1 Implementation — COMPLETE
+- Started: 2026-02-19
+- Team: p-impl-screens (sonnet), p-doc-updater (haiku)
+
+| Agent | Files | Status |
+|-------|-------|--------|
+| p-impl-screens | SpectatorScreen.tsx, GameScreen.tsx, gameSlice.ts | ✅ Complete |
+| p-doc-updater | CLAUDE.md | ✅ Complete |
+
+### Changes
+**Screen Integration:**
+1. SpectatorScreen: 606 → 572 lines — GameBackground, GameHeader+PhaseIndicator, PlayerGrid replace inlined blocks
+2. GameScreen: 353 → 309 lines — same 3 shared components integrated
+3. GamePlayerCard removed from both screens (now behind PlayerGrid)
+4. Sun/Moon imports removed (PhaseIndicator handles them)
+
+**gameSlice.ts:**
+5. `event as any` removed — `eventType` uses `'event_type' in event` narrowing
+6. `data` kept as `any` with eslint-disable (discriminated union needed for full fix — separate task)
+
+**CLAUDE.md:**
+7. Removed stale `src/storage/` and `errors.py` references
+8. Added new API modules (validators, bet_routes, lobby_routes, ws_handler)
+9. Expanded frontend file structure (store/, hooks/, components/shared/, types/events.ts, mappers.ts)
+10. Updated test counts: 371 Python, 90 Solidity, 461 total, 88% coverage
+
+### P2 Verification — COMPLETE (PASS)
+- 371 Python tests passing
+- 0 TypeScript errors, frontend build clean
+- All 4 shared components imported in both screens
+- GamePlayerCard: 0 direct refs in screens
+- CLAUDE.md: 0 storage/errors.py refs, new modules present
+- See: docs/pipeline/QA_REPORT_V2.md
+
+### Notes
+- Original plan targeted ≤400/≤200 lines — the 3 described replacements save ~35 lines each. Hitting lower targets requires extracting betting panel (~250L), spectator chat (~100L), and modals (~140L) into new components — a follow-up task.
+
+## Pipeline Complete
+
+---
+
 ## Phase 3: Bug Fixes, Coverage Improvement, Feature Completion — 2026-02-18
 
 ### Goal

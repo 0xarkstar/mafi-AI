@@ -96,8 +96,11 @@ AI Bettor variables (optional - for autonomous betting):
 | `src/x402/` | X402 payment middleware, USDC bet models, payment verification |
 | `src/ai_bettor/` | AI Bettor client, game analyzer, betting strategy, immutable state |
 | `src/api/` | FastAPI server, WebSocket manager, REST routes, blockchain config endpoint |
-| `src/storage/` | aiosqlite, migrations, repositories |
-| `src/utils/` | Logging (structlog), retry logic, error hierarchy |
+| `src/api/validators.py` | Request validation (Pydantic schemas) |
+| `src/api/bet_routes.py` | Betting REST endpoints (extracted from routes.py) |
+| `src/api/lobby_routes.py` | Lobby REST endpoints (extracted from routes.py) |
+| `src/api/ws_handler.py` | WebSocket message handler (extracted from server.py) |
+| `src/utils/` | Logging (structlog), retry logic |
 
 ### Game Flow
 
@@ -556,24 +559,17 @@ src/
 │   └── models.py                # GameObservation, BetDecision, AIBettorState (frozen)
 ├── api/
 │   ├── __init__.py
-│   ├── server.py                # FastAPI + WebSocket + static files
-│   ├── routes.py                # REST endpoints
-│   └── ws_manager.py            # WebSocket broadcast
-├── storage/
-│   ├── __init__.py
-│   ├── database.py              # aiosqlite + migrations
-│   ├── migrations/
-│   │   └── 001_initial.sql
-│   └── repositories/
-│       ├── __init__.py
-│       ├── base.py              # Generic async repo
-│       ├── game_repo.py         # Game persistence
-│       └── bet_repo.py          # Bet persistence
+│   ├── server.py                # FastAPI app factory + static files (90 lines)
+│   ├── routes.py                # Game REST endpoints
+│   ├── bet_routes.py            # Betting REST endpoints
+│   ├── lobby_routes.py          # Lobby REST endpoints
+│   ├── ws_handler.py            # WebSocket message handler
+│   ├── ws_manager.py            # WebSocket broadcast
+│   └── validators.py            # Request validation schemas
 └── utils/
     ├── __init__.py
     ├── logger.py                # structlog setup
-    ├── retry.py                 # async retry decorator
-    └── errors.py                # Custom exception hierarchy
+    └── retry.py                 # async retry decorator
 
 tests/
 ├── __init__.py
@@ -581,7 +577,7 @@ tests/
 ├── test_engine.py               # Game engine + V2 lifecycle tests
 ├── test_agents.py               # Agent tests
 ├── test_betting.py              # Betting tests
-├── test_api.py                  # API tests
+├── test_api.py                  # API endpoint tests
 ├── test_lobby.py                # Lobby manager tests
 ├── test_players.py              # Player protocol + wallet_address tests
 ├── test_blockchain.py           # Blockchain provider + contract tests
@@ -590,10 +586,30 @@ tests/
 ├── test_moltbook.py             # Moltbook client tests
 ├── test_x402.py                 # X402 middleware and payment tests
 ├── test_x402_betting.py         # X402 betting integration tests
-└── test_ai_bettor.py            # AI Bettor client, analyzer, strategy tests
+├── test_ai_bettor.py            # AI Bettor client, analyzer, strategy tests
+├── test_validators.py           # Request validation tests
+├── test_bet_routes.py           # Betting endpoint tests
+├── test_lobby_routes.py         # Lobby endpoint tests
+└── test_ws_handler.py           # WebSocket handler tests
 
 frontend/                        # React + TypeScript frontend (Vite)
-├── src/                         # App.tsx, components/, screens/, store, websocket
+├── src/
+│   ├── App.tsx                  # Main app with routing
+│   ├── components/
+│   │   ├── shared/              # Reusable: GameBackground, GameHeader, PhaseIndicator, PlayerGrid
+│   │   ├── GameComponents.tsx   # BettingStatusBar, etc.
+│   │   ├── GamePlayerCard.tsx   # Player card with avatar, emotes
+│   │   ├── ChatBoard.tsx        # Chat panel
+│   │   └── UIComponents.tsx     # GlassCard, Button, Input
+│   ├── screens/                 # SpectatorScreen, GameScreen, LandingScreen, etc.
+│   ├── store/                   # Zustand slices: gameSlice, bettingSlice, connectionSlice, uiSlice
+│   ├── hooks/                   # useChatBubbles, useCountdown, useNightOverlay, useActionTimeout
+│   ├── types/
+│   │   ├── index.ts             # Core types (Player, Message, GamePhase, etc.)
+│   │   └── events.ts            # ServerEvent union type
+│   ├── mappers.ts               # Server→client data mappers
+│   ├── constants.ts             # Avatar data, agent configs
+│   └── websocket.ts             # WebSocket connection manager
 └── static/                      # Compiled: index.html, assets/, images/
 
 contracts/
@@ -623,9 +639,10 @@ pyproject.toml                   # Dependencies, pytest config
 - **Async Support** — pytest-asyncio for all async code
 
 ### Test Counts
-- **Python**: 308 tests passing
+- **Python**: 371 tests passing
 - **Solidity**: 90 tests passing (Hardhat — 34 V1 + 56 V2)
-- **Total**: 398 tests
+- **Total**: 461 tests
+- **Coverage**: 88%
 
 ### Running Tests
 ```bash

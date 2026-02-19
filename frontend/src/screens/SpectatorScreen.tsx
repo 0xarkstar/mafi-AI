@@ -1,11 +1,18 @@
 import { useEffect, useRef, useState } from 'react';
 import { motion, AnimatePresence } from 'framer-motion';
 import { useGameStore } from '../store';
-import { GamePhase, AVATAR_IMAGES, BetType } from '../types';
-import { GamePlayerCard, BettingStatusBar } from '../components/GameComponents';
+import { BetType } from '../types';
+import { AVATAR_IMAGES } from '../constants';
+import { BettingStatusBar } from '../components/GameComponents';
 import { GlassCard, Button, Input } from '../components/UIComponents';
+import { useChatBubbles } from '../hooks/useChatBubbles';
+import { useCountdown } from '../hooks/useCountdown';
+import { GameBackground } from '../components/shared/GameBackground';
+import { GameHeader } from '../components/shared/GameHeader';
+import { PhaseIndicator } from '../components/shared/PhaseIndicator';
+import { PlayerGrid } from '../components/shared/PlayerGrid';
 import {
-  Sun, Moon, TrendingUp, Eye, Users, Target, ChevronDown,
+  TrendingUp, Eye, Users, Target, ChevronDown,
   DollarSign, ArrowRight, Clock, Zap, BarChart3,
   MessageSquare, Skull, LogOut, Send, X,
 } from 'lucide-react';
@@ -25,9 +32,8 @@ export const SpectatorScreen = () => {
   } = useGameStore();
 
   const [activeSpeakerId, setActiveSpeakerId] = useState<string | null>(null);
-  const [timeLeft, setTimeLeft] = useState(0);
-  const [chatBubbles, setChatBubbles] = useState<Record<string, string>>({});
-  const bubbleTimers = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  const [timeLeft] = useCountdown(0);
+  const chatBubbles = useChatBubbles(messages);
   const activeSpeakerTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const betSuccessTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -99,38 +105,18 @@ export const SpectatorScreen = () => {
     setSpecChatInput('');
   };
 
-  // Chat bubbles from real WebSocket messages
+  // Track active speaker from messages
   useEffect(() => {
     if (messages.length > 0) {
       const lastMsg = messages[messages.length - 1]!;
       if (lastMsg.type === 'chat') {
         const senderId = lastMsg.senderId;
-
         setActiveSpeakerId(senderId);
         if (activeSpeakerTimerRef.current) clearTimeout(activeSpeakerTimerRef.current);
         activeSpeakerTimerRef.current = setTimeout(() => setActiveSpeakerId(null), 3000);
-
-        setChatBubbles(prev => ({ ...prev, [senderId]: lastMsg.text }));
-        if (bubbleTimers.current[senderId]) clearTimeout(bubbleTimers.current[senderId]);
-        bubbleTimers.current[senderId] = setTimeout(() => {
-          setChatBubbles(prev => {
-            const newState = { ...prev };
-            delete newState[senderId];
-            return newState;
-          });
-          delete bubbleTimers.current[senderId];
-        }, 5000);
       }
     }
   }, [messages]);
-
-  // Countdown
-  useEffect(() => {
-    if (timeLeft > 0) {
-      const timerId = setTimeout(() => setTimeLeft(timeLeft - 1), 1000);
-      return () => clearTimeout(timerId);
-    }
-  }, [timeLeft]);
 
   // Derive live odds from store
   const mafiaOdds = odds ? (1 / odds.mafiaWinProb).toFixed(2) : '—';
@@ -169,55 +155,38 @@ export const SpectatorScreen = () => {
   }, []);
 
   return (
-    <div className="h-screen w-full flex flex-col overflow-hidden relative bg-[#050505]">
-      {/* Background Images */}
-      <img src="/images/game-bg.png" alt="" className={`absolute inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-[2000ms] ${phase === GamePhase.NIGHT ? 'opacity-0' : 'opacity-100'}`} />
-      <img src="/images/game-bg-night.png" alt="" className={`absolute inset-0 w-full h-full object-cover z-0 pointer-events-none transition-opacity duration-[2000ms] ${phase === GamePhase.NIGHT ? 'opacity-100' : 'opacity-0'}`} />
-      <div className={`absolute inset-0 transition-all duration-[2000ms] z-[1] pointer-events-none
-        ${phase === GamePhase.NIGHT ? 'bg-[#0a0e1f]/60' :
-          phase === GamePhase.DAY_VOTE ? 'bg-[#1a0505]/70' :
-          'bg-[#0a0a05]/50'}`}
-      />
+    <GameBackground phase={phase}>
 
       {/* Header */}
-      <header className="h-16 px-6 flex items-center justify-between bg-[#030712]/80 backdrop-blur-md border-b border-white/5 z-[10] shrink-0 relative">
-        <div className="flex items-center gap-3">
-          <span
-            className="text-xl font-black tracking-tight text-transparent bg-clip-text"
-            style={{
-              backgroundImage: 'linear-gradient(180deg, #FFF2CC 0%, #D4A853 50%, #805F1F 100%)',
-              filter: 'drop-shadow(0 0 10px rgba(212,168,83,0.3))',
-            }}
-          >MAFI-AI</span>
-          <div className="px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1">
-            <Eye className="w-3 h-3" /> Spectator
-          </div>
-        </div>
-
-        {/* Center: Phase Indicator */}
-        <div className="absolute left-1/2 -translate-x-1/2 flex items-center gap-3 bg-white/5 px-4 py-1.5 rounded-full border border-white/5 shadow-inner">
-          {phase === GamePhase.NIGHT ? <Moon className="w-4 h-4 text-indigo-400" /> : <Sun className="w-4 h-4 text-orange-400" />}
-          <span className="text-xs font-bold uppercase w-20 text-center text-white/80">{phase.replace('_', ' ')}</span>
-          <div className="w-px h-3 bg-white/10" />
-          <div className="text-xs font-mono text-white/40">ROUND {round}</div>
-          <div className="w-px h-3 bg-white/10" />
-          <div className={`text-xs font-mono font-bold w-12 text-center ${timeLeft <= 5 ? 'text-red-500 animate-pulse' : 'text-white/60'}`}>
-            00:{timeLeft.toString().padStart(2, '0')}
-          </div>
-        </div>
-
-        {/* Right: Balance + Exit */}
-        <div className="flex items-center gap-4">
-          <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-full">
-            <DollarSign className="w-3.5 h-3.5 text-green-400" />
-            <span className="text-sm font-mono font-bold text-green-400">{usdcBalance.toFixed(2)}</span>
-            <span className="text-[9px] text-green-400/60 font-bold">USDC</span>
-          </div>
-          <button onClick={resetGame} className="p-2 hover:bg-white/5 rounded-full text-white/30 hover:text-white transition-colors">
-            <LogOut className="w-4 h-4" />
-          </button>
-        </div>
-      </header>
+      <GameHeader
+        left={
+          <>
+            <span
+              className="text-xl font-black tracking-tight text-transparent bg-clip-text"
+              style={{
+                backgroundImage: 'linear-gradient(180deg, #FFF2CC 0%, #D4A853 50%, #805F1F 100%)',
+                filter: 'drop-shadow(0 0 10px rgba(212,168,83,0.3))',
+              }}
+            >MAFI-AI</span>
+            <div className="px-2 py-0.5 rounded-full bg-purple-500/20 border border-purple-500/30 text-purple-300 text-[9px] font-bold uppercase tracking-widest flex items-center gap-1">
+              <Eye className="w-3 h-3" /> Spectator
+            </div>
+          </>
+        }
+        center={<PhaseIndicator phase={phase} round={round} timeLeft={timeLeft} />}
+        right={
+          <>
+            <div className="flex items-center gap-2 bg-green-500/10 border border-green-500/20 px-3 py-1.5 rounded-full">
+              <DollarSign className="w-3.5 h-3.5 text-green-400" />
+              <span className="text-sm font-mono font-bold text-green-400">{usdcBalance.toFixed(2)}</span>
+              <span className="text-[9px] text-green-400/60 font-bold">USDC</span>
+            </div>
+            <button onClick={resetGame} className="p-2 hover:bg-white/5 rounded-full text-white/30 hover:text-white transition-colors">
+              <LogOut className="w-4 h-4" />
+            </button>
+          </>
+        }
+      />
 
       {/* Main Layout */}
       <main className="flex-1 flex overflow-hidden relative z-[2]">
@@ -226,32 +195,12 @@ export const SpectatorScreen = () => {
         <div className="flex-1 h-full relative p-4 lg:p-8 flex flex-col items-center justify-center z-40 pointer-events-none overflow-visible">
           <BettingStatusBar />
 
-          <div className="w-full max-w-5xl flex flex-col gap-8 md:gap-12 relative z-10 overflow-visible">
-            {/* Top Row */}
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4 md:gap-8 justify-items-center overflow-visible">
-              {players.slice(0, 4).map(p => (
-                <GamePlayerCard
-                  key={p.id}
-                  player={p}
-                  isSpeaking={activeSpeakerId === p.id}
-                  currentMessage={chatBubbles[p.id]}
-                  activeEmote={activeEmotes[p.id]}
-                />
-              ))}
-            </div>
-            {/* Bottom Row */}
-            <div className="grid grid-cols-2 md:grid-cols-3 gap-4 md:gap-8 justify-items-center w-full md:w-4/5 mx-auto overflow-visible">
-              {players.slice(4, 7).map(p => (
-                <GamePlayerCard
-                  key={p.id}
-                  player={p}
-                  isSpeaking={activeSpeakerId === p.id}
-                  currentMessage={chatBubbles[p.id]}
-                  activeEmote={activeEmotes[p.id]}
-                />
-              ))}
-            </div>
-          </div>
+          <PlayerGrid
+            players={players}
+            activeSpeakerId={activeSpeakerId}
+            chatBubbles={chatBubbles}
+            activeEmotes={activeEmotes}
+          />
         </div>
 
         {/* Spectator Chat Toggle Button */}
@@ -618,6 +567,6 @@ export const SpectatorScreen = () => {
           </div>
         </div>
       </main>
-    </div>
+    </GameBackground>
   );
 };

@@ -1,56 +1,35 @@
 """FastAPI application factory."""
 
-import re
 from pathlib import Path
 
-from fastapi import FastAPI, Request, WebSocket, WebSocketDisconnect
+from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
 from fastapi.staticfiles import StaticFiles
 
+from src.api.bet_routes import router as bet_router
+from src.api.lobby_routes import router as lobby_router
 from src.api.routes import router
+from src.api.ws_handler import websocket_endpoint
 from src.api.ws_manager import WSManager
 from src.config.settings import Settings
-from src.models.events import WSEvent
 from src.utils.logger import get_logger
 
 log = get_logger(__name__)
 
-# Validation helpers
-NAME_PATTERN = re.compile(r"^[a-zA-Z0-9_\- ]+$")
-
-
-def validate_player_name(name: str) -> str | None:
-    """Validate player name. Returns error message if invalid, None if valid."""
-    if not name or not isinstance(name, str):
-        return "Name must be a non-empty string"
-    if len(name) < 1 or len(name) > 32:
-        return "Name must be 1-32 characters"
-    if not NAME_PATTERN.match(name):
-        return "Name can only contain letters, numbers, spaces, hyphens, and underscores"
-    return None
-
 
 def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) -> FastAPI:
-    """Create and configure FastAPI application.
-
-    Args:
-        settings: Application settings.
-        ws_manager: WebSocket manager instance.
-        betting_manager: Optional betting manager for spectator betting.
-
-    Returns:
-        Configured FastAPI application.
-    """
+    """Create and configure FastAPI application."""
     app = FastAPI(
         title="MafiaAI",
         description="AI agents play Mafia with real-time spectating",
         version="0.1.0",
     )
 
-    # Store betting manager for WebSocket handler access
+    # Store shared state
     app.state.betting_manager = betting_manager
     app.state.settings = settings
+    app.state.ws_manager = ws_manager
 
     # CORS middleware
     app.add_middleware(
@@ -71,242 +50,15 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
         except ImportError:
             log.warning("x402_middleware_not_available", reason="module_not_found")
 
-    # Include REST API routes
+    # Include REST API routers
     app.include_router(router)
+    app.include_router(bet_router)
+    app.include_router(lobby_router)
 
-    # Blockchain configuration endpoint
-    @app.get("/api/blockchain-config")
-    async def blockchain_config():
-        """Return blockchain configuration for frontend."""
-        s = app.state.settings
-        return {
-            "enabled": s.blockchain_enabled,
-            "contract_address": s.blockchain_contract_address if s.blockchain_enabled else "",
-            "chain_id": s.blockchain_chain_id if s.blockchain_enabled else 0,
-            "rpc_url": s.blockchain_rpc_url if s.blockchain_enabled else "",
-        }
+    # WebSocket endpoint
+    app.websocket("/ws")(websocket_endpoint)
 
-    # Unified betting endpoint (requires X402 payment)
-    @app.post("/api/bets")
-    async def place_bet(request: Request):
-        """Place a bet via X402 payment protocol (unified endpoint).
-
-        All bets (chip-based betting removed) require X402 USDC payment.
-        Any X402-compatible client (Moltbook agents, spectator agents,
-        AI Bettor) can call this endpoint.
-        """
-        from decimal import Decimal as D
-
-        try:
-            # Parse request body
-            body = await request.json()
-            bet_type = body.get("bet_type")
-            target = body.get("target")
-            amount_usdc = body.get("amount_usdc", 0)
-            round_number = body.get("round", 0)
-
-            # Extract payment info from request state (injected by x402 middleware)
-            payment_info = getattr(request.state, "x402_payment", None)
-            if not payment_info:
-                return {
-                    "success": False,
-                    "error": "X402 payment info missing",
-                }
-            bettor_address = payment_info.payer_address
-            tx_hash = payment_info.tx_hash
-
-            # Validate betting manager exists
-            if not app.state.betting_manager:
-                return {
-                    "success": False,
-                    "error": "Betting not enabled",
-                }
-
-            # Place bet via unified handler
-            bet = app.state.betting_manager.place_bet(
-                bettor_address=bettor_address,
-                bet_type=bet_type,
-                target=target,
-                amount_usdc=D(str(amount_usdc)),
-                round_number=round_number,
-                tx_hash=tx_hash,
-            )
-
-            if not bet:
-                return {
-                    "success": False,
-                    "error": "Invalid bet",
-                }
-
-            # Return confirmation with current odds
-            odds_board = app.state.betting_manager.odds_board
-            return {
-                "success": True,
-                "bet_id": bet.bet_id,
-                "bet_type": bet.bet_type.value,
-                "target": bet.target,
-                "amount": float(bet.amount),
-                "weight": float(bet.weight),
-                "tx_hash": bet.tx_hash,
-                "odds": {
-                    "mafia_win": float(odds_board.mafia_win_prob)
-                    if odds_board
-                    else 0.5,
-                    "citizen_win": float(odds_board.citizen_win_prob)
-                    if odds_board
-                    else 0.5,
-                }
-                if odds_board
-                else {},
-            }
-
-        except Exception as exc:
-            log.error("bet_placement_error", error=str(exc))
-            return {
-                "success": False,
-                "error": str(exc),
-            }
-
-    # Moltbook agent join endpoint (with Identity verification)
-    @app.post("/api/lobby/join-agent")
-    async def join_agent(request: Request):
-        """Moltbook agent joins the lobby via Identity verification.
-
-        Requires X-Moltbook-Identity header with JWT token.
-
-        Returns:
-            Success/failure response.
-        """
-        # Check if lobby exists
-        if not hasattr(app.state, "lobby_manager") or not app.state.lobby_manager:
-            return {"success": False, "error": "Lobby not available"}
-
-        try:
-            # Read X-Moltbook-Identity header
-            identity_token = request.headers.get("X-Moltbook-Identity", "")
-
-            if not identity_token:
-                return {"success": False, "error": "Moltbook Identity token required"}
-
-            # Verify identity via Moltbook
-            from src.moltbook.auth import MoltbookAuth
-
-            auth = MoltbookAuth(
-                app_key=app.state.settings.moltbook_app_key.get_secret_value(),
-                audience=app.state.settings.moltbook_audience,
-                moltbook_api_url=app.state.settings.moltbook_api_url,
-            )
-
-            agent_info = await auth.verify_identity(identity_token)
-
-            # Extract verified agent info
-            agent_id = agent_info["id"]
-            agent_name = agent_info["name"]
-            wallet_address = agent_info["wallet_address"]
-
-            # Create MoltbookAgentPlayer
-            from src.moltbook.client import MoltbookClient
-            from src.players.moltbook_agent import MoltbookAgentPlayer
-
-            moltbook_client = MoltbookClient(
-                base_url=app.state.settings.moltbook_api_url
-            )
-            player = MoltbookAgentPlayer(
-                name=agent_name,
-                moltbook_client=moltbook_client,
-                agent_id=agent_id,
-                api_key="",  # No longer needed (verified via Identity)
-                wallet_address=wallet_address,
-            )
-
-            success = await app.state.lobby_manager.join(player)
-
-            if success:
-                # Broadcast lobby status
-                from datetime import datetime
-
-                await ws_manager.broadcast(
-                    WSEvent(
-                        event_type="lobby_status",
-                        data=app.state.lobby_manager.get_lobby_status(),
-                        game_id="",
-                        timestamp=datetime.now().isoformat(),
-                    )
-                )
-
-            return {
-                "success": success,
-                "agent_name": agent_name if success else None,
-                "wallet_address": wallet_address if success else None,
-                "players": list(app.state.lobby_manager.players.keys()),
-            }
-
-        except Exception as exc:
-            log.error("moltbook_join_failed", error=str(exc))
-            return {"success": False, "error": str(exc)}
-
-    # Simple Moltbook agent join endpoint (no Identity verification)
-    @app.post("/api/lobby/join-moltbook")
-    async def join_moltbook(request: Request):
-        """Moltbook agent joins the lobby by name and agent ID.
-
-        Accepts JSON body: {"name": str, "moltbook_agent_id": str}
-
-        Returns:
-            Success/failure response.
-        """
-        if not hasattr(app.state, "lobby_manager") or not app.state.lobby_manager:
-            return {"success": False, "error": "Lobby not available"}
-
-        try:
-            body = await request.json()
-            name = body.get("name", "")
-            moltbook_agent_id = body.get("moltbook_agent_id", "")
-
-            name_error = validate_player_name(name)
-            if name_error:
-                return {"success": False, "error": f"Invalid name: {name_error}"}
-
-            if not moltbook_agent_id or not isinstance(moltbook_agent_id, str):
-                return {"success": False, "error": "moltbook_agent_id must be a non-empty string"}
-
-            from src.moltbook.client import MoltbookClient
-            from src.players.moltbook_agent import MoltbookAgentPlayer
-
-            moltbook_client = MoltbookClient(
-                base_url=app.state.settings.moltbook_api_url
-            )
-            player = MoltbookAgentPlayer(
-                name=name,
-                agent_id=moltbook_agent_id,
-                api_key="",
-                moltbook_client=moltbook_client,
-            )
-
-            success = app.state.lobby_manager.join(player)
-
-            if success:
-                from datetime import datetime
-
-                await ws_manager.broadcast(
-                    WSEvent(
-                        event_type="lobby_status",
-                        data=app.state.lobby_manager.get_lobby_status(),
-                        game_id="",
-                        timestamp=datetime.now().isoformat(),
-                    )
-                )
-
-            return {
-                "success": success,
-                "message": "Agent joined lobby" if success else "Lobby full",
-            }
-
-        except Exception as exc:
-            log.error("moltbook_join_failed", error=str(exc))
-            return {"success": False, "error": str(exc)}
-
-    # Static files — mount /assets for Vite bundles, explicit route for /
+    # Static files — mount /assets for Vite bundles
     static_dir = Path(__file__).parent.parent.parent / "static"
     assets_dir = static_dir / "assets"
     if static_dir.exists() and assets_dir.exists():
@@ -334,227 +86,5 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
                 "docs": "/docs",
                 "health": "/api/health",
             }
-
-    # WebSocket endpoint
-    @app.websocket("/ws")
-    async def websocket_endpoint(ws: WebSocket):
-        """WebSocket endpoint for real-time game events.
-
-        Args:
-            ws: WebSocket connection.
-        """
-        await ws_manager.connect(ws)
-
-        # Generate session ID for this connection
-        import uuid
-        from datetime import datetime
-
-        session_id = str(uuid.uuid4())
-
-        try:
-            while True:
-                data = await ws.receive_json()
-
-                # Join lobby as human player
-                if data.get("type") == "join_lobby":
-                    player_name = data.get("name", f"Human-{session_id[:6]}")
-                    avatar_index = data.get("avatar_index")
-
-                    # Validate player name
-                    error = validate_player_name(player_name)
-                    if error:
-                        await ws.send_json({
-                            "type": "error",
-                            "message": f"Invalid player name: {error}"
-                        })
-                        continue
-
-                    # Register this WS as a player
-                    await ws_manager.register_player(player_name, ws)
-
-                    # Create HumanPlayer and add to lobby
-                    if hasattr(app.state, "lobby_manager") and app.state.lobby_manager:
-                        from src.players.human import HumanPlayer
-
-                        async def _send(msg: dict, _name: str = player_name) -> None:
-                            await ws_manager.send_to_player(_name, msg)
-
-                        player = HumanPlayer(name=player_name, send_to_player=_send)
-                        success = app.state.lobby_manager.join(
-                            player, metadata={"avatar_index": avatar_index}
-                        )
-
-                        lobby_status = app.state.lobby_manager.get_lobby_status()
-                        await ws.send_json(
-                            {
-                                "type": "lobby_joined",
-                                "data": {
-                                    "name": player_name,
-                                    "success": success,
-                                    "players": [p["name"] for p in lobby_status["players"]],
-                                },
-                            }
-                        )
-
-                        # Broadcast lobby status to all
-                        await ws_manager.broadcast(
-                            WSEvent(
-                                event_type="lobby_status",
-                                data=lobby_status,
-                                game_id="",
-                                timestamp=datetime.now().isoformat(),
-                            )
-                        )
-                    else:
-                        await ws.send_json(
-                            {
-                                "type": "lobby_joined",
-                                "data": {
-                                    "name": player_name,
-                                    "success": False,
-                                    "players": [],
-                                },
-                            }
-                        )
-
-                # Rejoin lobby after game reset
-                elif data.get("type") == "rejoin_lobby":
-                    player_name = data.get("name", "")
-                    avatar_index = data.get("avatar_index")
-
-                    error = validate_player_name(player_name)
-                    if error:
-                        await ws.send_json({
-                            "type": "error",
-                            "message": f"Invalid player name: {error}"
-                        })
-                        continue
-
-                    await ws_manager.register_player(player_name, ws)
-
-                    if hasattr(app.state, "lobby_manager") and app.state.lobby_manager:
-                        from src.players.human import HumanPlayer
-
-                        async def _send(msg: dict, _name: str = player_name) -> None:
-                            await ws_manager.send_to_player(_name, msg)
-
-                        player = HumanPlayer(name=player_name, send_to_player=_send)
-                        success = app.state.lobby_manager.join(
-                            player, metadata={"avatar_index": avatar_index}
-                        )
-
-                        lobby_status = app.state.lobby_manager.get_lobby_status()
-                        await ws.send_json({
-                            "type": "lobby_joined",
-                            "data": {
-                                "name": player_name,
-                                "success": success,
-                                "players": [p["name"] for p in lobby_status["players"]],
-                            },
-                        })
-
-                        if success:
-                            await ws_manager.broadcast(
-                                WSEvent(
-                                    event_type="lobby_status",
-                                    data=lobby_status,
-                                    game_id="",
-                                    timestamp=datetime.now().isoformat(),
-                                )
-                            )
-                    else:
-                        await ws.send_json({
-                            "type": "lobby_joined",
-                            "data": {"name": player_name, "success": False, "players": []},
-                        })
-
-                # Human action response
-                elif data.get("type") == "action_response":
-                    player_name = data.get("player_name")
-                    response = data.get("response")
-
-                    # Validate action_response fields
-                    if not player_name or not isinstance(player_name, str):
-                        await ws.send_json({
-                            "type": "error",
-                            "message": "Invalid action_response: player_name must be a non-empty string"
-                        })
-                        continue
-
-                    if not response or not isinstance(response, str):
-                        await ws.send_json({
-                            "type": "error",
-                            "message": "Invalid action_response: response must be a non-empty string"
-                        })
-                        continue
-
-                    # Route response to the HumanPlayer instance
-                    if (
-                        hasattr(app.state, "lobby_manager")
-                        and app.state.lobby_manager
-                    ):
-                        player = app.state.lobby_manager.players.get(player_name)
-                        if player and hasattr(player, "set_response"):
-                            player.set_response(response)
-                            log.info("human_response_routed", name=player_name)
-                        else:
-                            # Fallback to WSManager futures
-                            ws_manager.resolve_response(player_name, response)
-                    else:
-                        ws_manager.resolve_response(player_name, response)
-
-                elif data.get("type") == "place_bet":
-                    log.info("bet_via_ws", data=data)
-                    from decimal import Decimal as D
-
-                    try:
-                        betting_mgr = app.state.betting_manager
-                        if not betting_mgr:
-                            await ws.send_json({
-                                "type": "bet_rejected",
-                                "data": {"reason": "Betting not enabled"},
-                            })
-                            continue
-
-                        bet = betting_mgr.place_bet(
-                            bettor_address=f"ws:{id(ws)}",
-                            bet_type=data.get("bet_type"),
-                            target=data.get("target"),
-                            amount_usdc=D(str(data.get("amount_usdc", 0))),
-                            round_number=data.get("round", 0),
-                            tx_hash=None,
-                        )
-                        if bet:
-                            await ws.send_json({
-                                "type": "bet_confirmed",
-                                "data": {
-                                    "bet_id": data.get("bet_id"),
-                                    "bet_type": bet.bet_type.value,
-                                    "target": bet.target,
-                                    "amount_usdc": float(bet.amount),
-                                },
-                            })
-                        else:
-                            await ws.send_json({
-                                "type": "bet_rejected",
-                                "data": {"reason": "Invalid bet parameters"},
-                            })
-                    except Exception as exc:
-                        await ws.send_json({
-                            "type": "bet_rejected",
-                            "data": {"reason": str(exc)},
-                        })
-
-                # Echo for debugging
-                elif data.get("type") == "ping":
-                    await ws.send_json({"type": "pong"})
-
-        except WebSocketDisconnect:
-            ws_manager.disconnect(ws)
-            log.info("ws_client_disconnected")
-
-        except Exception as exc:
-            log.error("ws_error", error=str(exc))
-            ws_manager.disconnect(ws)
 
     return app

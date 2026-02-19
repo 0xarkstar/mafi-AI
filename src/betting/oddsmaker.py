@@ -3,7 +3,6 @@
 from decimal import Decimal
 
 from src.agents.llm_client import LLMClient
-from src.config.constants import Role
 from src.models.betting import OddsBoard
 from src.models.game import GameState
 from src.utils.logger import get_logger
@@ -114,15 +113,5 @@ def _build_game_summary(game_state: GameState) -> str:
                 summary_parts.append(
                     f"  Round {round_result.round_number}: {round_result.eliminated}{role_str}"
                 )
-
-    # Add known mafia count
-    mafia_alive = sum(
-        1
-        for agent in game_state.alive_agents
-        if game_state.role_map.get(agent) == Role.MAFIA
-    )
-    total_mafia = sum(1 for role in game_state.role_map.values() if role == Role.MAFIA)
-
-    summary_parts.append(f"\nMafia remaining: {mafia_alive}/{total_mafia}")
 
     return "\n".join(summary_parts)
