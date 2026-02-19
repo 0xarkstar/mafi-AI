@@ -1,6 +1,7 @@
-import { useState, useMemo } from 'react';
+import { useState, useMemo, useEffect } from 'react';
 import { motion } from 'framer-motion';
 import { useGameStore } from '../store';
+import { useWallet } from '../hooks/useWallet';
 import { AVATAR_IMAGES } from '../constants';
 import { Button, Input } from '../components/UIComponents';
 import { Wallet, Gamepad2, Eye, HelpCircle, ChevronLeft } from 'lucide-react';
@@ -100,7 +101,18 @@ const buildShatteredMask = (): string => {
 };
 
 export const LandingScreen = () => {
-  const { connectWallet, walletConnected, connectAndJoin, joinAsSpectator, walletAddress } = useGameStore();
+  const { setWalletConnected, walletConnected, connectAndJoin, joinAsSpectator, walletAddress, disconnectWallet } = useGameStore();
+  const { isAuthenticated, address, login, logout } = useWallet();
+
+  useEffect(() => {
+    if (isAuthenticated && address) {
+      setWalletConnected(address);
+    }
+  }, [isAuthenticated, address, setWalletConnected]);
+
+  // Suppress unused variable warning for logout (available for future use)
+  void logout;
+  void disconnectWallet;
   const [nick, setNick] = useState('');
   const [step, setStep] = useState<'nickname' | 'avatar'>('nickname');
   const [selectedAvatar, setSelectedAvatar] = useState<number | null>(null);
@@ -221,7 +233,14 @@ export const LandingScreen = () => {
           {!walletConnected ? (
             <div className="mt-4">
               <Button
-                onClick={connectWallet}
+                onClick={() => {
+                  if (login) {
+                    login();
+                  } else {
+                    const mockAddr = '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
+                    setWalletConnected(mockAddr);
+                  }
+                }}
                 size="xl"
                 className="w-full border-gold/40 hover:bg-gold/5"
                 icon={<Wallet className="w-5 h-5 text-gold" />}

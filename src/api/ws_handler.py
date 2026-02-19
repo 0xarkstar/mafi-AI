@@ -32,6 +32,7 @@ async def _handle_lobby_join(
     default_name = "" if is_rejoin else f"Human-{str(uuid.uuid4())[:6]}"
     player_name = data.get("name", default_name)
     avatar_index = data.get("avatar_index")
+    wallet_address = data.get("wallet_address")
 
     error = validate_player_name(player_name)
     if error:
@@ -46,7 +47,7 @@ async def _handle_lobby_join(
         async def _send(msg: dict, _name: str = player_name) -> None:
             await ws_manager.send_to_player(_name, msg)
 
-        player = HumanPlayer(name=player_name, send_to_player=_send)
+        player = HumanPlayer(name=player_name, send_to_player=_send, wallet_address=wallet_address)
         success = app_state.lobby_manager.join(player, metadata={"avatar_index": avatar_index})
 
         lobby_status = app_state.lobby_manager.get_lobby_status()
@@ -60,6 +61,14 @@ async def _handle_lobby_join(
                 },
             }
         )
+
+        # Register wallet and send initial balance if wallet provided
+        if wallet_address:
+            ws_manager.register_wallet(ws, wallet_address)
+            balance_mgr = getattr(app_state, "balance_manager", None)
+            if balance_mgr:
+                balance = balance_mgr.get_balance(wallet_address)
+                await ws.send_json({"type": "balance_update", "data": {"balance": float(balance)}})
 
         # join_lobby always broadcasts; rejoin_lobby only broadcasts on success
         if not is_rejoin or success:
@@ -142,25 +151,46 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                         })
                         continue
 
+                    wallet_address = (
+                        data.get("wallet_address")
+                        or ws_manager.get_wallet_for_ws(ws)
+                        or f"ws:{id(ws)}"
+                    )
+                    amount = D(str(data.get("amount_usdc", 0)))
+
+                    balance_mgr = getattr(app.state, "balance_manager", None)
+                    if balance_mgr and not balance_mgr.deduct(wallet_address, amount):
+                        await ws.send_json({
+                            "type": "bet_rejected",
+                            "data": {"reason": "Insufficient balance"},
+                        })
+                        continue
+
                     bet = betting_mgr.place_bet(
-                        bettor_address=f"ws:{id(ws)}",
+                        bettor_address=wallet_address,
                         bet_type=data.get("bet_type"),
                         target=data.get("target"),
-                        amount_usdc=D(str(data.get("amount_usdc", 0))),
+                        amount_usdc=amount,
                         round_number=data.get("round", 0),
                         tx_hash=None,
                     )
                     if bet:
+                        response_data = {
+                            "bet_id": data.get("bet_id"),
+                            "bet_type": bet.bet_type.value,
+                            "target": bet.target,
+                            "amount_usdc": float(bet.amount),
+                        }
+                        if balance_mgr:
+                            response_data["balance"] = float(balance_mgr.get_balance(wallet_address))
                         await ws.send_json({
                             "type": "bet_confirmed",
-                            "data": {
-                                "bet_id": data.get("bet_id"),
-                                "bet_type": bet.bet_type.value,
-                                "target": bet.target,
-                                "amount_usdc": float(bet.amount),
-                            },
+                            "data": response_data,
                         })
                     else:
+                        # Refund if bet placement failed after deduction
+                        if balance_mgr:
+                            balance_mgr.credit(wallet_address, amount)
                         await ws.send_json({
                             "type": "bet_rejected",
                             "data": {"reason": "Invalid bet parameters"},
@@ -171,6 +201,15 @@ async def websocket_endpoint(ws: WebSocket) -> None:
                         "type": "bet_rejected",
                         "data": {"reason": "Bet processing failed"},
                     })
+
+            elif data.get("type") == "register_wallet":
+                wallet = data.get("wallet_address")
+                if wallet and isinstance(wallet, str) and wallet.startswith("0x"):
+                    ws_manager.register_wallet(ws, wallet)
+                    balance_mgr = getattr(app.state, "balance_manager", None)
+                    if balance_mgr:
+                        balance = balance_mgr.get_balance(wallet)
+                        await ws.send_json({"type": "balance_update", "data": {"balance": float(balance)}})
 
             elif data.get("type") == "join_spec_chat":
                 raw_name = data.get("name", "").strip()

@@ -20,6 +20,7 @@ class WSManager:
         self.player_response_futures: dict[str, asyncio.Future] = {}
         self.spectator_sessions: dict[str, WebSocket] = {}
         self._rate_limits: dict[int, float] = {}
+        self.wallet_sessions: dict[int, str] = {}
 
     async def connect(self, ws: WebSocket) -> None:
         """Accept and register a new WebSocket connection.
@@ -59,6 +60,9 @@ class WSManager:
 
         # Clean up rate limit entry
         self._rate_limits.pop(id(ws), None)
+
+        # Clean up wallet session
+        self.wallet_sessions.pop(id(ws), None)
 
         log.info("ws_disconnected", total=len(self.active_connections))
 
@@ -154,6 +158,27 @@ class WSManager:
             if spec_ws == ws:
                 return name
         return None
+
+    def register_wallet(self, ws: WebSocket, wallet_address: str) -> None:
+        """Associate a wallet address with a WebSocket connection.
+
+        Args:
+            ws: WebSocket connection.
+            wallet_address: Wallet address string.
+        """
+        self.wallet_sessions[id(ws)] = wallet_address
+        log.info("wallet_registered", wallet=wallet_address)
+
+    def get_wallet_for_ws(self, ws: WebSocket) -> str | None:
+        """Look up wallet address for a WebSocket connection.
+
+        Args:
+            ws: WebSocket connection.
+
+        Returns:
+            Wallet address or None.
+        """
+        return self.wallet_sessions.get(id(ws))
 
     def check_rate_limit(self, ws: WebSocket, min_interval: float = 3.0) -> bool:
         """Check if a WebSocket is allowed to send (rate limiting).

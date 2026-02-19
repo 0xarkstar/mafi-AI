@@ -13,7 +13,7 @@ export interface BettingSlice {
   placeBetUSDC: (betType: BetType, target: string, amount: number) => void;
 }
 
-export const createBettingSlice: StateCreator<StoreState, [], [], BettingSlice> = (set) => ({
+export const createBettingSlice: StateCreator<StoreState, [], [], BettingSlice> = (set, get) => ({
   bets: [],
   usdcBets: [],
   usdcBalance: 50.0,
@@ -40,7 +40,6 @@ export const createBettingSlice: StateCreator<StoreState, [], [], BettingSlice> 
     };
     set((state) => ({
       usdcBets: [...state.usdcBets, newBet],
-      usdcBalance: state.usdcBalance - amount,
     }));
     sendWS({
       type: 'place_bet',
@@ -48,6 +47,7 @@ export const createBettingSlice: StateCreator<StoreState, [], [], BettingSlice> 
       bet_type: betType,
       target,
       amount_usdc: amount,
+      wallet_address: get().walletAddress || undefined,
     });
   },
 });

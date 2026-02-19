@@ -11,7 +11,8 @@ export interface ConnectionSlice {
   walletConnected: boolean;
   walletAddress: string;
 
-  connectWallet: () => void;
+  setWalletConnected: (address: string) => void;
+  disconnectWallet: () => void;
   connectAndJoin: (nickname: string, avatarIndex: number) => void;
   joinAsSpectator: () => void;
   submitActionResponse: (response: string) => void;
@@ -25,13 +26,12 @@ export const createConnectionSlice: StateCreator<StoreState, [], [], ConnectionS
   walletConnected: false,
   walletAddress: '',
 
-  connectWallet: () => {
-    // Mock wallet connection for hackathon demo
-    const mockAddr = '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-    set({
-      walletConnected: true,
-      walletAddress: mockAddr,
-    });
+  setWalletConnected: (address) => {
+    set({ walletConnected: true, walletAddress: address });
+  },
+
+  disconnectWallet: () => {
+    set({ walletConnected: false, walletAddress: '' });
   },
 
   connectAndJoin: (nickname, avatarIndex) => {
@@ -45,7 +45,7 @@ export const createConnectionSlice: StateCreator<StoreState, [], [], ConnectionS
       (data) => get().handleWSEvent(data),
       (status) => set({ connectionStatus: status }),
       () => {
-        sendWS({ type: 'join_lobby', name: nickname, avatar_index: avatarIndex });
+        sendWS({ type: 'join_lobby', name: nickname, avatar_index: avatarIndex, wallet_address: get().walletAddress || undefined });
       },
     );
   },
@@ -72,6 +72,10 @@ export const createConnectionSlice: StateCreator<StoreState, [], [], ConnectionS
       (status) => set({ connectionStatus: status }),
       () => {
         sendWS({ type: 'join_spec_chat' });
+        const walletAddr = get().walletAddress;
+        if (walletAddr) {
+          sendWS({ type: 'register_wallet', wallet_address: walletAddr });
+        }
       },
     );
   },

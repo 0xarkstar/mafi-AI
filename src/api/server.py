@@ -12,6 +12,7 @@ from src.api.lobby_routes import router as lobby_router
 from src.api.routes import router
 from src.api.ws_handler import websocket_endpoint
 from src.api.ws_manager import WSManager
+from src.betting.balance import BalanceManager
 from src.config.settings import Settings
 from src.utils.logger import get_logger
 
@@ -30,6 +31,7 @@ def create_app(settings: Settings, ws_manager: WSManager, betting_manager=None) 
     app.state.betting_manager = betting_manager
     app.state.settings = settings
     app.state.ws_manager = ws_manager
+    app.state.balance_manager = BalanceManager()
 
     # CORS middleware
     app.add_middleware(

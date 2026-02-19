@@ -10,7 +10,8 @@ export type ServerEvent =
   | { type: 'game_over'; data: { winner: string; rounds: number; alive_agents: string[]; payouts: Record<string, number> } }
   | { type: 'identity_reveal'; data: { player_name: string; name: string; player_type: string; role: string; all_revealed: boolean } }
   | { type: 'odds_update'; data: { mafia_win_prob: number; citizen_win_prob: number; mafia_suspects: Record<string, number> } }
-  | { type: 'bet_confirmed'; data: { bet_id: string; bet_type: string; target: string; amount_usdc: number } }
+  | { type: 'balance_update'; data: { balance: number } }
+  | { type: 'bet_confirmed'; data: { bet_id: string; bet_type: string; target: string; amount_usdc: number; balance?: number } }
   | { type: 'bet_rejected'; data: { reason: string } }
   | { type: 'action_request'; data: { player_name: string; action_type: string; prompt: string; options?: string[]; timeout: number; context?: Record<string, unknown> } }
   | { type: 'usdc_settlement'; data: { bet_id: string; won: boolean; payout: number } }
@@ -24,10 +25,11 @@ export type ServerEvent =
 
 // Client → Server events
 export type ClientEvent =
-  | { type: 'join_lobby'; name: string; avatar_index?: number }
+  | { type: 'join_lobby'; name: string; avatar_index?: number; wallet_address?: string }
   | { type: 'rejoin_lobby'; name: string; avatar_index?: number | null }
   | { type: 'action_response'; player_name: string; response: string }
-  | { type: 'place_bet'; bet_type: string; target: string; amount_usdc: number; bet_id?: string; round?: number }
+  | { type: 'place_bet'; bet_type: string; target: string; amount_usdc: number; bet_id?: string; round?: number; wallet_address?: string }
   | { type: 'join_spec_chat'; name?: string }
   | { type: 'spec_chat'; text: string }
+  | { type: 'register_wallet'; wallet_address: string }
   | { type: 'ping' };

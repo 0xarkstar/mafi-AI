@@ -370,13 +370,22 @@ export const createGameSlice: StateCreator<StoreState, [], [], GameSlice> = (set
         break;
       }
 
+      case 'balance_update': {
+        set({ usdcBalance: data.balance });
+        break;
+      }
+
       case 'bet_confirmed': {
         const betId: string = data.bet_id;
-        set((s) => ({
-          usdcBets: s.usdcBets.map((b) =>
+        const updates: Partial<StoreState> = {
+          usdcBets: get().usdcBets.map((b) =>
             b.id === betId ? { ...b, status: 'pending' as const } : b,
           ),
-        }));
+        };
+        if (data.balance != null) {
+          updates.usdcBalance = data.balance;
+        }
+        set(updates);
         get().addMessage({
           senderId: 'system',
           senderName: 'System',
