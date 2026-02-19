@@ -57,10 +57,8 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
 
             import os
             pk = settings.blockchain_private_key.get_secret_value()
-            # Fallback: read directly from os.environ if pydantic missed it
             if not pk:
                 pk = os.environ.get("BLOCKCHAIN_PRIVATE_KEY", "")
-            log.info("blockchain_key_check", has_key=bool(pk), source="env" if not settings.blockchain_private_key.get_secret_value() else "pydantic")
             if not pk:
                 log.warning("blockchain_private_key_missing", msg="BLOCKCHAIN_ENABLED=true but no private key set")
             else:
