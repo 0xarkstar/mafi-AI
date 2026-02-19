@@ -261,10 +261,10 @@ class TestX402Settings:
         settings = Settings()
 
         assert settings.x402_enabled is False
-        assert settings.x402_facilitator_url == "https://x402-facilitator.molandak.org"
-        assert settings.x402_network == "eip155:10143"
-        assert settings.x402_usdc_address == "0x534b2f3A21130d7a60830c2Df862319e593943A3"
-        assert settings.x402_token_decimals == 6
+        assert settings.x402_facilitator_url == "https://api.x402.unibase.com"
+        assert settings.x402_network == "eip155:97"
+        assert settings.x402_usdc_address == "0x042E4e6a56aA1680171Da5e234D9cE42CBa03E1c"
+        assert settings.x402_token_decimals == 18
         assert settings.x402_pay_to == ""
 
     def test_settings_ai_bettor_fields_exist(self):

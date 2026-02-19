@@ -43,8 +43,9 @@ def compute_commitment(role_hash: bytes, secret: bytes) -> bytes:
 class BlockchainGateway:
     """Unified Python interface for V2 contract operations."""
 
-    def __init__(self, provider: BlockchainProvider):
+    def __init__(self, provider: BlockchainProvider, token_decimals: int = 18):
         self.provider = provider
+        self.token_decimals = token_decimals
         self._secrets: dict[str, bytes] = {}  # game_id -> random secret
 
     async def commit_roles(self, game_id: str, role_map: dict[str, Role]) -> str:
@@ -153,8 +154,9 @@ class BlockchainGateway:
             if amount > Decimal("1000000"):  # 1M USDC cap
                 raise ValueError(f"Settlement amount exceeds maximum: {amount}")
 
-        # Convert amounts to raw USDC (6 decimals)
-        raw_amounts = [int(amount * Decimal("1000000")) for amount in amounts]
+        # Convert amounts to raw token units
+        factor = Decimal(10 ** self.token_decimals)
+        raw_amounts = [int(amount * factor) for amount in amounts]
 
         contract = await self.provider.get_contract(version="v2")
         tx = await contract.functions.settle(

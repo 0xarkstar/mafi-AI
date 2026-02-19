@@ -56,6 +56,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Mock transfer function chain properly
@@ -99,6 +100,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Mock transfer function chain properly
@@ -151,6 +153,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Mock transfer function
@@ -181,6 +184,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Create payouts with negative (shouldn't happen but defensive)
@@ -201,6 +205,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Mock transfer function chain properly
@@ -241,6 +246,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Mock transfer to raise exception
@@ -269,6 +275,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Mock balanceOf
@@ -292,6 +299,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Mock balanceOf returning 0
@@ -312,6 +320,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Mock balanceOf to raise exception
@@ -332,6 +341,7 @@ class TestUSDCSettlement:
             w3=mock_w3,
             usdc_address="0xUSDC",
             private_key="0xprivatekey",
+            token_decimals=6,
         )
 
         # Mock transfer function

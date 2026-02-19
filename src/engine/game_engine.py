@@ -243,6 +243,7 @@ class GameEngine:
                         w3=w3,
                         usdc_address=settings.x402_usdc_address,
                         private_key=settings.settlement_private_key.get_secret_value(),
+                        token_decimals=settings.blockchain_token_decimals,
                     )
                     transfer_results = await settlement.settle_payouts(combined_payouts)
                     log.info("usdc_settlement_complete", num_transfers=len(transfer_results))

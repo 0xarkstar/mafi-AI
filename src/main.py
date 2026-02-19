@@ -51,19 +51,26 @@ async def run_server_mode(settings, ws_manager: WSManager) -> None:
     # Initialize blockchain if enabled
     blockchain_gateway = None
     if settings.blockchain_enabled:
-        from src.blockchain.gateway import BlockchainGateway
-        from src.blockchain.provider import BlockchainProvider
+        try:
+            from src.blockchain.gateway import BlockchainGateway
+            from src.blockchain.provider import BlockchainProvider
 
-        provider = BlockchainProvider(
-            rpc_url=settings.blockchain_rpc_url,
-            private_key=settings.blockchain_private_key.get_secret_value(),
-            contract_address=settings.blockchain_contract_address,
-        )
-        if await provider.is_connected():
-            blockchain_gateway = BlockchainGateway(provider)
-            log.info("blockchain_connected", rpc=settings.blockchain_rpc_url)
-        else:
-            log.warning("blockchain_connection_failed")
+            pk = settings.blockchain_private_key.get_secret_value()
+            if not pk:
+                log.warning("blockchain_private_key_missing", msg="BLOCKCHAIN_ENABLED=true but no private key set")
+            else:
+                provider = BlockchainProvider(
+                    rpc_url=settings.blockchain_rpc_url,
+                    private_key=pk,
+                    contract_address=settings.blockchain_contract_address,
+                )
+                if await provider.is_connected():
+                    blockchain_gateway = BlockchainGateway(provider, settings.blockchain_token_decimals)
+                    log.info("blockchain_connected", rpc=settings.blockchain_rpc_url, chain_id=settings.blockchain_chain_id)
+                else:
+                    log.warning("blockchain_connection_failed")
+        except Exception as exc:
+            log.warning("blockchain_init_failed", error=str(exc))
 
     # Create FastAPI app with betting manager
     app = create_app(settings, ws_manager, betting_manager)

@@ -33,15 +33,17 @@ class USDCSettlement:
         },
     ]
 
-    def __init__(self, w3: AsyncWeb3, usdc_address: str, private_key: str):
+    def __init__(self, w3: AsyncWeb3, usdc_address: str, private_key: str, token_decimals: int = 18):
         """Initialize USDC settlement.
 
         Args:
-            w3: AsyncWeb3 instance (connected to Monad testnet).
-            usdc_address: USDC contract address on Monad.
+            w3: AsyncWeb3 instance.
+            usdc_address: USDC/token contract address.
             private_key: Server wallet private key (0x...).
+            token_decimals: Token decimal places (18 for BSC USDC, 6 for standard USDC).
         """
         self.w3 = w3
+        self.token_decimals = token_decimals
         self.account = w3.eth.account.from_key(private_key)
         self.usdc = w3.eth.contract(
             address=w3.to_checksum_address(usdc_address), abi=self.ERC20_ABI
@@ -66,8 +68,8 @@ class USDCSettlement:
 
         for address, amount in payouts.items():
             try:
-                # Convert USDC amount to raw units (6 decimals)
-                amount_raw = int(amount * Decimal("1000000"))
+                # Convert USDC amount to raw units
+                amount_raw = int(amount * Decimal(10 ** self.token_decimals))
 
                 if amount_raw <= 0:
                     logger.warning("skipping_zero_payout", address=address)
@@ -139,7 +141,7 @@ class USDCSettlement:
             balance_raw = await self.usdc.functions.balanceOf(
                 self.account.address
             ).call()
-            balance_usdc = Decimal(balance_raw) / Decimal("1000000")
+            balance_usdc = Decimal(balance_raw) / Decimal(10 ** self.token_decimals)
 
             logger.info("server_usdc_balance", balance=float(balance_usdc))
 
