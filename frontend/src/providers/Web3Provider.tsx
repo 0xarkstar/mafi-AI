@@ -1,19 +1,15 @@
 import { createContext, useMemo } from 'react';
 import { PrivyProvider, usePrivy, useWallets } from '@privy-io/react-auth';
-import { WagmiProvider, createConfig } from '@privy-io/wagmi';
+import { WagmiProvider as PrivyWagmiProvider, createConfig as createPrivyConfig } from '@privy-io/wagmi';
 import { QueryClient, QueryClientProvider } from '@tanstack/react-query';
-import { RainbowKitProvider, darkTheme } from '@rainbow-me/rainbowkit';
-import { http, useAccount } from 'wagmi';
+import { RainbowKitProvider, darkTheme, useConnectModal } from '@rainbow-me/rainbowkit';
+import { WagmiProvider, createConfig, http, useAccount, useDisconnect } from 'wagmi';
+import { injected } from 'wagmi/connectors';
 import { bscTestnet } from './chains';
 import '@rainbow-me/rainbowkit/styles.css';
 
 const PRIVY_APP_ID = import.meta.env.VITE_PRIVY_APP_ID as string | undefined;
 const queryClient = new QueryClient();
-
-const wagmiConfig = createConfig({
-  chains: [bscTestnet],
-  transports: { [bscTestnet.id]: http() },
-});
 
 export interface WalletContextValue {
   isReady: boolean;
@@ -33,7 +29,39 @@ const DISABLED_STATE: WalletContextValue = {
 
 export const WalletContext = createContext<WalletContextValue>(DISABLED_STATE);
 
-/** Calls Privy/wagmi hooks (safe — always rendered inside PrivyProvider). */
+// --- Standalone mode: native wagmi + RainbowKit (no Privy) ---
+
+const standaloneConfig = createConfig({
+  chains: [bscTestnet],
+  transports: { [bscTestnet.id]: http() },
+  connectors: [injected()],
+});
+
+/** Bridge wagmi + RainbowKit state into WalletContext (standalone mode). */
+function StandaloneWalletBridge({ children }: { children: React.ReactNode }) {
+  const { address, isConnected } = useAccount();
+  const { openConnectModal } = useConnectModal();
+  const { disconnectAsync } = useDisconnect();
+
+  const value = useMemo<WalletContextValue>(() => ({
+    isReady: true,
+    isAuthenticated: isConnected,
+    address: address ?? null,
+    login: openConnectModal ?? null,
+    logout: disconnectAsync ? () => disconnectAsync().then(() => {}) : null,
+  }), [address, isConnected, openConnectModal, disconnectAsync]);
+
+  return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
+}
+
+// --- Privy mode: Privy + wagmi adapter + RainbowKit ---
+
+const privyWagmiConfig = createPrivyConfig({
+  chains: [bscTestnet],
+  transports: { [bscTestnet.id]: http() },
+});
+
+/** Bridge Privy + wagmi state into WalletContext (Privy mode). */
 function PrivyWalletBridge({ children }: { children: React.ReactNode }) {
   const { ready, authenticated, login, logout } = usePrivy();
   const { wallets } = useWallets();
@@ -57,9 +85,21 @@ function PrivyWalletBridge({ children }: { children: React.ReactNode }) {
   return <WalletContext.Provider value={value}>{children}</WalletContext.Provider>;
 }
 
+// --- Provider component ---
+
 export const Web3Provider = ({ children }: { children: React.ReactNode }) => {
   if (!PRIVY_APP_ID) {
-    return <WalletContext.Provider value={DISABLED_STATE}>{children}</WalletContext.Provider>;
+    return (
+      <WagmiProvider config={standaloneConfig}>
+        <QueryClientProvider client={queryClient}>
+          <RainbowKitProvider theme={darkTheme({ accentColor: '#D4A853' })}>
+            <StandaloneWalletBridge>
+              {children}
+            </StandaloneWalletBridge>
+          </RainbowKitProvider>
+        </QueryClientProvider>
+      </WagmiProvider>
+    );
   }
 
   return (
@@ -74,13 +114,13 @@ export const Web3Provider = ({ children }: { children: React.ReactNode }) => {
       }}
     >
       <QueryClientProvider client={queryClient}>
-        <WagmiProvider config={wagmiConfig}>
+        <PrivyWagmiProvider config={privyWagmiConfig}>
           <RainbowKitProvider theme={darkTheme({ accentColor: '#D4A853' })}>
             <PrivyWalletBridge>
               {children}
             </PrivyWalletBridge>
           </RainbowKitProvider>
-        </WagmiProvider>
+        </PrivyWagmiProvider>
       </QueryClientProvider>
     </PrivyProvider>
   );

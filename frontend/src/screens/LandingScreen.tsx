@@ -233,14 +233,7 @@ export const LandingScreen = () => {
           {!walletConnected ? (
             <div className="mt-4">
               <Button
-                onClick={() => {
-                  if (login) {
-                    login();
-                  } else {
-                    const mockAddr = '0x' + Array.from({ length: 40 }, () => Math.floor(Math.random() * 16).toString(16)).join('');
-                    setWalletConnected(mockAddr);
-                  }
-                }}
+                onClick={() => { if (login) login(); }}
                 size="xl"
                 className="w-full border-gold/40 hover:bg-gold/5"
                 icon={<Wallet className="w-5 h-5 text-gold" />}
