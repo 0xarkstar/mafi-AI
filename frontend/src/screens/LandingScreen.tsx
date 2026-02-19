@@ -238,7 +238,7 @@ export const LandingScreen = () => {
                 className="w-full border-gold/40 hover:bg-gold/5"
                 icon={<Wallet className="w-5 h-5 text-gold" />}
               >
-                CONNECT WALLET
+                SIGN IN
               </Button>
             </div>
           ) : step === 'nickname' ? (
